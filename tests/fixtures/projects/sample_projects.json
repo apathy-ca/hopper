@@ -1,0 +1,84 @@
+[
+  {
+    "id": "proj-hopper",
+    "name": "Hopper",
+    "slug": "hopper",
+    "description": "Intelligent task routing and orchestration system for multi-agent workflows",
+    "configuration": {
+      "routing_rules": ["keyword_match", "tag_match", "priority_match"],
+      "default_priority": "medium",
+      "auto_routing": true,
+      "llm_fallback": true,
+      "confidence_threshold": 0.7
+    }
+  },
+  {
+    "id": "proj-czarina",
+    "name": "Czarina",
+    "slug": "czarina",
+    "description": "Git-based multi-agent orchestration system for complex software development tasks",
+    "configuration": {
+      "routing_rules": ["keyword_match"],
+      "default_priority": "high",
+      "auto_routing": true,
+      "llm_fallback": false
+    }
+  },
+  {
+    "id": "proj-frontend",
+    "name": "Frontend",
+    "slug": "frontend",
+    "description": "User interface and frontend development tasks",
+    "configuration": {
+      "routing_rules": ["tag_match"],
+      "default_priority": "medium",
+      "auto_routing": false
+    }
+  },
+  {
+    "id": "proj-backend",
+    "name": "Backend",
+    "slug": "backend",
+    "description": "Backend API and database development tasks",
+    "configuration": {
+      "routing_rules": ["keyword_match", "tag_match"],
+      "default_priority": "high",
+      "auto_routing": true,
+      "confidence_threshold": 0.8
+    }
+  },
+  {
+    "id": "proj-oncall",
+    "name": "On-Call",
+    "slug": "oncall",
+    "description": "Urgent tasks requiring immediate attention",
+    "configuration": {
+      "routing_rules": ["priority_match"],
+      "default_priority": "urgent",
+      "auto_routing": true,
+      "llm_fallback": false
+    }
+  },
+  {
+    "id": "proj-maintenance",
+    "name": "Maintenance",
+    "slug": "maintenance",
+    "description": "Bug fixes, hotfixes, and maintenance tasks",
+    "configuration": {
+      "routing_rules": ["pattern_match", "keyword_match"],
+      "default_priority": "medium",
+      "auto_routing": true
+    }
+  },
+  {
+    "id": "proj-inbox",
+    "name": "Inbox",
+    "slug": "inbox",
+    "description": "Default destination for unrouted tasks",
+    "configuration": {
+      "routing_rules": [],
+      "default_priority": "low",
+      "auto_routing": false
+    }
+  }
+]

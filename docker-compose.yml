@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: hopper-postgres
+    environment:
+      POSTGRES_USER: hopper
+      POSTGRES_PASSWORD: hopper_dev
+      POSTGRES_DB: hopper
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hopper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: hopper-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OpenSearch for episodic memory (Phase 3)
+  # Disabled by default to reduce resource usage in Phase 1
+  # opensearch:
+  #   image: opensearchproject/opensearch:2.11.0
+  #   container_name: hopper-opensearch
+  #   environment:
+  #     - discovery.type=single-node
+  #     - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+  #     - DISABLE_SECURITY_PLUGIN=true
+  #   ports:
+  #     - "9200:9200"
+  #   volumes:
+  #     - opensearch_data:/usr/share/opensearch/data
+
+  # Hopper application (for production-like testing)
+  # hopper:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: hopper-app
+  #   environment:
+  #     - DATABASE_URL=postgresql://hopper:hopper_dev@postgres:5432/hopper
+  #     - REDIS_URL=redis://redis:6379/0
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   volumes:
+  #     - ./src:/app/src
+  #   command: uvicorn hopper.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  redis_data:
+  # opensearch_data:

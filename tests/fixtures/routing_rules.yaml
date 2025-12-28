@@ -1,0 +1,98 @@
+# Sample routing rules for testing
+# These rules demonstrate the routing engine's capabilities
+
+version: "1.0"
+
+rules:
+  # Project-specific routing rules
+  - name: "hopper_keywords"
+    description: "Route tasks with Hopper-related keywords to hopper project"
+    type: "keyword"
+    priority: 10
+    destination: "hopper"
+    conditions:
+      keywords:
+        - "task"
+        - "queue"
+        - "routing"
+        - "orchestration"
+        - "api"
+        - "database"
+      match_mode: "any"  # Match if any keyword is present
+      case_sensitive: false
+
+  - name: "czarina_keywords"
+    description: "Route tasks with Czarina-related keywords to czarina project"
+    type: "keyword"
+    priority: 10
+    destination: "czarina"
+    conditions:
+      keywords:
+        - "orchestration"
+        - "worker"
+        - "phase"
+        - "coordination"
+        - "czar"
+      match_mode: "any"
+      case_sensitive: false
+
+  # Tag-based routing rules
+  - name: "backend_tag"
+    description: "Route backend tasks to hopper project"
+    type: "tag"
+    priority: 8
+    destination: "hopper"
+    conditions:
+      tags:
+        backend: true
+
+  - name: "frontend_tag"
+    description: "Route frontend tasks to frontend project"
+    type: "tag"
+    priority: 8
+    destination: "frontend"
+    conditions:
+      tags:
+        frontend: true
+
+  # Priority-based routing rules
+  - name: "urgent_tasks"
+    description: "Route urgent tasks to oncall project"
+    type: "priority"
+    priority: 15  # Higher priority rule
+    destination: "oncall"
+    conditions:
+      priority: "urgent"
+
+  # Composite rules
+  - name: "critical_backend_tasks"
+    description: "Route critical backend tasks with high priority"
+    type: "composite"
+    priority: 20
+    destination: "backend-urgent"
+    conditions:
+      all:
+        - type: "tag"
+          tags:
+            backend: true
+        - type: "priority"
+          priority: "high"
+
+  # Pattern matching rules
+  - name: "bug_fix_pattern"
+    description: "Route bug fix tasks based on title pattern"
+    type: "pattern"
+    priority: 7
+    destination: "maintenance"
+    conditions:
+      field: "title"
+      pattern: "^(fix|bug|hotfix):"
+      regex: true
+
+  # Fallback rule
+  - name: "default_routing"
+    description: "Default routing for unmatched tasks"
+    type: "default"
+    priority: 1
+    destination: "inbox"
+    conditions: {}

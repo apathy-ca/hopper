@@ -1,0 +1,299 @@
+# Hopper Routing Rules Configuration
+#
+# This file defines the default routing rules for the Hopper task queue.
+# Rules determine where tasks are routed based on keywords, tags, priority, and other factors.
+#
+# Rule Structure:
+#   - id: Unique identifier (auto-generated if not provided)
+#   - type: Rule type (keyword, tag, priority, composite)
+#   - name: Human-readable name
+#   - description: What the rule does
+#   - destination: Where to route (format: project:name, instance:name, user:name)
+#   - weight: Rule importance (0.0-1.0, default 1.0)
+#   - enabled: Whether rule is active (default true)
+#   - priority: Evaluation order (higher = evaluated first, default 0)
+
+rules:
+  # =============================================================================
+  # Czarina Orchestration System Rules
+  # =============================================================================
+
+  - id: czarina-keyword-detection
+    type: keyword
+    name: Czarina Keyword Detection
+    description: Route tasks with Czarina-related keywords to the Czarina project
+    destination: project:czarina
+    keywords:
+      - czarina
+      - orchestration
+      - worker
+      - phase
+      - swarm
+      - delegate
+      - autonomous
+    weight: 1.0
+    priority: 10
+
+  - id: czarina-tag-detection
+    type: tag
+    name: Czarina Tag Detection
+    description: Route tasks tagged with Czarina-specific tags
+    destination: project:czarina
+    optional_tags:
+      - czarina
+      - orchestration
+      - automation
+      - multi-agent
+      - swarm
+    weight: 1.0
+    priority: 10
+
+  # =============================================================================
+  # Hopper Task Queue Rules
+  # =============================================================================
+
+  - id: hopper-keyword-detection
+    type: keyword
+    name: Hopper Keyword Detection
+    description: Route tasks with Hopper-related keywords to the Hopper project
+    destination: project:hopper
+    keywords:
+      - hopper
+      - task
+      - queue
+      - routing
+      - intelligence
+      - mcp
+      - universal queue
+    weight: 1.0
+    priority: 10
+
+  - id: hopper-tag-detection
+    type: tag
+    name: Hopper Tag Detection
+    description: Route tasks tagged with Hopper-specific tags
+    destination: project:hopper
+    optional_tags:
+      - hopper
+      - task-queue
+      - routing
+      - mcp-integration
+    weight: 1.0
+    priority: 10
+
+  # =============================================================================
+  # SARK Policy Engine Rules
+  # =============================================================================
+
+  - id: sark-keyword-detection
+    type: keyword
+    name: SARK Keyword Detection
+    description: Route policy and governance tasks to SARK
+    destination: project:sark
+    keywords:
+      - sark
+      - policy
+      - governance
+      - compliance
+      - approval
+      - authorization
+    weight: 1.0
+    priority: 10
+
+  - id: sark-tag-detection
+    type: tag
+    name: SARK Tag Detection
+    description: Route tasks tagged with SARK-specific tags
+    destination: project:sark
+    optional_tags:
+      - sark
+      - policy
+      - governance
+      - compliance
+      - security
+    weight: 1.0
+    priority: 10
+
+  # =============================================================================
+  # Symposium Research Platform Rules
+  # =============================================================================
+
+  - id: symposium-keyword-detection
+    type: keyword
+    name: Symposium Keyword Detection
+    description: Route research and consciousness tasks to Symposium
+    destination: project:symposium
+    keywords:
+      - symposium
+      - research
+      - consciousness
+      - philosophy
+      - sage
+      - ai consciousness
+      - ethical ai
+    weight: 1.0
+    priority: 10
+
+  - id: symposium-tag-detection
+    type: tag
+    name: Symposium Tag Detection
+    description: Route tasks tagged with Symposium-specific tags
+    destination: project:symposium
+    optional_tags:
+      - symposium
+      - research
+      - consciousness
+      - philosophy
+      - ethics
+    weight: 1.0
+    priority: 10
+
+  # =============================================================================
+  # Priority-Based Routing
+  # =============================================================================
+
+  - id: critical-priority-escalation
+    type: priority
+    name: Critical Priority Escalation
+    description: Route critical priority tasks to global instance for immediate attention
+    destination: instance:global
+    priorities:
+      - critical
+    weight: 0.9
+    priority: 20
+
+  - id: high-priority-boost
+    type: priority
+    name: High Priority Boost
+    description: Route high priority tasks to global instance
+    destination: instance:global
+    min_priority: high
+    max_priority: high
+    weight: 0.7
+    priority: 15
+
+  # =============================================================================
+  # Development and Infrastructure Rules
+  # =============================================================================
+
+  - id: infrastructure-keyword-detection
+    type: keyword
+    name: Infrastructure Keyword Detection
+    description: Route infrastructure and deployment tasks
+    destination: project:infrastructure
+    keywords:
+      - infrastructure
+      - deployment
+      - docker
+      - kubernetes
+      - aws
+      - terraform
+      - ci/cd
+      - devops
+    weight: 1.0
+    priority: 10
+
+  - id: bug-fix-detection
+    type: keyword
+    name: Bug Fix Detection
+    description: Route bug fixes and issues
+    destination: instance:bugs
+    keywords:
+      - bug
+      - fix
+      - issue
+      - error
+      - crash
+      - broken
+    weight: 0.8
+    priority: 12
+
+  - id: documentation-detection
+    type: keyword
+    name: Documentation Detection
+    description: Route documentation tasks
+    destination: instance:docs
+    keywords:
+      - documentation
+      - docs
+      - readme
+      - guide
+      - tutorial
+      - explain
+    weight: 0.7
+    priority: 8
+
+  - id: testing-detection
+    type: keyword
+    name: Testing Detection
+    description: Route testing-related tasks
+    destination: instance:testing
+    keywords:
+      - test
+      - testing
+      - unit test
+      - integration test
+      - e2e
+      - qa
+      - quality assurance
+    weight: 0.8
+    priority: 10
+
+  # =============================================================================
+  # Composite Rules (Examples)
+  # =============================================================================
+
+  - id: urgent-bug-composite
+    type: composite
+    name: Urgent Bug Composite
+    description: High priority bugs go to special urgent queue
+    destination: instance:urgent-bugs
+    operator: and
+    weight: 1.0
+    priority: 25
+    sub_rules:
+      - type: keyword
+        name: Bug Keywords
+        description: Has bug-related keywords
+        destination: instance:bugs
+        keywords:
+          - bug
+          - critical bug
+          - security issue
+        weight: 1.0
+
+      - type: priority
+        name: High Priority
+        description: Is high or critical priority
+        destination: instance:bugs
+        min_priority: high
+        weight: 1.0
+
+  # =============================================================================
+  # Tag Pattern Rules
+  # =============================================================================
+
+  - id: language-specific-routing
+    type: tag
+    name: Language-Specific Routing
+    description: Route based on programming language tags
+    destination: instance:development
+    tag_patterns:
+      - "^lang:.*"
+      - "^language:.*"
+    weight: 0.6
+    priority: 5
+
+  # =============================================================================
+  # Default Fallback (Low Priority)
+  # =============================================================================
+
+  - id: default-fallback
+    type: keyword
+    name: Default Fallback
+    description: Catch-all for unmatched tasks
+    destination: instance:inbox
+    keywords: []
+    weight: 0.3
+    priority: 0
+    enabled: false  # Enable only if you want catch-all behavior

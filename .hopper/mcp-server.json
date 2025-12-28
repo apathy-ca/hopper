@@ -1,0 +1,71 @@
+{
+  "server": {
+    "name": "hopper",
+    "version": "1.0.0",
+    "description": "Intelligent Task Routing and Orchestration System"
+  },
+  "api": {
+    "base_url": "http://localhost:8080",
+    "timeout": 30
+  },
+  "behavior": {
+    "auto_route_tasks": true,
+    "default_priority": "medium",
+    "default_task_limit": 10
+  },
+  "context": {
+    "enable_persistence": true,
+    "cache_ttl_seconds": 3600
+  },
+  "logging": {
+    "level": "INFO",
+    "debug": false
+  },
+  "tools": {
+    "task_management": {
+      "enabled": true,
+      "tools": [
+        "hopper_create_task",
+        "hopper_list_tasks",
+        "hopper_get_task",
+        "hopper_update_task",
+        "hopper_update_task_status"
+      ]
+    },
+    "project_management": {
+      "enabled": true,
+      "tools": [
+        "hopper_list_projects",
+        "hopper_get_project",
+        "hopper_create_project",
+        "hopper_get_project_tasks"
+      ]
+    },
+    "routing": {
+      "enabled": true,
+      "tools": [
+        "hopper_route_task",
+        "hopper_get_routing_suggestions"
+      ]
+    }
+  },
+  "resources": {
+    "tasks": {
+      "enabled": true,
+      "uris": [
+        "hopper://tasks",
+        "hopper://tasks/pending",
+        "hopper://tasks/in_progress",
+        "hopper://tasks/completed",
+        "hopper://tasks/{task_id}"
+      ]
+    },
+    "projects": {
+      "enabled": true,
+      "uris": [
+        "hopper://projects",
+        "hopper://projects/{project_id}"
+      ]
+    }
+  }
+}
