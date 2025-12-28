@@ -1,56 +1,54 @@
 """
-RoutingDecision model - Records how and why tasks were routed.
+Routing Decision model for Hopper.
 """
+from datetime import datetime
+from typing import Any, Dict, Optional
 
-from typing import TYPE_CHECKING, Any
-
-from sqlalchemy import JSON, Float, ForeignKey, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
-from .base import Base, TimestampMixin
-
-if TYPE_CHECKING:
-    from .project import Project
-    from .task import Task
+from .base import Base
 
 
-class RoutingDecision(Base, TimestampMixin):
-    """
-    RoutingDecision records the routing decision for a task.
-
-    This is crucial for the memory system - we track confidence, reasoning,
-    alternatives considered, and context to learn from outcomes.
-    """
+class RoutingDecision(Base):
+    """Routing Decision model for tracking routing outcomes."""
 
     __tablename__ = "routing_decisions"
 
-    # Primary key - one decision per task
-    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("tasks.id"), primary_key=True)
+    # Primary key (also foreign key to tasks)
+    task_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("tasks.id"), primary_key=True
+    )
 
-    # Routing result
-    project: Mapped[str | None] = mapped_column(
+    # Decision details
+    project: Mapped[Optional[str]] = mapped_column(
         String(100), ForeignKey("projects.name"), nullable=True
     )
-    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    alternatives: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
 
     # Decision metadata
-    alternatives: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
-    decided_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    decision_time_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decided_by: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    decision_time_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Context snapshot
-    workload_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    context: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    workload_snapshot: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
+    context: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
 
     # Relationships
     task: Mapped["Task"] = relationship("Task", back_populates="routing_decision")
-    project_obj: Mapped["Project | None"] = relationship(
-        "Project", back_populates="routing_decisions"
-    )
 
     def __repr__(self) -> str:
-        return (
-            f"<RoutingDecision(task_id={self.task_id}, project={self.project}, "
-            f"confidence={self.confidence})>"
-        )
+        return f"<RoutingDecision(task_id={self.task_id}, project={self.project})>"
