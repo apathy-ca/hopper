@@ -1,21 +1,19 @@
 """Server management commands."""
 
 import subprocess
-import time
-from typing import Optional
 
 import click
 from rich.prompt import Confirm
 
+from hopper.cli.client import HopperClient
 from hopper.cli.main import Context
-from hopper.cli.client import HopperClient, APIError
 from hopper.cli.output import (
-    print_json,
-    print_success,
+    console,
     print_error,
     print_info,
+    print_json,
+    print_success,
     print_warning,
-    console,
 )
 
 
@@ -54,8 +52,10 @@ def start_server(
     cmd = [
         "uvicorn",
         "hopper.api.main:app",
-        "--host", host,
-        "--port", str(port),
+        "--host",
+        host,
+        "--port",
+        str(port),
     ]
 
     if reload:
@@ -97,9 +97,7 @@ def stop_server(ctx: Context, force: bool) -> None:
     try:
         # Try to find and kill uvicorn process
         result = subprocess.run(
-            ["pkill", "-f", "uvicorn.*hopper.api.main"],
-            capture_output=True,
-            text=True
+            ["pkill", "-f", "uvicorn.*hopper.api.main"], capture_output=True, text=True
         )
 
         if result.returncode == 0:
@@ -120,7 +118,7 @@ def server_status(ctx: Context) -> None:
     Examples:
         hopper server status
     """
-    console.print(f"\n[bold cyan]Server Status[/bold cyan]\n")
+    console.print("\n[bold cyan]Server Status[/bold cyan]\n")
 
     # Check if server is reachable
     try:

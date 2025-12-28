@@ -6,10 +6,8 @@ Commands for managing the Hopper MCP server.
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -41,7 +39,7 @@ def mcp() -> None:
     is_flag=True,
     help="Enable debug logging",
 )
-def start(host: str, port: int, token: Optional[str], debug: bool) -> None:
+def start(host: str, port: int, token: str | None, debug: bool) -> None:
     """Start the MCP server.
 
     The server will run in stdio mode for use with Claude Desktop
@@ -63,8 +61,9 @@ def start(host: str, port: int, token: Optional[str], debug: bool) -> None:
     # Run the MCP server
     try:
         # Import here to avoid import errors if dependencies aren't installed
-        from hopper.mcp.main import main as mcp_main
         import asyncio
+
+        from hopper.mcp.main import main as mcp_main
 
         click.echo("Starting Hopper MCP server...")
         if debug:
@@ -78,6 +77,7 @@ def start(host: str, port: int, token: Optional[str], debug: bool) -> None:
         click.echo(f"Error starting MCP server: {e}", err=True)
         if debug:
             import traceback
+
             traceback.print_exc()
         sys.exit(1)
 
@@ -96,8 +96,8 @@ def config() -> None:
                 "args": ["-m", "hopper.mcp.main"],
                 "env": {
                     "HOPPER_API_BASE_URL": "http://localhost:8080",
-                    "HOPPER_API_TOKEN": "your-api-token-here"
-                }
+                    "HOPPER_API_TOKEN": "your-api-token-here",
+                },
             }
         }
     }
@@ -126,7 +126,7 @@ def config() -> None:
     type=click.Path(),
     help="Output file path (default: prints to stdout)",
 )
-def init_config(output: Optional[str]) -> None:
+def init_config(output: str | None) -> None:
     """Generate an MCP server configuration file.
 
     Creates a configuration file template that can be customized
@@ -143,8 +143,8 @@ def init_config(output: Optional[str]) -> None:
                     "HOPPER_LOG_LEVEL": "INFO",
                     "HOPPER_ENABLE_DEBUG": "false",
                     "HOPPER_AUTO_ROUTE_TASKS": "true",
-                    "HOPPER_DEFAULT_PRIORITY": "medium"
-                }
+                    "HOPPER_DEFAULT_PRIORITY": "medium",
+                },
             }
         }
     }
@@ -171,9 +171,12 @@ def test() -> None:
 
     # Check Python version
     import sys
+
     py_version = sys.version_info
     if py_version < (3, 11):
-        click.echo(f"❌ Python 3.11+ required, found {py_version.major}.{py_version.minor}", err=True)
+        click.echo(
+            f"❌ Python 3.11+ required, found {py_version.major}.{py_version.minor}", err=True
+        )
         sys.exit(1)
     else:
         click.echo(f"✓ Python version: {py_version.major}.{py_version.minor}.{py_version.micro}")
@@ -181,6 +184,7 @@ def test() -> None:
     # Check if MCP module can be imported
     try:
         import hopper.mcp
+
         click.echo("✓ Hopper MCP module found")
     except ImportError as e:
         click.echo(f"❌ Cannot import hopper.mcp: {e}", err=True)
@@ -189,6 +193,7 @@ def test() -> None:
     # Check required dependencies
     try:
         import mcp
+
         click.echo("✓ MCP SDK installed")
     except ImportError:
         click.echo("❌ MCP SDK not installed. Run: pip install mcp", err=True)
@@ -196,6 +201,7 @@ def test() -> None:
 
     try:
         import httpx
+
         click.echo("✓ httpx installed")
     except ImportError:
         click.echo("❌ httpx not installed. Run: pip install httpx", err=True)
@@ -206,13 +212,15 @@ def test() -> None:
 
     try:
         config = get_mcp_config()
-        click.echo(f"✓ Configuration loaded")
+        click.echo("✓ Configuration loaded")
         click.echo(f"  - API URL: {config.api_base_url}")
         click.echo(f"  - Server name: {config.server_name}")
         click.echo(f"  - Auto-route: {config.auto_route_tasks}")
 
         if not config.api_token and not config.api_key:
-            click.echo("⚠ Warning: No API token configured. Set HOPPER_API_TOKEN environment variable.")
+            click.echo(
+                "⚠ Warning: No API token configured. Set HOPPER_API_TOKEN environment variable."
+            )
 
     except Exception as e:
         click.echo(f"❌ Configuration error: {e}", err=True)

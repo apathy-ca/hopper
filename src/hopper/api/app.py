@@ -8,15 +8,14 @@ This module creates and configures the FastAPI application with:
 - OpenAPI customization
 """
 
+import logging
+import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
-import time
-import logging
 
 from hopper.api.exceptions import (
     HopperException,
@@ -122,6 +121,7 @@ def create_app() -> FastAPI:
 
     # Import and include routers
     from hopper.api.routes import tasks
+
     app.include_router(tasks.router, prefix="/api/v1", tags=["Tasks"])
     # from hopper.api.routes import projects, instances, auth
     # app.include_router(projects.router, prefix="/api/v1", tags=["Projects"])

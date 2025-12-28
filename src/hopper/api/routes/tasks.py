@@ -4,27 +4,33 @@ Task management API endpoints.
 Provides CRUD operations, filtering, search, and status updates for tasks.
 """
 
-from typing import List, Optional, Annotated
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
 from datetime import datetime
 
-from hopper.api.dependencies import get_db, PaginationParams
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from hopper.api.dependencies import PaginationParams, get_db
+from hopper.api.exceptions import (
+    InvalidStateTransitionException,
+    NotFoundException,
+    ValidationException,
+)
 from hopper.api.schemas.task import (
+    Priority,
     TaskCreate,
-    TaskUpdate,
-    TaskStatusUpdate,
-    TaskResponse,
-    TaskList,
     TaskFeedbackCreate,
     TaskFeedbackResponse,
-    Priority,
+    TaskList,
+    TaskResponse,
+    TaskStatusUpdate,
+    TaskUpdate,
+)
+from hopper.api.schemas.task import (
     Status as TaskStatus,
 )
-from hopper.api.exceptions import NotFoundException, ValidationException, InvalidStateTransitionException
-from hopper.models.task import Task, TaskFeedback, StatusEnum
-
+from hopper.models import Task, TaskFeedback
+from hopper.models import TaskStatus as StatusEnum
 
 router = APIRouter()
 
@@ -92,15 +98,15 @@ async def list_tasks(
     db: AsyncSession = Depends(get_db),
     pagination: PaginationParams = Depends(),
     # Filters
-    status_filter: Optional[List[TaskStatus]] = Query(None, alias="status"),
-    priority: Optional[List[Priority]] = Query(None),
-    project: Optional[str] = None,
-    tags: Optional[List[str]] = Query(None),
-    owner: Optional[str] = None,
-    requester: Optional[str] = None,
+    status_filter: list[TaskStatus] | None = Query(None, alias="status"),
+    priority: list[Priority] | None = Query(None),
+    project: str | None = None,
+    tags: list[str] | None = Query(None),
+    owner: str | None = None,
+    requester: str | None = None,
     # Sorting
     sort_by: str = Query("created_at", description="Field to sort by"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> TaskList:
     """
     List tasks with filtering, pagination, and sorting.
@@ -363,7 +369,11 @@ async def search_tasks(
     )
 
 
-@router.post("/tasks/{task_id}/feedback", response_model=TaskFeedbackResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/tasks/{task_id}/feedback",
+    response_model=TaskFeedbackResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_task_feedback(
     task_id: str,
     feedback_data: TaskFeedbackCreate,

@@ -1,12 +1,13 @@
 """
 Task repository with task-specific queries and operations.
 """
-from typing import Any, Dict, List, Optional
+
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from hopper.models.task import Task
+
 from .base import BaseRepository
 
 
@@ -18,8 +19,8 @@ class TaskRepository(BaseRepository[Task]):
         super().__init__(Task, session)
 
     def get_tasks_by_project(
-        self, project_id: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+        self, project_id: str, skip: int = 0, limit: int | None = None
+    ) -> list[Task]:
         """
         Get all tasks for a specific project.
 
@@ -34,8 +35,8 @@ class TaskRepository(BaseRepository[Task]):
         return self.filter(filters={"project": project_id}, skip=skip, limit=limit)
 
     def get_tasks_by_status(
-        self, status: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+        self, status: str, skip: int = 0, limit: int | None = None
+    ) -> list[Task]:
         """
         Get all tasks with a specific status.
 
@@ -49,9 +50,7 @@ class TaskRepository(BaseRepository[Task]):
         """
         return self.filter(filters={"status": status}, skip=skip, limit=limit)
 
-    def get_tasks_by_tag(
-        self, tag: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+    def get_tasks_by_tag(self, tag: str, skip: int = 0, limit: int | None = None) -> list[Task]:
         """
         Get all tasks with a specific tag.
 
@@ -84,9 +83,7 @@ class TaskRepository(BaseRepository[Task]):
             if task.tags and tag in (task.tags if isinstance(task.tags, list) else [])
         ]
 
-    def search_tasks(
-        self, query: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+    def search_tasks(self, query: str, skip: int = 0, limit: int | None = None) -> list[Task]:
         """
         Search tasks by title or description.
 
@@ -112,7 +109,7 @@ class TaskRepository(BaseRepository[Task]):
         result = self.session.execute(stmt)
         return list(result.scalars().all())
 
-    def update_status(self, task_id: str, status: str) -> Optional[Task]:
+    def update_status(self, task_id: str, status: str) -> Task | None:
         """
         Update task status.
 
@@ -126,8 +123,8 @@ class TaskRepository(BaseRepository[Task]):
         return self.update(task_id, status=status)
 
     def get_tasks_by_requester(
-        self, requester: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+        self, requester: str, skip: int = 0, limit: int | None = None
+    ) -> list[Task]:
         """
         Get all tasks created by a specific requester.
 
@@ -142,8 +139,8 @@ class TaskRepository(BaseRepository[Task]):
         return self.filter(filters={"requester": requester}, skip=skip, limit=limit)
 
     def get_tasks_by_owner(
-        self, owner: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+        self, owner: str, skip: int = 0, limit: int | None = None
+    ) -> list[Task]:
         """
         Get all tasks assigned to a specific owner.
 
@@ -157,9 +154,7 @@ class TaskRepository(BaseRepository[Task]):
         """
         return self.filter(filters={"owner": owner}, skip=skip, limit=limit)
 
-    def get_pending_tasks(
-        self, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+    def get_pending_tasks(self, skip: int = 0, limit: int | None = None) -> list[Task]:
         """
         Get all pending tasks.
 
@@ -172,9 +167,7 @@ class TaskRepository(BaseRepository[Task]):
         """
         return self.get_tasks_by_status("pending", skip=skip, limit=limit)
 
-    def get_unassigned_tasks(
-        self, skip: int = 0, limit: Optional[int] = None
-    ) -> List[Task]:
+    def get_unassigned_tasks(self, skip: int = 0, limit: int | None = None) -> list[Task]:
         """
         Get all tasks without an assigned project.
 
@@ -194,7 +187,7 @@ class TaskRepository(BaseRepository[Task]):
         result = self.session.execute(query)
         return list(result.scalars().all())
 
-    def assign_to_project(self, task_id: str, project: str) -> Optional[Task]:
+    def assign_to_project(self, task_id: str, project: str) -> Task | None:
         """
         Assign a task to a project.
 

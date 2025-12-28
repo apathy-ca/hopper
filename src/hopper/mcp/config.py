@@ -5,7 +5,7 @@ Handles configuration for the Hopper MCP server including API client setup,
 authentication, and server metadata.
 """
 
-from typing import Optional
+
 from pydantic_settings import BaseSettings
 
 
@@ -22,8 +22,8 @@ class MCPServerConfig(BaseSettings):
     api_timeout: int = 30
 
     # Authentication
-    api_token: Optional[str] = None
-    api_key: Optional[str] = None
+    api_token: str | None = None
+    api_key: str | None = None
 
     # Server behavior
     auto_route_tasks: bool = True

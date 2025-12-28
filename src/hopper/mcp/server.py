@@ -7,18 +7,19 @@ assistants to interact with Hopper for task management and routing.
 
 import json
 import logging
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, Resource, TextContent, ImageContent, EmbeddedResource
+from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Tool
 
 from .config import MCPServerConfig, get_mcp_config
 from .context import ServerContext
-from .tools import get_all_tools, call_tool as call_tool_handler
 from .resources import get_all_resources, read_resource
-
+from .tools import call_tool as call_tool_handler
+from .tools import get_all_tools
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 class HopperMCPServer:
     """MCP server for Hopper task management."""
 
-    def __init__(self, config: Optional[MCPServerConfig] = None):
+    def __init__(self, config: MCPServerConfig | None = None):
         """Initialize the Hopper MCP server.
 
         Args:
@@ -35,7 +36,7 @@ class HopperMCPServer:
         self.config = config or get_mcp_config()
         self.server = Server(self.config.server_name)
         self.context = ServerContext(self.config)
-        self.http_client: Optional[httpx.AsyncClient] = None
+        self.http_client: httpx.AsyncClient | None = None
 
         # Configure logging
         logging.basicConfig(
@@ -55,7 +56,9 @@ class HopperMCPServer:
             return get_all_tools()
 
         @self.server.call_tool()
-        async def call_tool(name: str, arguments: Any) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        async def call_tool(
+            name: str, arguments: Any
+        ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
             """Handle tool calls."""
             try:
                 client = await self._get_http_client()
@@ -76,11 +79,14 @@ class HopperMCPServer:
                 # Format result as JSON for better readability
                 return [TextContent(type="text", text=json.dumps(result, indent=2))]
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error executing tool {name}: {e.response.status_code} - {e.response.text}")
-                return [TextContent(
-                    type="text",
-                    text=f"API Error ({e.response.status_code}): {e.response.text}"
-                )]
+                logger.error(
+                    f"HTTP error executing tool {name}: {e.response.status_code} - {e.response.text}"
+                )
+                return [
+                    TextContent(
+                        type="text", text=f"API Error ({e.response.status_code}): {e.response.text}"
+                    )
+                ]
             except Exception as e:
                 logger.error(f"Error executing tool {name}: {e}", exc_info=True)
                 return [TextContent(type="text", text=f"Error: {str(e)}")]
@@ -100,7 +106,9 @@ class HopperMCPServer:
                 # Combine all text contents into a single string
                 return "\n".join(content.text for content in contents)
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error reading resource {uri}: {e.response.status_code} - {e.response.text}")
+                logger.error(
+                    f"HTTP error reading resource {uri}: {e.response.status_code} - {e.response.text}"
+                )
                 return f"API Error ({e.response.status_code}): {e.response.text}"
             except Exception as e:
                 logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
@@ -133,15 +141,13 @@ class HopperMCPServer:
         async with stdio_server() as (read_stream, write_stream):
             try:
                 await self.server.run(
-                    read_stream,
-                    write_stream,
-                    self.server.create_initialization_options()
+                    read_stream, write_stream, self.server.create_initialization_options()
                 )
             finally:
                 await self.cleanup()
 
 
-async def create_server(config: Optional[MCPServerConfig] = None) -> HopperMCPServer:
+async def create_server(config: MCPServerConfig | None = None) -> HopperMCPServer:
     """Create and initialize a Hopper MCP server.
 
     Args:

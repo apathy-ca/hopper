@@ -4,13 +4,19 @@ Database connection management for Hopper.
 Provides database engine creation, session management, and connection pooling
 configuration for both PostgreSQL (production) and SQLite (development).
 """
+
 import os
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
-from typing import AsyncGenerator, Generator, Optional
 
 from sqlalchemy import create_engine, event, pool
 from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session, sessionmaker
 
 # Default database URLs
@@ -40,7 +46,7 @@ def get_database_url(async_mode: bool = False) -> str:
     return url
 
 
-def create_sync_engine(database_url: Optional[str] = None, echo: bool = False) -> Engine:
+def create_sync_engine(database_url: str | None = None, echo: bool = False) -> Engine:
     """
     Create a synchronous SQLAlchemy engine.
 
@@ -86,7 +92,7 @@ def create_sync_engine(database_url: Optional[str] = None, echo: bool = False) -
 
 
 def create_async_engine_instance(
-    database_url: Optional[str] = None, echo: bool = False
+    database_url: str | None = None, echo: bool = False
 ) -> AsyncEngine:
     """
     Create an asynchronous SQLAlchemy engine for use with FastAPI.
@@ -125,8 +131,8 @@ def create_async_engine_instance(
 
 
 # Global session factory instances
-_sync_session_factory: Optional[sessionmaker[Session]] = None
-_async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+_sync_session_factory: sessionmaker[Session] | None = None
+_async_session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def get_sync_session_factory() -> sessionmaker[Session]:

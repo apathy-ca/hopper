@@ -8,12 +8,13 @@ Tests CLI integration including:
 - Configuration commands
 - Authentication flow
 """
+
 import pytest
 from click.testing import CliRunner
 from sqlalchemy.orm import Session
 
-from tests.factories import TaskFactory, ProjectFactory
-from tests.utils import assert_cli_success, assert_cli_error
+from tests.factories import ProjectFactory, TaskFactory
+from tests.utils import assert_cli_success
 
 
 @pytest.mark.integration
@@ -24,20 +25,26 @@ class TestCLITaskCommands:
         """Test 'hopper task add' command."""
         from hopper.cli.main import cli
 
-        result = cli_runner.invoke(cli, [
-            'task', 'add',
-            '--title', 'Test Task from CLI',
-            '--project', 'hopper',
-            '--priority', 'high'
-        ])
+        result = cli_runner.invoke(
+            cli,
+            [
+                "task",
+                "add",
+                "--title",
+                "Test Task from CLI",
+                "--project",
+                "hopper",
+                "--priority",
+                "high",
+            ],
+        )
 
         assert_cli_success(result, "Task created successfully")
 
         # Verify task in database
         from hopper.models.task import Task
-        task = db_session.query(Task).filter(
-            Task.title == "Test Task from CLI"
-        ).first()
+
+        task = db_session.query(Task).filter(Task.title == "Test Task from CLI").first()
         assert task is not None
         assert task.source == "cli"
 
@@ -47,7 +54,8 @@ class TestCLITaskCommands:
         TaskFactory.create_batch(5, session=db_session, project="hopper")
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, ['task', 'list'])
+
+        result = cli_runner.invoke(cli, ["task", "list"])
 
         assert_cli_success(result)
         assert "Test Task" in result.output
@@ -57,7 +65,8 @@ class TestCLITaskCommands:
         task = TaskFactory.create(session=db_session, title="CLI Test Task")
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, ['task', 'get', task.id])
+
+        result = cli_runner.invoke(cli, ["task", "get", task.id])
 
         assert_cli_success(result)
         assert "CLI Test Task" in result.output
@@ -67,10 +76,8 @@ class TestCLITaskCommands:
         task = TaskFactory.create(session=db_session, title="Original")
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, [
-            'task', 'update', task.id,
-            '--title', 'Updated from CLI'
-        ])
+
+        result = cli_runner.invoke(cli, ["task", "update", task.id, "--title", "Updated from CLI"])
 
         assert_cli_success(result)
 
@@ -82,9 +89,8 @@ class TestCLITaskCommands:
         task = TaskFactory.create(session=db_session)
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, [
-            'task', 'delete', task.id, '--confirm'
-        ])
+
+        result = cli_runner.invoke(cli, ["task", "delete", task.id, "--confirm"])
 
         assert_cli_success(result)
 
@@ -97,11 +103,9 @@ class TestCLIProjectCommands:
         """Test 'hopper project create' command."""
         from hopper.cli.main import cli
 
-        result = cli_runner.invoke(cli, [
-            'project', 'create',
-            '--name', 'CLI Test Project',
-            '--slug', 'cli-test'
-        ])
+        result = cli_runner.invoke(
+            cli, ["project", "create", "--name", "CLI Test Project", "--slug", "cli-test"]
+        )
 
         assert_cli_success(result)
 
@@ -110,7 +114,8 @@ class TestCLIProjectCommands:
         ProjectFactory.create_batch(3, session=db_session)
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, ['project', 'list'])
+
+        result = cli_runner.invoke(cli, ["project", "list"])
 
         assert_cli_success(result)
 
@@ -124,7 +129,8 @@ class TestCLIOutputFormatting:
         TaskFactory.create_batch(3, session=db_session)
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, ['task', 'list', '--format', 'table'])
+
+        result = cli_runner.invoke(cli, ["task", "list", "--format", "table"])
 
         assert_cli_success(result)
         assert "|" in result.output  # Table format uses pipes
@@ -134,11 +140,13 @@ class TestCLIOutputFormatting:
         TaskFactory.create_batch(3, session=db_session)
 
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, ['task', 'list', '--format', 'json'])
+
+        result = cli_runner.invoke(cli, ["task", "list", "--format", "json"])
 
         assert_cli_success(result)
 
         import json
+
         data = json.loads(result.output)
         assert isinstance(data, list)
 
@@ -151,11 +159,9 @@ class TestCLIAuthFlow:
         """Test CLI login command."""
         from hopper.cli.main import cli
 
-        result = cli_runner.invoke(cli, [
-            'login',
-            '--username', 'testuser',
-            '--password', 'testpassword'
-        ])
+        result = cli_runner.invoke(
+            cli, ["login", "--username", "testuser", "--password", "testpassword"]
+        )
 
         assert_cli_success(result, "Logged in successfully")
 
@@ -163,5 +169,5 @@ class TestCLIAuthFlow:
         """Test CLI logout command."""
         from hopper.cli.main import cli
 
-        result = cli_runner.invoke(cli, ['logout'])
+        result = cli_runner.invoke(cli, ["logout"])
         assert_cli_success(result)

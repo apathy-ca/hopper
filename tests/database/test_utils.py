@@ -1,16 +1,18 @@
 """
 Tests for database utilities.
 """
+
 import os
+
 import pytest
 
 from hopper.database.connection import create_sync_engine, reset_session_factories
 from hopper.database.init import init_database
 from hopper.database.utils import (
+    analyze_database_statistics,
     build_database_url,
     dump_schema,
     get_table_row_counts,
-    analyze_database_statistics,
     reset_database_dev_only,
 )
 
@@ -82,8 +84,9 @@ def test_dump_schema(test_engine):
 
 def test_get_table_row_counts(test_engine):
     """Test getting row counts for all tables."""
-    from hopper.database.repositories import TaskRepository, ProjectRepository
     from sqlalchemy.orm import sessionmaker
+
+    from hopper.database.repositories import ProjectRepository, TaskRepository
 
     SessionLocal = sessionmaker(bind=test_engine)
     session = SessionLocal()
@@ -126,8 +129,9 @@ def test_analyze_database_statistics(test_engine):
 
 def test_reset_database_dev_only(test_engine):
     """Test resetting database in development mode."""
-    from hopper.database.repositories import TaskRepository
     from sqlalchemy.orm import sessionmaker
+
+    from hopper.database.repositories import TaskRepository
 
     SessionLocal = sessionmaker(bind=test_engine)
     session = SessionLocal()

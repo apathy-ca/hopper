@@ -1,20 +1,19 @@
 """Task management commands."""
 
-from typing import Optional
 
 import click
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
 
+from hopper.cli.client import APIError, HopperClient
 from hopper.cli.main import Context
-from hopper.cli.client import HopperClient, APIError
 from hopper.cli.output import (
-    print_json,
-    print_task_table,
-    print_task_detail,
-    print_success,
+    console,
     print_error,
     print_info,
-    console,
+    print_json,
+    print_success,
+    print_task_detail,
+    print_task_table,
 )
 
 
@@ -31,18 +30,29 @@ def task() -> None:
 @task.command(name="add")
 @click.argument("title", required=False)
 @click.option("--description", "-d", help="Task description")
-@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]), default="medium", help="Task priority")
+@click.option(
+    "--priority",
+    "-p",
+    type=click.Choice(["low", "medium", "high", "urgent"]),
+    default="medium",
+    help="Task priority",
+)
 @click.option("--tag", "-t", multiple=True, help="Add tags (can be used multiple times)")
 @click.option("--project", help="Project ID or name")
-@click.option("--status", type=click.Choice(["open", "in_progress", "blocked", "completed", "cancelled"]), default="open", help="Initial status")
+@click.option(
+    "--status",
+    type=click.Choice(["open", "in_progress", "blocked", "completed", "cancelled"]),
+    default="open",
+    help="Initial status",
+)
 @click.pass_obj
 def add_task(
     ctx: Context,
-    title: Optional[str],
-    description: Optional[str],
+    title: str | None,
+    description: str | None,
     priority: str,
     tag: tuple[str, ...],
-    project: Optional[str],
+    project: str | None,
     status: str,
 ) -> None:
     """Create a new task.
@@ -107,15 +117,20 @@ def add_task(
 @click.option("--priority", help="Filter by priority")
 @click.option("--project", help="Filter by project ID or name")
 @click.option("--tag", multiple=True, help="Filter by tags")
-@click.option("--sort-by", type=click.Choice(["created", "updated", "priority", "status"]), default="created", help="Sort field")
+@click.option(
+    "--sort-by",
+    type=click.Choice(["created", "updated", "priority", "status"]),
+    default="created",
+    help="Sort field",
+)
 @click.option("--limit", type=int, default=50, help="Maximum number of tasks to show")
 @click.option("--compact", is_flag=True, help="Use compact table layout")
 @click.pass_obj
 def list_tasks(
     ctx: Context,
-    status: Optional[str],
-    priority: Optional[str],
-    project: Optional[str],
+    status: str | None,
+    priority: str | None,
+    project: str | None,
     tag: tuple[str, ...],
     sort_by: str,
     limit: int,
@@ -188,7 +203,9 @@ def get_task(ctx: Context, task_id: str) -> None:
 @click.argument("task_id")
 @click.option("--title", help="New title")
 @click.option("--description", help="New description")
-@click.option("--priority", type=click.Choice(["low", "medium", "high", "urgent"]), help="New priority")
+@click.option(
+    "--priority", type=click.Choice(["low", "medium", "high", "urgent"]), help="New priority"
+)
 @click.option("--add-tag", multiple=True, help="Add tags")
 @click.option("--remove-tag", multiple=True, help="Remove tags")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
@@ -196,9 +213,9 @@ def get_task(ctx: Context, task_id: str) -> None:
 def update_task(
     ctx: Context,
     task_id: str,
-    title: Optional[str],
-    description: Optional[str],
-    priority: Optional[str],
+    title: str | None,
+    description: str | None,
+    priority: str | None,
     add_tag: tuple[str, ...],
     remove_tag: tuple[str, ...],
     interactive: bool,
@@ -225,7 +242,7 @@ def update_task(
             priority = Prompt.ask(
                 "Priority",
                 choices=["low", "medium", "high", "urgent"],
-                default=current.get("priority", "medium")
+                default=current.get("priority", "medium"),
             )
 
         except APIError as e:
@@ -269,7 +286,9 @@ def update_task(
 
 @task.command(name="status")
 @click.argument("task_id")
-@click.argument("new_status", type=click.Choice(["open", "in_progress", "blocked", "completed", "cancelled"]))
+@click.argument(
+    "new_status", type=click.Choice(["open", "in_progress", "blocked", "completed", "cancelled"])
+)
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
 @click.pass_obj
 def change_status(ctx: Context, task_id: str, new_status: str, force: bool) -> None:
@@ -347,9 +366,9 @@ def delete_task(ctx: Context, task_id: str, force: bool) -> None:
 def search_tasks(
     ctx: Context,
     query: str,
-    status: Optional[str],
-    priority: Optional[str],
-    project: Optional[str],
+    status: str | None,
+    priority: str | None,
+    project: str | None,
     limit: int,
     compact: bool,
 ) -> None:
@@ -390,11 +409,13 @@ def search_tasks(
 @click.command(name="add")
 @click.argument("title", required=False)
 @click.option("--description", "-d", help="Task description")
-@click.option("--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]), default="medium")
+@click.option(
+    "--priority", "-p", type=click.Choice(["low", "medium", "high", "urgent"]), default="medium"
+)
 @click.option("--tag", "-t", multiple=True, help="Add tags")
 @click.option("--project", help="Project ID or name")
 @click.pass_context
-def add_shortcut(ctx: click.Context, title: Optional[str], **kwargs: any) -> None:
+def add_shortcut(ctx: click.Context, title: str | None, **kwargs: any) -> None:
     """Quick add task (shortcut for 'hopper task add')."""
     ctx.invoke(add_task, title=title, **kwargs)
 

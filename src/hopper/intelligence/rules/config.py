@@ -7,7 +7,7 @@ Provides default rules and rule management utilities.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 import yaml
@@ -38,7 +38,7 @@ class RuleConfigLoader:
     and creating Rule objects from configuration.
     """
 
-    def __init__(self, config_path: Optional[Path] = None):
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize the rule configuration loader.
 
@@ -46,9 +46,9 @@ class RuleConfigLoader:
             config_path: Path to configuration file. If None, uses default.
         """
         self.config_path = config_path
-        self._rules_cache: Dict[str, Rule] = {}
+        self._rules_cache: dict[str, Rule] = {}
 
-    def load_rules_from_file(self, file_path: Path) -> List[Rule]:
+    def load_rules_from_file(self, file_path: Path) -> list[Rule]:
         """
         Load rules from a YAML configuration file.
 
@@ -64,7 +64,7 @@ class RuleConfigLoader:
         logger.info(f"Loading rules from {file_path}")
 
         try:
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 config = yaml.safe_load(f)
 
         except FileNotFoundError:
@@ -75,7 +75,7 @@ class RuleConfigLoader:
 
         return self.load_rules_from_dict(config)
 
-    def load_rules_from_dict(self, config: Dict[str, Any]) -> List[Rule]:
+    def load_rules_from_dict(self, config: dict[str, Any]) -> list[Rule]:
         """
         Load rules from a configuration dictionary.
 
@@ -114,7 +114,7 @@ class RuleConfigLoader:
 
         return rules
 
-    def _create_rule_from_config(self, config: Dict[str, Any]) -> Rule:
+    def _create_rule_from_config(self, config: dict[str, Any]) -> Rule:
         """
         Create a Rule object from configuration dictionary.
 
@@ -165,7 +165,7 @@ class RuleConfigLoader:
             raise RuleConfigError(f"Unknown rule type: {rule_type}")
 
     def _create_keyword_rule(
-        self, config: Dict[str, Any], common_args: Dict[str, Any]
+        self, config: dict[str, Any], common_args: dict[str, Any]
     ) -> KeywordRule:
         """Create a KeywordRule from configuration."""
         if "keywords" not in config:
@@ -183,9 +183,7 @@ class RuleConfigLoader:
             **common_args,
         )
 
-    def _create_tag_rule(
-        self, config: Dict[str, Any], common_args: Dict[str, Any]
-    ) -> TagRule:
+    def _create_tag_rule(self, config: dict[str, Any], common_args: dict[str, Any]) -> TagRule:
         """Create a TagRule from configuration."""
         return TagRule(
             required_tags=config.get("required_tags"),
@@ -195,7 +193,7 @@ class RuleConfigLoader:
         )
 
     def _create_priority_rule(
-        self, config: Dict[str, Any], common_args: Dict[str, Any]
+        self, config: dict[str, Any], common_args: dict[str, Any]
     ) -> PriorityRule:
         """Create a PriorityRule from configuration."""
         return PriorityRule(
@@ -206,7 +204,7 @@ class RuleConfigLoader:
         )
 
     def _create_composite_rule(
-        self, config: Dict[str, Any], common_args: Dict[str, Any]
+        self, config: dict[str, Any], common_args: dict[str, Any]
     ) -> CompositeRule:
         """Create a CompositeRule from configuration."""
         if "operator" not in config:
@@ -234,7 +232,7 @@ class RuleConfigLoader:
             **common_args,
         )
 
-    def save_rules_to_file(self, rules: List[Rule], file_path: Path) -> None:
+    def save_rules_to_file(self, rules: list[Rule], file_path: Path) -> None:
         """
         Save rules to a YAML configuration file.
 
@@ -265,7 +263,7 @@ class RuleConfigLoader:
         except Exception as e:
             raise RuleConfigError(f"Failed to save rules: {e}")
 
-    def _rule_to_config_dict(self, rule: Rule) -> Dict[str, Any]:
+    def _rule_to_config_dict(self, rule: Rule) -> dict[str, Any]:
         """
         Convert a Rule object to configuration dictionary.
 
@@ -322,14 +320,12 @@ class RuleConfigLoader:
             config["type"] = "composite"
             config["operator"] = rule.operator.value
 
-            sub_rules_config = [
-                self._rule_to_config_dict(sub_rule) for sub_rule in rule.sub_rules
-            ]
+            sub_rules_config = [self._rule_to_config_dict(sub_rule) for sub_rule in rule.sub_rules]
             config["sub_rules"] = sub_rules_config
 
         return config
 
-    def validate_rule_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_rule_config(self, config: dict[str, Any]) -> list[str]:
         """
         Validate a rule configuration and return any errors.
 
@@ -399,7 +395,7 @@ class RuleConfigLoader:
         return errors
 
 
-def get_default_rules() -> List[Rule]:
+def get_default_rules() -> list[Rule]:
     """
     Get default routing rules for common scenarios.
 
@@ -460,7 +456,7 @@ def get_default_rules() -> List[Rule]:
     return rules
 
 
-def load_rules_or_defaults(config_path: Optional[Path] = None) -> List[Rule]:
+def load_rules_or_defaults(config_path: Path | None = None) -> list[Rule]:
     """
     Load rules from configuration file, or use defaults if file doesn't exist.
 

@@ -1,19 +1,18 @@
 """Instance management commands."""
 
-from typing import Optional
 
 import click
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
 
+from hopper.cli.client import APIError, HopperClient
 from hopper.cli.main import Context
-from hopper.cli.client import HopperClient, APIError
 from hopper.cli.output import (
-    print_json,
-    print_instance_tree,
-    print_success,
+    console,
     print_error,
     print_info,
-    console,
+    print_instance_tree,
+    print_json,
+    print_success,
 )
 
 
@@ -31,16 +30,21 @@ def instance() -> None:
 
 @instance.command(name="create")
 @click.argument("name", required=False)
-@click.option("--scope", type=click.Choice(["global", "project", "orchestration"]), required=True, help="Instance scope")
+@click.option(
+    "--scope",
+    type=click.Choice(["global", "project", "orchestration"]),
+    required=True,
+    help="Instance scope",
+)
 @click.option("--parent", help="Parent instance ID")
 @click.option("--config", help="Instance configuration (JSON)")
 @click.pass_obj
 def create_instance(
     ctx: Context,
-    name: Optional[str],
+    name: str | None,
     scope: str,
-    parent: Optional[str],
-    config: Optional[str],
+    parent: str | None,
+    config: str | None,
 ) -> None:
     """Create a new Hopper instance.
 
@@ -67,6 +71,7 @@ def create_instance(
 
     if config:
         import json
+
         try:
             instance_data["config"] = json.loads(config)
         except json.JSONDecodeError as e:
@@ -90,14 +95,16 @@ def create_instance(
 
 
 @instance.command(name="list")
-@click.option("--scope", type=click.Choice(["global", "project", "orchestration"]), help="Filter by scope")
+@click.option(
+    "--scope", type=click.Choice(["global", "project", "orchestration"]), help="Filter by scope"
+)
 @click.option("--parent", help="Filter by parent instance ID")
 @click.option("--limit", type=int, default=50, help="Maximum instances")
 @click.pass_obj
 def list_instances(
     ctx: Context,
-    scope: Optional[str],
-    parent: Optional[str],
+    scope: str | None,
+    parent: str | None,
     limit: int,
 ) -> None:
     """List Hopper instances.
@@ -126,8 +133,8 @@ def list_instances(
                 return
 
             # Display as simple table
-            from rich.table import Table
             from rich import box
+            from rich.table import Table
 
             table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
             table.add_column("ID", style="dim", width=8)
@@ -144,6 +151,7 @@ def list_instances(
                 parent_id = str(inst.get("parent_id", "—"))[:8] if inst.get("parent_id") else "—"
 
                 from hopper.cli.output import get_status_style
+
                 table.add_row(
                     inst_id,
                     name,
@@ -179,26 +187,28 @@ def get_instance(ctx: Context, instance_id: str) -> None:
             console.print(f"\n[bold cyan]Instance {inst.get('id', '')}[/bold cyan]")
             console.print(f"[bold]{inst.get('name', '')}[/bold]\n")
 
-            scope = inst.get('scope', '')
-            status = inst.get('status', 'inactive')
+            scope = inst.get("scope", "")
+            status = inst.get("status", "inactive")
             from hopper.cli.output import get_status_style
+
             console.print(f"[bold]Scope:[/bold] {scope}")
             console.print(f"[bold]Status:[/bold] [{get_status_style(status)}]{status}[/]")
 
-            if parent_id := inst.get('parent_id'):
+            if parent_id := inst.get("parent_id"):
                 console.print(f"[bold]Parent:[/bold] {parent_id}")
 
-            if config := inst.get('config'):
-                console.print(f"\n[bold]Configuration:[/bold]")
+            if config := inst.get("config"):
+                console.print("\n[bold]Configuration:[/bold]")
                 print_json(config)
 
-            if children := inst.get('children'):
+            if children := inst.get("children"):
                 console.print(f"\n[bold]Child Instances:[/bold] {len(children)}")
 
-            if queue_size := inst.get('queue_size'):
+            if queue_size := inst.get("queue_size"):
                 console.print(f"\n[bold]Task Queue:[/bold] {queue_size} task(s)")
 
             from hopper.cli.output import format_datetime
+
             console.print(f"\n[dim]Created: {format_datetime(inst.get('created_at'))}[/dim]")
 
             console.print()
@@ -211,7 +221,7 @@ def get_instance(ctx: Context, instance_id: str) -> None:
 @instance.command(name="tree")
 @click.option("--root", help="Root instance ID (default: show all)")
 @click.pass_obj
-def show_tree(ctx: Context, root: Optional[str]) -> None:
+def show_tree(ctx: Context, root: str | None) -> None:
     """Show instance hierarchy as a tree.
 
     Examples:
@@ -305,21 +315,26 @@ def get_status(ctx: Context, instance_id: str) -> None:
         if ctx.json_output:
             print_json(status)
         else:
-            console.print(f"\n[bold cyan]Instance Status[/bold cyan]\n")
+            console.print("\n[bold cyan]Instance Status[/bold cyan]\n")
 
-            state = status.get('status', 'unknown')
+            state = status.get("status", "unknown")
             from hopper.cli.output import get_status_style
+
             console.print(f"[bold]Status:[/bold] [{get_status_style(state)}]{state}[/]")
 
-            if uptime := status.get('uptime'):
+            if uptime := status.get("uptime"):
                 console.print(f"[bold]Uptime:[/bold] {uptime}")
 
-            if queue_size := status.get('queue_size'):
+            if queue_size := status.get("queue_size"):
                 console.print(f"[bold]Queue Size:[/bold] {queue_size}")
 
-            if health := status.get('health'):
-                health_color = "green" if health == "healthy" else "yellow" if health == "degraded" else "red"
-                console.print(f"[bold]Health:[/bold] [bold {health_color}]{health}[/bold {health_color}]")
+            if health := status.get("health"):
+                health_color = (
+                    "green" if health == "healthy" else "yellow" if health == "degraded" else "red"
+                )
+                console.print(
+                    f"[bold]Health:[/bold] [bold {health_color}]{health}[/bold {health_color}]"
+                )
 
             console.print()
 

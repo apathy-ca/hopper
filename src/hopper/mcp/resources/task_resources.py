@@ -5,7 +5,7 @@ Exposes tasks as MCP resources accessible via hopper://tasks/* URIs.
 """
 
 import json
-from typing import Any
+
 import httpx
 from mcp.types import Resource, TextContent
 
@@ -83,16 +83,12 @@ async def read_task_resource(
             "total": data.get("total", 0),
         }
 
-        return [TextContent(
-            type="text",
-            text=json.dumps(content, indent=2)
-        )]
+        return [TextContent(type="text", text=json.dumps(content, indent=2))]
 
     elif path in ["pending", "in_progress", "completed", "cancelled"]:
         # List tasks by status
         response = await client.get(
-            "/api/v1/tasks",
-            params={"status": path, "limit": default_limit}
+            "/api/v1/tasks", params={"status": path, "limit": default_limit}
         )
         response.raise_for_status()
         data = response.json()
@@ -105,10 +101,7 @@ async def read_task_resource(
             "total": data.get("total", 0),
         }
 
-        return [TextContent(
-            type="text",
-            text=json.dumps(content, indent=2)
-        )]
+        return [TextContent(type="text", text=json.dumps(content, indent=2))]
 
     else:
         # Assume it's a task ID
@@ -124,7 +117,4 @@ async def read_task_resource(
             "task": task,
         }
 
-        return [TextContent(
-            type="text",
-            text=json.dumps(content, indent=2)
-        )]
+        return [TextContent(type="text", text=json.dumps(content, indent=2))]

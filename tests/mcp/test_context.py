@@ -1,9 +1,6 @@
 """Tests for MCP server context management."""
 
-import pytest
-from pathlib import Path
 from hopper.mcp.context import ServerContext
-from hopper.mcp.config import MCPServerConfig
 
 
 class TestServerContext:

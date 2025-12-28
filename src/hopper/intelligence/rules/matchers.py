@@ -6,15 +6,14 @@ utilities used by the rules engine.
 """
 
 import re
-from typing import List, Optional, Set, Tuple
 
 
 def match_keywords(
     text: str,
-    keywords: List[str],
+    keywords: list[str],
     case_sensitive: bool = False,
     whole_word: bool = False,
-) -> Tuple[List[str], float]:
+) -> tuple[list[str], float]:
     """
     Match keywords in text.
 
@@ -53,11 +52,11 @@ def match_keywords(
 
 
 def match_tags(
-    task_tags: List[str],
-    required_tags: Optional[List[str]] = None,
-    optional_tags: Optional[List[str]] = None,
-    tag_patterns: Optional[List[str]] = None,
-) -> Tuple[bool, List[str], float]:
+    task_tags: list[str],
+    required_tags: list[str] | None = None,
+    optional_tags: list[str] | None = None,
+    tag_patterns: list[str] | None = None,
+) -> tuple[bool, list[str], float]:
     """
     Match tags with support for required, optional, and patterns.
 
@@ -122,11 +121,11 @@ def match_tags(
 
 
 def match_priority(
-    task_priority: Optional[str],
-    min_priority: Optional[str] = None,
-    max_priority: Optional[str] = None,
-    exact_priorities: Optional[List[str]] = None,
-) -> Tuple[bool, float]:
+    task_priority: str | None,
+    min_priority: str | None = None,
+    max_priority: str | None = None,
+    exact_priorities: list[str] | None = None,
+) -> tuple[bool, float]:
     """
     Match task priority against criteria.
 
@@ -184,7 +183,7 @@ def fuzzy_match(
     text: str,
     pattern: str,
     threshold: float = 0.7,
-) -> Tuple[bool, float]:
+) -> tuple[bool, float]:
     """
     Fuzzy string matching using simple similarity.
 
@@ -215,7 +214,7 @@ def match_pattern(
     text: str,
     pattern: str,
     case_sensitive: bool = False,
-) -> Tuple[bool, List[str]]:
+) -> tuple[bool, list[str]]:
     """
     Match a regex pattern in text.
 
@@ -244,10 +243,10 @@ def match_pattern(
 
 def extract_keywords(
     text: str,
-    stopwords: Optional[Set[str]] = None,
+    stopwords: set[str] | None = None,
     min_length: int = 3,
     max_keywords: int = 10,
-) -> List[str]:
+) -> list[str]:
     """
     Extract potential keywords from text.
 
@@ -269,11 +268,7 @@ def extract_keywords(
     words = re.findall(r"\b\w+\b", text.lower())
 
     # Filter stopwords and short words
-    keywords = [
-        word
-        for word in words
-        if word not in stopwords and len(word) >= min_length
-    ]
+    keywords = [word for word in words if word not in stopwords and len(word) >= min_length]
 
     # Count frequency
     word_freq = {}
@@ -318,7 +313,7 @@ def _calculate_similarity(text1: str, text2: str) -> float:
     return similarity
 
 
-def _get_default_stopwords() -> Set[str]:
+def _get_default_stopwords() -> set[str]:
     """
     Get default English stopwords.
 
@@ -350,7 +345,6 @@ def _get_default_stopwords() -> Set[str]:
         "was",
         "will",
         "with",
-        "the",
         "this",
         "but",
         "they",

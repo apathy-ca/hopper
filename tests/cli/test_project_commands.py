@@ -1,19 +1,15 @@
 """Tests for project management commands."""
 
-import pytest
-from click.testing import CliRunner
 from unittest.mock import Mock
+
+from click.testing import CliRunner
 
 from hopper.cli.main import cli
 
 
 def test_project_create(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     """Test creating a project."""
-    result = runner.invoke(
-        cli,
-        ["project", "create", "Test Project", "--json"],
-        obj=mock_config
-    )
+    result = runner.invoke(cli, ["project", "create", "Test Project", "--json"], obj=mock_config)
 
     assert result.exit_code == 0
     mock_client.create_project.assert_called_once()
@@ -24,7 +20,7 @@ def test_project_create_with_description(runner: CliRunner, mock_client: Mock, m
     result = runner.invoke(
         cli,
         ["project", "create", "Test Project", "--description", "Test desc", "--json"],
-        obj=mock_config
+        obj=mock_config,
     )
 
     assert result.exit_code == 0
@@ -60,9 +56,7 @@ def test_project_update(runner: CliRunner, mock_client: Mock, mock_config) -> No
     mock_client.update_project.return_value = {"id": "proj-123", "name": "Updated"}
 
     result = runner.invoke(
-        cli,
-        ["project", "update", "proj-123", "--name", "Updated name", "--json"],
-        obj=mock_config
+        cli, ["project", "update", "proj-123", "--name", "Updated name", "--json"], obj=mock_config
     )
 
     assert result.exit_code == 0
@@ -71,11 +65,7 @@ def test_project_update(runner: CliRunner, mock_client: Mock, mock_config) -> No
 
 def test_project_delete(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     """Test deleting a project."""
-    result = runner.invoke(
-        cli,
-        ["project", "delete", "proj-123", "--force"],
-        obj=mock_config
-    )
+    result = runner.invoke(cli, ["project", "delete", "proj-123", "--force"], obj=mock_config)
 
     assert result.exit_code == 0
     mock_client.delete_project.assert_called_once_with("proj-123")
@@ -83,11 +73,7 @@ def test_project_delete(runner: CliRunner, mock_client: Mock, mock_config) -> No
 
 def test_project_tasks(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     """Test listing project tasks."""
-    result = runner.invoke(
-        cli,
-        ["project", "tasks", "proj-123", "--json"],
-        obj=mock_config
-    )
+    result = runner.invoke(cli, ["project", "tasks", "proj-123", "--json"], obj=mock_config)
 
     assert result.exit_code == 0
     call_kwargs = mock_client.list_tasks.call_args[1]

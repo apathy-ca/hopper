@@ -1,11 +1,12 @@
 """
 Tests for TaskRepository.
 """
-import os
-import pytest
-from datetime import datetime
 
-from hopper.database.connection import create_sync_engine, get_sync_session, reset_session_factories
+import os
+
+import pytest
+
+from hopper.database.connection import create_sync_engine, reset_session_factories
 from hopper.database.init import init_database
 from hopper.database.repositories import TaskRepository
 
@@ -21,6 +22,7 @@ def test_session():
 
     # Create session manually instead of using the factory
     from sqlalchemy.orm import sessionmaker
+
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = SessionLocal()
 
@@ -131,7 +133,9 @@ def test_get_tasks_by_project(test_session):
     repo = TaskRepository(test_session)
 
     # Create some tasks
-    repo.create(id="task-1", title="Task 1", project="project-a", status="pending", priority="medium")
+    repo.create(
+        id="task-1", title="Task 1", project="project-a", status="pending", priority="medium"
+    )
     repo.create(id="task-2", title="Task 2", project="project-a", status="pending", priority="high")
     repo.create(id="task-3", title="Task 3", project="project-b", status="pending", priority="low")
 
@@ -146,9 +150,27 @@ def test_search_tasks(test_session):
     repo = TaskRepository(test_session)
 
     # Create some tasks
-    repo.create(id="task-1", title="Fix the bug", description="Bug in login", status="pending", priority="high")
-    repo.create(id="task-2", title="Add feature", description="New dashboard", status="pending", priority="medium")
-    repo.create(id="task-3", title="Bug report", description="Issue with API", status="pending", priority="low")
+    repo.create(
+        id="task-1",
+        title="Fix the bug",
+        description="Bug in login",
+        status="pending",
+        priority="high",
+    )
+    repo.create(
+        id="task-2",
+        title="Add feature",
+        description="New dashboard",
+        status="pending",
+        priority="medium",
+    )
+    repo.create(
+        id="task-3",
+        title="Bug report",
+        description="Issue with API",
+        status="pending",
+        priority="low",
+    )
 
     # Search for "bug"
     results = repo.search_tasks("bug")
@@ -173,7 +195,9 @@ def test_get_unassigned_tasks(test_session):
     repo = TaskRepository(test_session)
 
     # Create some tasks
-    repo.create(id="task-1", title="Task 1", project="project-a", status="pending", priority="medium")
+    repo.create(
+        id="task-1", title="Task 1", project="project-a", status="pending", priority="medium"
+    )
     repo.create(id="task-2", title="Task 2", status="pending", priority="high")
     repo.create(id="task-3", title="Task 3", status="pending", priority="low")
 

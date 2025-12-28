@@ -13,6 +13,7 @@ class TaskStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"
     DONE = "done"
+    CANCELLED = "cancelled"
 
 
 class TaskPriority(str, Enum):

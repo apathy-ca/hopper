@@ -1,10 +1,10 @@
 """
 Database utilities and helper functions.
 """
+
 import subprocess
 import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
@@ -16,10 +16,10 @@ from hopper.models import Base
 def build_database_url(
     db_type: str = "sqlite",
     host: str = "localhost",
-    port: Optional[int] = None,
+    port: int | None = None,
     database: str = "hopper",
-    username: Optional[str] = None,
-    password: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -45,7 +45,9 @@ def build_database_url(
         'postgresql://user:pass@localhost/hopper'
     """
     if db_type == "sqlite":
-        return f"sqlite:///./{database}" if not database.startswith("/") else f"sqlite:///{database}"
+        return (
+            f"sqlite:///./{database}" if not database.startswith("/") else f"sqlite:///{database}"
+        )
 
     # PostgreSQL
     if db_type == "postgresql":
@@ -71,9 +73,7 @@ def build_database_url(
     raise ValueError(f"Unsupported database type: {db_type}")
 
 
-def run_migration_runner(
-    target: str = "head", revision: Optional[str] = None
-) -> int:
+def run_migration_runner(target: str = "head", revision: str | None = None) -> int:
     """
     Run Alembic migrations using the alembic command.
 
@@ -96,7 +96,7 @@ def run_migration_runner(
     return result.returncode
 
 
-def dump_schema(engine: Optional[Engine] = None) -> Dict[str, Any]:
+def dump_schema(engine: Engine | None = None) -> dict[str, Any]:
     """
     Dump database schema information for debugging.
 
@@ -152,7 +152,7 @@ def dump_schema(engine: Optional[Engine] = None) -> Dict[str, Any]:
     return schema
 
 
-def reset_database_dev_only(engine: Optional[Engine] = None) -> None:
+def reset_database_dev_only(engine: Engine | None = None) -> None:
     """
     Reset database for development (DROP and CREATE all tables).
 
@@ -182,7 +182,7 @@ def reset_database_dev_only(engine: Optional[Engine] = None) -> None:
     Base.metadata.create_all(bind=engine)
 
 
-def vacuum_database(engine: Optional[Engine] = None) -> None:
+def vacuum_database(engine: Engine | None = None) -> None:
     """
     Run VACUUM on SQLite database to reclaim space.
 
@@ -201,7 +201,7 @@ def vacuum_database(engine: Optional[Engine] = None) -> None:
             conn.execute(text("VACUUM"))
 
 
-def get_table_row_counts(engine: Optional[Engine] = None) -> Dict[str, int]:
+def get_table_row_counts(engine: Engine | None = None) -> dict[str, int]:
     """
     Get row counts for all tables.
 
@@ -225,7 +225,7 @@ def get_table_row_counts(engine: Optional[Engine] = None) -> Dict[str, int]:
     return counts
 
 
-def analyze_database_statistics(engine: Optional[Engine] = None) -> Dict[str, Any]:
+def analyze_database_statistics(engine: Engine | None = None) -> dict[str, Any]:
     """
     Analyze database and return statistics.
 

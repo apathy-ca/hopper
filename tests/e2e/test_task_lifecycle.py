@@ -11,9 +11,10 @@ Tests the complete journey of a task through the system:
 7. Complete task
 8. Archive task
 """
+
 import pytest
-from fastapi.testclient import TestClient
 from click.testing import CliRunner
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 
@@ -22,11 +23,7 @@ class TestTaskLifecycle:
     """Test complete task lifecycle across all interfaces."""
 
     def test_complete_task_lifecycle(
-        self,
-        api_client: TestClient,
-        cli_runner: CliRunner,
-        mcp_client,
-        db_session: Session
+        self, api_client: TestClient, cli_runner: CliRunner, mcp_client, db_session: Session
     ):
         """
         Test task creation, update, and completion across MCP, API, and CLI.
@@ -40,8 +37,8 @@ class TestTaskLifecycle:
                 "title": "E2E Lifecycle Test Task",
                 "description": "Testing complete task lifecycle",
                 "project": "hopper",
-                "priority": "high"
-            }
+                "priority": "high",
+            },
         )
 
         # Simulate MCP response
@@ -49,6 +46,7 @@ class TestTaskLifecycle:
 
         # Step 2: Verify task appears in database
         from hopper.models.task import Task
+
         task = db_session.query(Task).filter(Task.id == task_id).first()
         assert task is not None
         assert task.title == "E2E Lifecycle Test Task"
@@ -56,15 +54,14 @@ class TestTaskLifecycle:
 
         # Step 3: Verify task appears in CLI listing
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, ['task', 'list', '--project', 'hopper'])
+
+        result = cli_runner.invoke(cli, ["task", "list", "--project", "hopper"])
         assert "E2E Lifecycle Test Task" in result.output
 
         # Step 4: Update task via CLI
-        result = cli_runner.invoke(cli, [
-            'task', 'update', task_id,
-            '--status', 'in_progress',
-            '--priority', 'urgent'
-        ])
+        result = cli_runner.invoke(
+            cli, ["task", "update", task_id, "--status", "in_progress", "--priority", "urgent"]
+        )
         assert result.exit_code == 0
 
         # Step 5: Verify update appears in API
@@ -79,14 +76,11 @@ class TestTaskLifecycle:
         # MCP should return updated task
 
         # Step 7: Complete task via API
-        response = api_client.post(
-            f"/api/v1/tasks/{task_id}/status",
-            json={"status": "completed"}
-        )
+        response = api_client.post(f"/api/v1/tasks/{task_id}/status", json={"status": "completed"})
         assert response.status_code == 200
 
         # Step 8: Archive task via CLI
-        result = cli_runner.invoke(cli, ['task', 'delete', task_id, '--confirm'])
+        result = cli_runner.invoke(cli, ["task", "delete", task_id, "--confirm"])
         assert result.exit_code == 0
 
         # Verify final state in database
@@ -94,10 +88,7 @@ class TestTaskLifecycle:
         assert task.status == "archived"
 
     def test_task_lifecycle_with_routing(
-        self,
-        api_client: TestClient,
-        cli_runner: CliRunner,
-        db_session: Session
+        self, api_client: TestClient, cli_runner: CliRunner, db_session: Session
     ):
         """Test task lifecycle including routing step."""
         # Create unrouted task via API
@@ -105,58 +96,45 @@ class TestTaskLifecycle:
             "/api/v1/tasks",
             json={
                 "title": "Task needing routing",
-                "description": "This task should be routed automatically"
-            }
+                "description": "This task should be routed automatically",
+            },
         )
         assert response.status_code == 201
         task_id = response.json()["id"]
 
         # Route task via API
-        response = api_client.post(
-            f"/api/v1/tasks/{task_id}/route",
-            json={"strategy": "rules"}
-        )
+        response = api_client.post(f"/api/v1/tasks/{task_id}/route", json={"strategy": "rules"})
         assert response.status_code == 200
         routing = response.json()
         assert routing["destination"] is not None
 
         # Verify routing in database
         from hopper.models.task import Task
+
         task = db_session.query(Task).filter(Task.id == task_id).first()
         assert task.project == routing["destination"]
         assert task.status == "routed"
 
         # Verify visible in CLI with correct project
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, [
-            'task', 'list',
-            '--project', routing["destination"]
-        ])
+
+        result = cli_runner.invoke(cli, ["task", "list", "--project", routing["destination"]])
         assert "Task needing routing" in result.output
 
     def test_multi_interface_consistency(
-        self,
-        api_client: TestClient,
-        cli_runner: CliRunner,
-        db_session: Session
+        self, api_client: TestClient, cli_runner: CliRunner, db_session: Session
     ):
         """Test that updates via one interface are visible in all others."""
         # Create via API
         response = api_client.post(
-            "/api/v1/tasks",
-            json={
-                "title": "Multi-interface test",
-                "project": "hopper"
-            }
+            "/api/v1/tasks", json={"title": "Multi-interface test", "project": "hopper"}
         )
         task_id = response.json()["id"]
 
         # Update via CLI
         from hopper.cli.main import cli
-        result = cli_runner.invoke(cli, [
-            'task', 'update', task_id,
-            '--title', 'Updated title'
-        ])
+
+        result = cli_runner.invoke(cli, ["task", "update", task_id, "--title", "Updated title"])
         assert result.exit_code == 0
 
         # Verify via API
@@ -165,5 +143,6 @@ class TestTaskLifecycle:
 
         # Verify in database
         from hopper.models.task import Task
+
         task = db_session.query(Task).filter(Task.id == task_id).first()
         assert task.title == "Updated title"

@@ -10,7 +10,7 @@ Enables continuous improvement by:
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from hopper.intelligence.decision_recorder import (
     DecisionRecord,
@@ -38,10 +38,10 @@ class FeedbackCollector:
         self,
         decision_id: str,
         correct: bool,
-        actual_destination: Optional[str] = None,
-        rating: Optional[float] = None,
-        notes: Optional[str] = None,
-        feedback_by: Optional[str] = None,
+        actual_destination: str | None = None,
+        rating: float | None = None,
+        notes: str | None = None,
+        feedback_by: str | None = None,
     ) -> DecisionFeedback:
         """
         Provide feedback on a routing decision.
@@ -98,10 +98,10 @@ class FeedbackCollector:
 
     async def get_feedback_summary(
         self,
-        strategy: Optional[DecisionStrategy] = None,
-        destination: Optional[str] = None,
-        days: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        strategy: DecisionStrategy | None = None,
+        destination: str | None = None,
+        days: int | None = None,
+    ) -> dict[str, Any]:
         """
         Get summary of feedback.
 
@@ -157,14 +157,12 @@ class FeedbackCollector:
             "incorrect_feedback": incorrect_feedback,
             "accuracy": accuracy,
             "average_rating": avg_rating,
-            "feedback_coverage": (
-                total_feedback / total_decisions if total_decisions > 0 else 0.0
-            ),
+            "feedback_coverage": (total_feedback / total_decisions if total_decisions > 0 else 0.0),
         }
 
     async def get_problematic_routes(
         self, min_samples: int = 5, max_accuracy: float = 0.7
-    ) -> List[Tuple[str, float, int]]:
+    ) -> list[tuple[str, float, int]]:
         """
         Identify routes with low accuracy.
 
@@ -207,7 +205,7 @@ class FeedbackCollector:
 
     async def get_high_performing_routes(
         self, min_samples: int = 5, min_accuracy: float = 0.9
-    ) -> List[Tuple[str, float, int]]:
+    ) -> list[tuple[str, float, int]]:
         """
         Identify routes with high accuracy.
 
@@ -251,7 +249,7 @@ class FeedbackCollector:
     async def get_confidence_calibration(
         self,
         bins: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Analyze how well confidence scores match actual accuracy.
 
@@ -298,16 +296,14 @@ class FeedbackCollector:
                 "expected_accuracy": bin_center,
                 "actual_accuracy": accuracy,
                 "sample_count": count,
-                "calibration_error": (
-                    abs(bin_center - accuracy) if accuracy is not None else None
-                ),
+                "calibration_error": (abs(bin_center - accuracy) if accuracy is not None else None),
             }
 
         return calibration
 
     async def get_feedback_trends(
         self, days: int = 30, interval_days: int = 7
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> dict[str, list[dict[str, Any]]]:
         """
         Get feedback trends over time.
 
@@ -336,9 +332,7 @@ class FeedbackCollector:
         trends = []
 
         for start, end in intervals:
-            interval_records = [
-                r for r in recent_records if start <= r.recorded_at < end
-            ]
+            interval_records = [r for r in recent_records if start <= r.recorded_at < end]
 
             total = len(interval_records)
             total_feedback = 0
@@ -364,9 +358,7 @@ class FeedbackCollector:
 
         return {"intervals": trends}
 
-    async def suggest_rule_improvements(
-        self, min_samples: int = 10
-    ) -> List[Dict[str, Any]]:
+    async def suggest_rule_improvements(self, min_samples: int = 10) -> list[dict[str, Any]]:
         """
         Suggest improvements to routing rules based on feedback.
 
@@ -410,11 +402,11 @@ class FeedbackCollector:
 
         return suggestions
 
-    def _find_common_keywords(self, records: List[DecisionRecord]) -> List[str]:
+    def _find_common_keywords(self, records: list[DecisionRecord]) -> list[str]:
         """Find common keywords in task titles/descriptions."""
         # Simple keyword extraction (could be enhanced)
-        from collections import Counter
         import re
+        from collections import Counter
 
         all_words = []
 
@@ -432,7 +424,7 @@ class FeedbackCollector:
 
         return [word for word, count in most_common if count >= 2]
 
-    def _find_common_tags(self, records: List[DecisionRecord]) -> List[str]:
+    def _find_common_tags(self, records: list[DecisionRecord]) -> list[str]:
         """Find common tags in tasks."""
         from collections import Counter
 
@@ -448,7 +440,7 @@ class FeedbackCollector:
 
 
 # Global feedback collector instance
-_collector: Optional[FeedbackCollector] = None
+_collector: FeedbackCollector | None = None
 
 
 def get_feedback_collector() -> FeedbackCollector:
@@ -469,10 +461,10 @@ def get_feedback_collector() -> FeedbackCollector:
 async def provide_feedback(
     decision_id: str,
     correct: bool,
-    actual_destination: Optional[str] = None,
-    rating: Optional[float] = None,
-    notes: Optional[str] = None,
-    feedback_by: Optional[str] = None,
+    actual_destination: str | None = None,
+    rating: float | None = None,
+    notes: str | None = None,
+    feedback_by: str | None = None,
 ) -> DecisionFeedback:
     """
     Provide feedback on a routing decision using the global collector.

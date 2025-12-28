@@ -5,8 +5,8 @@ MCP tools and server implementation for Hopper.
 """
 
 from .config import MCPServerConfig, get_mcp_config
-from .server import HopperMCPServer, create_server
 from .context import ServerContext
+from .server import HopperMCPServer, create_server
 
 __all__ = [
     "MCPServerConfig",

@@ -5,11 +5,12 @@ Tests the task creation, listing, updating, and status management tools.
 """
 
 import pytest
+
 from hopper.mcp.tools.task_tools import (
-    get_task_tools,
     create_task,
-    list_tasks,
     get_task,
+    get_task_tools,
+    list_tasks,
     update_task,
     update_task_status,
 )
@@ -110,9 +111,7 @@ class TestListTasks:
     @pytest.mark.asyncio
     async def test_list_tasks_default(self, mock_http_client, mock_http_response, sample_task_list):
         """Test listing tasks with default parameters."""
-        mock_http_client.get.return_value = mock_http_response(
-            json_data=sample_task_list
-        )
+        mock_http_client.get.return_value = mock_http_response(json_data=sample_task_list)
 
         result = await list_tasks(
             client=mock_http_client,
@@ -126,9 +125,7 @@ class TestListTasks:
     @pytest.mark.asyncio
     async def test_list_tasks_with_filters(self, mock_http_client, mock_http_response):
         """Test listing tasks with filters."""
-        mock_http_client.get.return_value = mock_http_response(
-            json_data={"tasks": [], "total": 0}
-        )
+        mock_http_client.get.return_value = mock_http_response(json_data={"tasks": [], "total": 0})
 
         await list_tasks(
             client=mock_http_client,
@@ -157,9 +154,7 @@ class TestGetTask:
     @pytest.mark.asyncio
     async def test_get_task_success(self, mock_http_client, mock_http_response, sample_task):
         """Test getting a specific task."""
-        mock_http_client.get.return_value = mock_http_response(
-            json_data=sample_task
-        )
+        mock_http_client.get.return_value = mock_http_response(json_data=sample_task)
 
         result = await get_task(
             client=mock_http_client,

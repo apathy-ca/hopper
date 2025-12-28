@@ -8,15 +8,17 @@ Tests MCP tool integration including:
 - Error handling in MCP
 - Context preservation
 """
-import pytest
+
 from unittest.mock import Mock
+
+import pytest
 from sqlalchemy.orm import Session
 
-from tests.factories import TaskFactory, ProjectFactory
+from tests.factories import ProjectFactory, TaskFactory
 from tests.utils import (
+    assert_mcp_tool_response_valid,
     build_mcp_tool_call,
     build_mcp_tool_response,
-    assert_mcp_tool_response_valid,
 )
 
 
@@ -33,8 +35,8 @@ class TestMCPTaskTools:
                 "description": "Add MCP support to Hopper",
                 "project": "hopper",
                 "priority": "high",
-                "tags": {"mcp": True, "backend": True}
-            }
+                "tags": ["mcp", "backend"],
+            },
         )
 
         # Simulate MCP tool execution
@@ -45,7 +47,7 @@ class TestMCPTaskTools:
                 "title": "Implement MCP integration",
                 "project": "hopper",
                 "status": "pending",
-                "priority": "high"
+                "priority": "high",
             }
         }
 
@@ -53,9 +55,8 @@ class TestMCPTaskTools:
 
         # Verify task created in database
         from hopper.models.task import Task
-        task = db_session.query(Task).filter(
-            Task.id == "task-mcp-001"
-        ).first()
+
+        task = db_session.query(Task).filter(Task.id == "task-mcp-001").first()
         assert task is not None
         assert task.title == "Implement MCP integration"
         assert task.source == "mcp"  # Should mark source as MCP
@@ -66,20 +67,13 @@ class TestMCPTaskTools:
         TaskFactory.create_batch(5, session=db_session, project="hopper")
 
         tool_call = build_mcp_tool_call(
-            "hopper_list_tasks",
-            {"project": "hopper", "status": "pending"}
+            "hopper_list_tasks", {"project": "hopper", "status": "pending"}
         )
 
         response = {
             "result": {
-                "tasks": [
-                    {
-                        "id": "task-1",
-                        "title": "Task 1",
-                        "status": "pending"
-                    }
-                ],
-                "total": 5
+                "tasks": [{"id": "task-1", "title": "Task 1", "status": "pending"}],
+                "total": 5,
             }
         }
 
@@ -88,15 +82,9 @@ class TestMCPTaskTools:
 
     def test_hopper_get_task(self, mcp_client: Mock, db_session: Session):
         """Test getting task details via MCP tool."""
-        task = TaskFactory.create(
-            session=db_session,
-            title="Test Task for MCP"
-        )
+        task = TaskFactory.create(session=db_session, title="Test Task for MCP")
 
-        tool_call = build_mcp_tool_call(
-            "hopper_get_task",
-            {"task_id": task.id}
-        )
+        tool_call = build_mcp_tool_call("hopper_get_task", {"task_id": task.id})
 
         response = {
             "result": {
@@ -104,7 +92,7 @@ class TestMCPTaskTools:
                 "title": "Test Task for MCP",
                 "description": task.description,
                 "project": task.project,
-                "status": task.status
+                "status": task.status,
             }
         }
 
@@ -113,28 +101,14 @@ class TestMCPTaskTools:
 
     def test_hopper_update_task(self, mcp_client: Mock, db_session: Session):
         """Test updating a task via MCP tool."""
-        task = TaskFactory.create(
-            session=db_session,
-            title="Original Title",
-            status="pending"
-        )
+        task = TaskFactory.create(session=db_session, title="Original Title", status="pending")
 
         tool_call = build_mcp_tool_call(
             "hopper_update_task",
-            {
-                "task_id": task.id,
-                "title": "Updated via MCP",
-                "status": "in_progress"
-            }
+            {"task_id": task.id, "title": "Updated via MCP", "status": "in_progress"},
         )
 
-        response = {
-            "result": {
-                "id": task.id,
-                "title": "Updated via MCP",
-                "status": "in_progress"
-            }
-        }
+        response = {"result": {"id": task.id, "title": "Updated via MCP", "status": "in_progress"}}
 
         assert_mcp_tool_response_valid(response)
 
@@ -148,11 +122,7 @@ class TestMCPTaskTools:
         task = TaskFactory.create(session=db_session, status="pending")
 
         tool_call = build_mcp_tool_call(
-            "hopper_update_task_status",
-            {
-                "task_id": task.id,
-                "status": "completed"
-            }
+            "hopper_update_task_status", {"task_id": task.id, "status": "completed"}
         )
 
         response = {"result": {"status": "completed"}}
@@ -176,7 +146,7 @@ class TestMCPProjectTools:
             "result": [
                 {"id": "proj-1", "name": "Project 1", "slug": "project-1"},
                 {"id": "proj-2", "name": "Project 2", "slug": "project-2"},
-                {"id": "proj-3", "name": "Project 3", "slug": "project-3"}
+                {"id": "proj-3", "name": "Project 3", "slug": "project-3"},
             ]
         }
 
@@ -187,18 +157,9 @@ class TestMCPProjectTools:
         """Test getting project details via MCP."""
         project = ProjectFactory.create(session=db_session, name="Hopper Project")
 
-        tool_call = build_mcp_tool_call(
-            "hopper_get_project",
-            {"project_id": project.id}
-        )
+        tool_call = build_mcp_tool_call("hopper_get_project", {"project_id": project.id})
 
-        response = {
-            "result": {
-                "id": project.id,
-                "name": "Hopper Project",
-                "slug": project.slug
-            }
-        }
+        response = {"result": {"id": project.id, "name": "Hopper Project", "slug": project.slug}}
 
         assert_mcp_tool_response_valid(response)
 
@@ -209,15 +170,15 @@ class TestMCPProjectTools:
             {
                 "name": "New Project from MCP",
                 "slug": "new-mcp-project",
-                "description": "Created via MCP tool"
-            }
+                "description": "Created via MCP tool",
+            },
         )
 
         response = {
             "result": {
                 "id": "proj-mcp-001",
                 "name": "New Project from MCP",
-                "slug": "new-mcp-project"
+                "slug": "new-mcp-project",
             }
         }
 
@@ -228,17 +189,9 @@ class TestMCPProjectTools:
         project = ProjectFactory.create(session=db_session, slug="hopper")
         TaskFactory.create_batch(5, session=db_session, project="hopper")
 
-        tool_call = build_mcp_tool_call(
-            "hopper_get_project_tasks",
-            {"project_id": project.id}
-        )
+        tool_call = build_mcp_tool_call("hopper_get_project_tasks", {"project_id": project.id})
 
-        response = {
-            "result": {
-                "tasks": [],
-                "total": 5
-            }
-        }
+        response = {"result": {"tasks": [], "total": 5}}
 
         assert_mcp_tool_response_valid(response)
 
@@ -250,17 +203,11 @@ class TestMCPRoutingTools:
     def test_hopper_route_task(self, mcp_client: Mock, db_session: Session):
         """Test routing a task via MCP tool."""
         task = TaskFactory.create(
-            session=db_session,
-            title="Task about routing logic",
-            project=None
+            session=db_session, title="Task about routing logic", project=None
         )
 
         tool_call = build_mcp_tool_call(
-            "hopper_route_task",
-            {
-                "task_id": task.id,
-                "strategy": "rules"
-            }
+            "hopper_route_task", {"task_id": task.id, "strategy": "rules"}
         )
 
         response = {
@@ -269,7 +216,7 @@ class TestMCPRoutingTools:
                 "destination": "hopper",
                 "confidence": 0.85,
                 "reasoning": "Matched keyword 'routing'",
-                "strategy": "rules"
+                "strategy": "rules",
             }
         }
 
@@ -283,23 +230,12 @@ class TestMCPRoutingTools:
         """Test getting routing suggestions via MCP."""
         task = TaskFactory.create(session=db_session, project=None)
 
-        tool_call = build_mcp_tool_call(
-            "hopper_get_routing_suggestions",
-            {"task_id": task.id}
-        )
+        tool_call = build_mcp_tool_call("hopper_get_routing_suggestions", {"task_id": task.id})
 
         response = {
             "result": [
-                {
-                    "destination": "hopper",
-                    "confidence": 0.85,
-                    "reasoning": "Keyword match"
-                },
-                {
-                    "destination": "backend",
-                    "confidence": 0.65,
-                    "reasoning": "Tag match"
-                }
+                {"destination": "hopper", "confidence": 0.85, "reasoning": "Keyword match"},
+                {"destination": "backend", "confidence": 0.65, "reasoning": "Tag match"},
             ]
         }
 
@@ -314,16 +250,11 @@ class TestMCPErrorHandling:
     def test_create_task_with_invalid_data(self, mcp_client: Mock):
         """Test MCP tool returns error for invalid task data."""
         tool_call = build_mcp_tool_call(
-            "hopper_create_task",
-            {
-                "title": "",  # Empty title
-                "priority": "invalid_priority"
-            }
+            "hopper_create_task", {"title": "", "priority": "invalid_priority"}  # Empty title
         )
 
         error_response = build_mcp_tool_response(
-            "Invalid task data: title cannot be empty",
-            is_error=True
+            "Invalid task data: title cannot be empty", is_error=True
         )
 
         assert_mcp_tool_response_valid(error_response)
@@ -331,14 +262,10 @@ class TestMCPErrorHandling:
 
     def test_get_nonexistent_task(self, mcp_client: Mock):
         """Test MCP tool returns error for non-existent task."""
-        tool_call = build_mcp_tool_call(
-            "hopper_get_task",
-            {"task_id": "nonexistent-task-id"}
-        )
+        tool_call = build_mcp_tool_call("hopper_get_task", {"task_id": "nonexistent-task-id"})
 
         error_response = build_mcp_tool_response(
-            "Task not found: nonexistent-task-id",
-            is_error=True
+            "Task not found: nonexistent-task-id", is_error=True
         )
 
         assert_mcp_tool_response_valid(error_response)
@@ -346,15 +273,9 @@ class TestMCPErrorHandling:
 
     def test_missing_required_parameter(self, mcp_client: Mock):
         """Test MCP tool returns error for missing required parameters."""
-        tool_call = build_mcp_tool_call(
-            "hopper_create_task",
-            {}  # Missing required 'title'
-        )
+        tool_call = build_mcp_tool_call("hopper_create_task", {})  # Missing required 'title'
 
-        error_response = build_mcp_tool_response(
-            "Missing required parameter: title",
-            is_error=True
-        )
+        error_response = build_mcp_tool_response("Missing required parameter: title", is_error=True)
 
         assert_mcp_tool_response_valid(error_response)
 
@@ -364,15 +285,11 @@ class TestMCPErrorHandling:
 
         tool_call = build_mcp_tool_call(
             "hopper_update_task_status",
-            {
-                "task_id": task.id,
-                "status": "pending"  # Invalid: can't go back to pending
-            }
+            {"task_id": task.id, "status": "pending"},  # Invalid: can't go back to pending
         )
 
         error_response = build_mcp_tool_response(
-            "Invalid status transition: completed -> pending",
-            is_error=True
+            "Invalid status transition: completed -> pending", is_error=True
         )
 
         assert_mcp_tool_response_valid(error_response)
@@ -395,7 +312,7 @@ class TestMCPConversationContext:
             {
                 "title": "Task in active project"
                 # Note: no 'project' specified
-            }
+            },
         )
 
         # Should use active project from context
@@ -403,7 +320,7 @@ class TestMCPConversationContext:
             "result": {
                 "id": "task-001",
                 "title": "Task in active project",
-                "project": "hopper"  # Should use context project
+                "project": "hopper",  # Should use context project
             }
         }
 
@@ -415,23 +332,17 @@ class TestMCPConversationContext:
         """Test that tasks created via MCP track conversation ID."""
         mcp_context["conversation_id"] = "conv-123"
 
-        tool_call = build_mcp_tool_call(
-            "hopper_create_task",
-            {"title": "Task from conversation"}
-        )
+        tool_call = build_mcp_tool_call("hopper_create_task", {"title": "Task from conversation"})
 
         # Verify task has conversation_id set
         from hopper.models.task import Task
-        task = db_session.query(Task).filter(
-            Task.conversation_id == "conv-123"
-        ).first()
+
+        task = db_session.query(Task).filter(Task.conversation_id == "conv-123").first()
 
         assert task is not None
         assert task.conversation_id == mcp_context["conversation_id"]
 
-    def test_session_state_persistence(
-        self, mcp_client: Mock, mcp_context: dict
-    ):
+    def test_session_state_persistence(self, mcp_client: Mock, mcp_context: dict):
         """Test that session state persists across tool calls."""
         # Store state in context
         mcp_context["session_state"]["last_task_id"] = "task-123"
@@ -439,18 +350,13 @@ class TestMCPConversationContext:
         # Subsequent call should have access to state
         assert mcp_context["session_state"]["last_task_id"] == "task-123"
 
-    def test_switching_active_project(
-        self, mcp_client: Mock, mcp_context: dict
-    ):
+    def test_switching_active_project(self, mcp_client: Mock, mcp_context: dict):
         """Test switching active project in context."""
         # Start with one project
         mcp_context["active_project"] = "hopper"
 
         # Tool to switch project
-        tool_call = build_mcp_tool_call(
-            "hopper_set_active_project",
-            {"project": "czarina"}
-        )
+        tool_call = build_mcp_tool_call("hopper_set_active_project", {"project": "czarina"})
 
         # Context should update
         mcp_context["active_project"] = "czarina"

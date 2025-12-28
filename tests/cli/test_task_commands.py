@@ -1,8 +1,8 @@
 """Tests for task management commands."""
 
-import pytest
-from click.testing import CliRunner
 from unittest.mock import Mock
+
+from click.testing import CliRunner
 
 from hopper.cli.main import cli
 
@@ -20,13 +20,18 @@ def test_task_add_with_options(runner: CliRunner, mock_client: Mock, mock_config
     result = runner.invoke(
         cli,
         [
-            "task", "add", "Test task",
-            "--priority", "high",
-            "--tag", "bug",
-            "--tag", "urgent",
-            "--json"
+            "task",
+            "add",
+            "Test task",
+            "--priority",
+            "high",
+            "--tag",
+            "bug",
+            "--tag",
+            "urgent",
+            "--json",
         ],
-        obj=mock_config
+        obj=mock_config,
     )
 
     assert result.exit_code == 0
@@ -47,9 +52,7 @@ def test_task_list(runner: CliRunner, mock_client: Mock, mock_config) -> None:
 def test_task_list_with_filters(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     """Test listing tasks with filters."""
     result = runner.invoke(
-        cli,
-        ["task", "list", "--status", "open", "--priority", "high", "--json"],
-        obj=mock_config
+        cli, ["task", "list", "--status", "open", "--priority", "high", "--json"], obj=mock_config
     )
 
     assert result.exit_code == 0
@@ -71,9 +74,7 @@ def test_task_update(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     mock_client.update_task.return_value = {"id": "task-123", "title": "Updated"}
 
     result = runner.invoke(
-        cli,
-        ["task", "update", "task-123", "--title", "Updated title", "--json"],
-        obj=mock_config
+        cli, ["task", "update", "task-123", "--title", "Updated title", "--json"], obj=mock_config
     )
 
     assert result.exit_code == 0
@@ -85,9 +86,7 @@ def test_task_status(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     mock_client.update_task.return_value = {"id": "task-123", "status": "completed"}
 
     result = runner.invoke(
-        cli,
-        ["task", "status", "task-123", "completed", "--force", "--json"],
-        obj=mock_config
+        cli, ["task", "status", "task-123", "completed", "--force", "--json"], obj=mock_config
     )
 
     assert result.exit_code == 0
@@ -97,11 +96,7 @@ def test_task_status(runner: CliRunner, mock_client: Mock, mock_config) -> None:
 
 def test_task_delete(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     """Test deleting a task."""
-    result = runner.invoke(
-        cli,
-        ["task", "delete", "task-123", "--force"],
-        obj=mock_config
-    )
+    result = runner.invoke(cli, ["task", "delete", "task-123", "--force"], obj=mock_config)
 
     assert result.exit_code == 0
     mock_client.delete_task.assert_called_once_with("task-123")

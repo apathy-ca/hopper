@@ -5,31 +5,32 @@ Exports all MCP tool definitions and handlers for task management,
 project management, and routing.
 """
 
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import httpx
 from mcp.types import Tool
 
+from .project_tools import (
+    create_project,
+    get_project,
+    get_project_tasks,
+    get_project_tools,
+    list_projects,
+)
+from .routing_tools import (
+    get_routing_suggestions,
+    get_routing_tools,
+    route_task,
+)
 from .task_tools import (
-    get_task_tools,
     create_task,
-    list_tasks,
     get_task,
+    get_task_tools,
+    list_tasks,
     update_task,
     update_task_status,
 )
-from .project_tools import (
-    get_project_tools,
-    list_projects,
-    get_project,
-    create_project,
-    get_project_tasks,
-)
-from .routing_tools import (
-    get_routing_tools,
-    route_task,
-    get_routing_suggestions,
-)
-
 
 # Tool registry mapping tool names to their handler functions
 ToolHandler = Callable[[httpx.AsyncClient, dict[str, Any]], Awaitable[dict[str, Any]]]

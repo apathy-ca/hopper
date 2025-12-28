@@ -9,10 +9,9 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .config import MCPServerConfig
-
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +26,11 @@ class ServerContext:
             config: MCP server configuration
         """
         self.config = config
-        self._user: Optional[str] = None
-        self._active_project: Optional[str] = None
+        self._user: str | None = None
+        self._active_project: str | None = None
         self._recent_tasks: dict[str, tuple[str, datetime]] = {}  # task_id -> (title, timestamp)
         self._conversation_metadata: dict[str, Any] = {}
-        self._context_file: Optional[Path] = None
+        self._context_file: Path | None = None
 
         if self.config.enable_context_persistence:
             self._context_file = Path.home() / ".hopper" / "mcp_context.json"
@@ -46,7 +45,7 @@ class ServerContext:
         self._user = user
         self._save_context()
 
-    def get_user(self) -> Optional[str]:
+    def get_user(self) -> str | None:
         """Get the current user.
 
         Returns:
@@ -63,7 +62,7 @@ class ServerContext:
         self._active_project = project
         self._save_context()
 
-    def get_active_project(self) -> Optional[str]:
+    def get_active_project(self) -> str | None:
         """Get the active project.
 
         Returns:
@@ -94,16 +93,9 @@ class ServerContext:
         self._cleanup_old_tasks()
 
         # Sort by timestamp (most recent first)
-        sorted_tasks = sorted(
-            self._recent_tasks.items(),
-            key=lambda x: x[1][1],
-            reverse=True
-        )
+        sorted_tasks = sorted(self._recent_tasks.items(), key=lambda x: x[1][1], reverse=True)
 
-        return [
-            {"id": task_id, "title": title}
-            for task_id, (title, _) in sorted_tasks[:limit]
-        ]
+        return [{"id": task_id, "title": title} for task_id, (title, _) in sorted_tasks[:limit]]
 
     def set_conversation_metadata(self, key: str, value: Any) -> None:
         """Set conversation metadata.
@@ -115,7 +107,7 @@ class ServerContext:
         self._conversation_metadata[key] = value
         self._save_context()
 
-    def get_conversation_metadata(self, key: str) -> Optional[Any]:
+    def get_conversation_metadata(self, key: str) -> Any | None:
         """Get conversation metadata.
 
         Args:
@@ -164,9 +156,7 @@ class ServerContext:
 
         cutoff = datetime.now() - timedelta(seconds=self.config.context_cache_ttl)
         old_task_ids = [
-            task_id
-            for task_id, (_, timestamp) in self._recent_tasks.items()
-            if timestamp < cutoff
+            task_id for task_id, (_, timestamp) in self._recent_tasks.items() if timestamp < cutoff
         ]
 
         for task_id in old_task_ids:

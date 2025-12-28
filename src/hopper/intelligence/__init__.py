@@ -15,9 +15,9 @@ from hopper.intelligence.base import BaseIntelligence, RoutingError
 from hopper.intelligence.decision_recorder import (
     DecisionRecord,
     DecisionRecorder,
+    add_feedback,
     get_decision_recorder,
     record_decision,
-    add_feedback,
 )
 from hopper.intelligence.feedback import (
     FeedbackCollector,

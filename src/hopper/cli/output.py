@@ -2,13 +2,12 @@
 
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
+from rich import box
 from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
-from rich import box
-
 
 console = Console()
 
@@ -45,7 +44,7 @@ def print_json(data: Any) -> None:
     console.print_json(json.dumps(data, default=str, indent=2))
 
 
-def format_datetime(dt: Optional[datetime | str]) -> str:
+def format_datetime(dt: datetime | str | None) -> str:
     """Format datetime for display.
 
     Args:
@@ -247,14 +246,14 @@ def print_instance_tree(instances: list[dict[str, Any]]) -> None:
     tree = Tree("[bold cyan]Hopper Instances[/bold cyan]")
 
     # Group by parent
-    by_parent: dict[Optional[str], list[dict[str, Any]]] = {}
+    by_parent: dict[str | None, list[dict[str, Any]]] = {}
     for instance in instances:
         parent_id = instance.get("parent_id")
         if parent_id not in by_parent:
             by_parent[parent_id] = []
         by_parent[parent_id].append(instance)
 
-    def add_instances(parent_node: Tree, parent_id: Optional[str]) -> None:
+    def add_instances(parent_node: Tree, parent_id: str | None) -> None:
         """Recursively add instances to tree."""
         for instance in by_parent.get(parent_id, []):
             scope = instance.get("scope", "unknown")
@@ -269,9 +268,11 @@ def print_instance_tree(instances: list[dict[str, Any]]) -> None:
             }
             scope_color = scope_colors.get(scope.lower(), "white")
 
-            label = f"[{scope_color}]{name}[/{scope_color}] " \
-                    f"[dim]({scope})[/dim] " \
-                    f"[{get_status_style(status)}]{status}[/]"
+            label = (
+                f"[{scope_color}]{name}[/{scope_color}] "
+                f"[dim]({scope})[/dim] "
+                f"[{get_status_style(status)}]{status}[/]"
+            )
 
             node = parent_node.add(label)
             add_instances(node, instance.get("id"))

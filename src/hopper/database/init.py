@@ -1,10 +1,10 @@
 """
 Database initialization and migration utilities for Hopper.
 """
+
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -14,7 +14,7 @@ from hopper.database.connection import create_sync_engine, get_database_url
 from hopper.models import Base
 
 
-def init_database(engine: Optional[Engine] = None, create_tables: bool = True) -> None:
+def init_database(engine: Engine | None = None, create_tables: bool = True) -> None:
     """
     Initialize the database schema.
 
@@ -33,7 +33,7 @@ def init_database(engine: Optional[Engine] = None, create_tables: bool = True) -
         Base.metadata.create_all(bind=engine)
 
 
-def run_migrations(target: str = "head", alembic_ini: Optional[str] = None) -> int:
+def run_migrations(target: str = "head", alembic_ini: str | None = None) -> int:
     """
     Run Alembic migrations programmatically.
 
@@ -69,7 +69,7 @@ def run_migrations(target: str = "head", alembic_ini: Optional[str] = None) -> i
     return result.returncode
 
 
-def check_database_health(engine: Optional[Engine] = None) -> bool:
+def check_database_health(engine: Engine | None = None) -> bool:
     """
     Check if database connection is healthy.
 
@@ -90,7 +90,7 @@ def check_database_health(engine: Optional[Engine] = None) -> bool:
         return False
 
 
-async def check_database_health_async(engine: Optional[AsyncEngine] = None) -> bool:
+async def check_database_health_async(engine: AsyncEngine | None = None) -> bool:
     """
     Check if database connection is healthy (async version).
 
@@ -113,7 +113,7 @@ async def check_database_health_async(engine: Optional[AsyncEngine] = None) -> b
         return False
 
 
-def drop_all_tables(engine: Optional[Engine] = None, confirm: bool = False) -> None:
+def drop_all_tables(engine: Engine | None = None, confirm: bool = False) -> None:
     """
     Drop all database tables (DESTRUCTIVE - USE WITH CAUTION).
 
@@ -133,7 +133,7 @@ def drop_all_tables(engine: Optional[Engine] = None, confirm: bool = False) -> N
     Base.metadata.drop_all(bind=engine)
 
 
-def reset_database(engine: Optional[Engine] = None, confirm: bool = False) -> None:
+def reset_database(engine: Engine | None = None, confirm: bool = False) -> None:
     """
     Reset database by dropping and recreating all tables (DESTRUCTIVE).
 

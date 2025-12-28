@@ -4,9 +4,9 @@ Common Pydantic schemas shared across the API.
 Includes pagination, filtering, and response wrappers.
 """
 
-from typing import Optional, Generic, TypeVar, List, Any
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Generic, TypeVar
 
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -23,7 +23,7 @@ class PaginationParams(BaseModel):
 class SortParams(BaseModel):
     """Common sorting parameters."""
 
-    sort_by: Optional[str] = Field(None, description="Field to sort by")
+    sort_by: str | None = Field(None, description="Field to sort by")
     sort_order: str = Field(default="desc", pattern="^(asc|desc)$", description="Sort order")
 
     model_config = ConfigDict(from_attributes=True)
@@ -32,10 +32,10 @@ class SortParams(BaseModel):
 class FilterParams(BaseModel):
     """Common filtering parameters."""
 
-    search: Optional[str] = Field(None, description="Search query")
-    tags: Optional[List[str]] = Field(None, description="Filter by tags")
-    created_after: Optional[str] = Field(None, description="Filter by creation date (ISO 8601)")
-    created_before: Optional[str] = Field(None, description="Filter by creation date (ISO 8601)")
+    search: str | None = Field(None, description="Search query")
+    tags: list[str] | None = Field(None, description="Filter by tags")
+    created_after: str | None = Field(None, description="Filter by creation date (ISO 8601)")
+    created_before: str | None = Field(None, description="Filter by creation date (ISO 8601)")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,7 +43,7 @@ class FilterParams(BaseModel):
 class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated response wrapper."""
 
-    items: List[T]
+    items: list[T]
     total: int = Field(..., description="Total number of items")
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Maximum number of items returned")
@@ -57,7 +57,7 @@ class SuccessResponse(BaseModel):
 
     success: bool = True
     message: str
-    data: Optional[Any] = None
+    data: Any | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -76,8 +76,8 @@ class HealthResponse(BaseModel):
     status: str = Field(..., description="Service status")
     service: str = Field(..., description="Service name")
     version: str = Field(..., description="Service version")
-    timestamp: Optional[str] = None
-    checks: Optional[dict] = Field(None, description="Individual health checks")
+    timestamp: str | None = None
+    checks: dict | None = Field(None, description="Individual health checks")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,9 +85,9 @@ class HealthResponse(BaseModel):
 class BulkOperationRequest(BaseModel):
     """Request for bulk operations."""
 
-    ids: List[str] = Field(..., min_length=1, description="List of IDs to operate on")
+    ids: list[str] = Field(..., min_length=1, description="List of IDs to operate on")
     operation: str = Field(..., description="Operation to perform")
-    params: Optional[dict] = Field(None, description="Operation parameters")
+    params: dict | None = Field(None, description="Operation parameters")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -98,7 +98,7 @@ class BulkOperationResponse(BaseModel):
     total: int = Field(..., description="Total items processed")
     successful: int = Field(..., description="Successfully processed items")
     failed: int = Field(..., description="Failed items")
-    errors: List[dict] = Field(default_factory=list, description="Error details")
+    errors: list[dict] = Field(default_factory=list, description="Error details")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -107,7 +107,7 @@ class SearchRequest(BaseModel):
     """Request for search operations."""
 
     query: str = Field(..., min_length=1, description="Search query")
-    filters: Optional[dict] = Field(None, description="Additional filters")
+    filters: dict | None = Field(None, description="Additional filters")
     limit: int = Field(default=20, ge=1, le=100, description="Maximum results")
 
     model_config = ConfigDict(from_attributes=True)
@@ -117,7 +117,7 @@ class SearchResponse(BaseModel, Generic[T]):
     """Response for search operations."""
 
     query: str
-    results: List[T]
+    results: list[T]
     total: int = Field(..., description="Total matching results")
     took_ms: float = Field(..., description="Search duration in milliseconds")
 

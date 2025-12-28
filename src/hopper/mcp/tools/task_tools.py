@@ -5,6 +5,7 @@ Provides MCP tools for creating, listing, getting, and updating tasks.
 """
 
 from typing import Any
+
 import httpx
 from mcp.types import Tool
 
@@ -322,10 +323,7 @@ async def update_task_status(
     task_id = args["task_id"]
     new_status = args["status"]
 
-    response = await client.patch(
-        f"/api/v1/tasks/{task_id}/status",
-        json={"status": new_status}
-    )
+    response = await client.patch(f"/api/v1/tasks/{task_id}/status", json={"status": new_status})
     response.raise_for_status()
 
     return response.json()

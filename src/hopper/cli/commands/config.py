@@ -1,23 +1,21 @@
 """Configuration and authentication commands."""
 
-from typing import Optional
-from pathlib import Path
 
 import click
-from rich.prompt import Prompt, Confirm
-from rich.table import Table
 from rich import box
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
 
+from hopper.cli.client import APIError, HopperClient
+from hopper.cli.config import APIConfig, AuthConfig, Config, ProfileConfig, get_config_dir
 from hopper.cli.main import Context
-from hopper.cli.config import Config, get_config_dir, ProfileConfig, APIConfig, AuthConfig
-from hopper.cli.client import HopperClient, APIError
 from hopper.cli.output import (
-    print_json,
-    print_success,
+    console,
     print_error,
     print_info,
+    print_json,
+    print_success,
     print_warning,
-    console,
 )
 
 
@@ -29,7 +27,7 @@ from hopper.cli.output import (
 def init(
     ctx: Context,
     profile: str,
-    endpoint: Optional[str],
+    endpoint: str | None,
     non_interactive: bool,
 ) -> None:
     """Initialize Hopper configuration.
@@ -45,22 +43,19 @@ def init(
     config_dir = get_config_dir()
     config_path = config_dir / "config.yaml"
 
-    console.print(f"\n[bold cyan]Initializing Hopper CLI[/bold cyan]\n")
+    console.print("\n[bold cyan]Initializing Hopper CLI[/bold cyan]\n")
 
     # Interactive prompts
     if not non_interactive:
         if not endpoint:
-            endpoint = Prompt.ask(
-                "[bold]API endpoint URL[/bold]",
-                default="http://localhost:8000"
-            )
+            endpoint = Prompt.ask("[bold]API endpoint URL[/bold]", default="http://localhost:8000")
 
         # Ask about authentication
         if Confirm.ask("Configure authentication now?", default=True):
             auth_method = Prompt.ask(
                 "[bold]Authentication method[/bold]",
                 choices=["token", "api_key", "none"],
-                default="none"
+                default="none",
             )
 
             if auth_method == "token":
@@ -83,10 +78,10 @@ def init(
         profiles={
             profile: ProfileConfig(
                 api=APIConfig(endpoint=endpoint or "http://localhost:8000"),
-                auth=AuthConfig(token=token, api_key=api_key)
+                auth=AuthConfig(token=token, api_key=api_key),
             )
         },
-        config_path=config_path
+        config_path=config_path,
     )
 
     # Save configuration
@@ -108,8 +103,8 @@ def init(
                 print_warning(f"Connection test failed: {e}")
                 print_info("You can configure authentication later with 'hopper auth login'")
 
-    console.print(f"\n[dim]You can now use Hopper CLI commands.[/dim]")
-    console.print(f"[dim]Try: hopper task list[/dim]\n")
+    console.print("\n[dim]You can now use Hopper CLI commands.[/dim]")
+    console.print("[dim]Try: hopper task list[/dim]\n")
 
 
 @click.group(name="config")
@@ -126,7 +121,7 @@ def config_group() -> None:
 @click.argument("key")
 @click.option("--profile", help="Profile name (default: active profile)")
 @click.pass_obj
-def get_config(ctx: Context, key: str, profile: Optional[str]) -> None:
+def get_config(ctx: Context, key: str, profile: str | None) -> None:
     """Get a configuration value.
 
     Examples:
@@ -175,7 +170,7 @@ def get_config(ctx: Context, key: str, profile: Optional[str]) -> None:
 @click.argument("value")
 @click.option("--profile", help="Profile name (default: active profile)")
 @click.pass_obj
-def set_config(ctx: Context, key: str, value: str, profile: Optional[str]) -> None:
+def set_config(ctx: Context, key: str, value: str, profile: str | None) -> None:
     """Set a configuration value.
 
     Examples:
@@ -233,7 +228,7 @@ def set_config(ctx: Context, key: str, value: str, profile: Optional[str]) -> No
 @config_group.command(name="list")
 @click.option("--profile", help="Profile name (default: active profile)")
 @click.pass_obj
-def list_config(ctx: Context, profile: Optional[str]) -> None:
+def list_config(ctx: Context, profile: str | None) -> None:
     """List all configuration values.
 
     Examples:
@@ -252,15 +247,15 @@ def list_config(ctx: Context, profile: Optional[str]) -> None:
                     "auth": {
                         "token": bool(p.auth.token),
                         "api_key": bool(p.auth.api_key),
-                    }
+                    },
                 }
                 for name, p in ctx.config.profiles.items()
-            }
+            },
         }
         print_json(data)
         return
 
-    console.print(f"\n[bold cyan]Hopper Configuration[/bold cyan]\n")
+    console.print("\n[bold cyan]Hopper Configuration[/bold cyan]\n")
     console.print(f"[bold]Active Profile:[/bold] {ctx.config.active_profile}")
     console.print(f"[bold]Config File:[/bold] {ctx.config.config_path}\n")
 
@@ -310,9 +305,9 @@ def auth() -> None:
 @click.pass_obj
 def login(
     ctx: Context,
-    token: Optional[str],
-    api_key: Optional[str],
-    profile: Optional[str],
+    token: str | None,
+    api_key: str | None,
+    profile: str | None,
 ) -> None:
     """Authenticate with Hopper API.
 
@@ -331,9 +326,7 @@ def login(
     # Interactive mode
     if not token and not api_key:
         auth_method = Prompt.ask(
-            "[bold]Authentication method[/bold]",
-            choices=["token", "api_key"],
-            default="token"
+            "[bold]Authentication method[/bold]", choices=["token", "api_key"], default="token"
         )
 
         if auth_method == "token":
@@ -370,7 +363,7 @@ def login(
 @auth.command(name="logout")
 @click.option("--profile", help="Profile name (default: active profile)")
 @click.pass_obj
-def logout(ctx: Context, profile: Optional[str]) -> None:
+def logout(ctx: Context, profile: str | None) -> None:
     """Clear authentication credentials.
 
     Examples:
@@ -394,7 +387,7 @@ def logout(ctx: Context, profile: Optional[str]) -> None:
 @auth.command(name="status")
 @click.option("--profile", help="Profile name (default: active profile)")
 @click.pass_obj
-def auth_status(ctx: Context, profile: Optional[str]) -> None:
+def auth_status(ctx: Context, profile: str | None) -> None:
     """Check authentication status.
 
     Examples:
@@ -407,7 +400,7 @@ def auth_status(ctx: Context, profile: Optional[str]) -> None:
         print_error(f"Profile '{profile_name}' not found")
         raise click.Abort()
 
-    console.print(f"\n[bold cyan]Authentication Status[/bold cyan]\n")
+    console.print("\n[bold cyan]Authentication Status[/bold cyan]\n")
     console.print(f"[bold]Profile:[/bold] {profile_name}")
     console.print(f"[bold]Endpoint:[/bold] {prof.api.endpoint}\n")
 

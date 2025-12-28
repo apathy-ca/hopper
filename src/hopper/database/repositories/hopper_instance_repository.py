@@ -1,12 +1,13 @@
 """
 Hopper Instance repository for multi-instance management.
 """
-from typing import List, Optional
+
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.hopper_instance import HopperInstance
+
 from .base import BaseRepository
 
 
@@ -17,9 +18,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """Initialize HopperInstanceRepository."""
         super().__init__(HopperInstance, session)
 
-    def get_instance_by_scope_and_name(
-        self, scope: str, name: str
-    ) -> Optional[HopperInstance]:
+    def get_instance_by_scope_and_name(self, scope: str, name: str) -> HopperInstance | None:
         """
         Get an instance by scope and name.
 
@@ -36,7 +35,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         result = self.session.execute(query)
         return result.scalar_one_or_none()
 
-    def get_child_instances(self, parent_id: str) -> List[HopperInstance]:
+    def get_child_instances(self, parent_id: str) -> list[HopperInstance]:
         """
         Get all child instances of a parent.
 
@@ -48,7 +47,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """
         return self.filter(filters={"parent_id": parent_id})
 
-    def get_instances_by_scope(self, scope: str) -> List[HopperInstance]:
+    def get_instances_by_scope(self, scope: str) -> list[HopperInstance]:
         """
         Get all instances with a specific scope.
 
@@ -60,7 +59,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """
         return self.filter(filters={"scope": scope})
 
-    def get_active_instances(self) -> List[HopperInstance]:
+    def get_active_instances(self) -> list[HopperInstance]:
         """
         Get all active instances.
 
@@ -69,7 +68,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """
         return self.filter(filters={"status": "active"})
 
-    def get_instance_hierarchy(self, instance_id: str) -> List[HopperInstance]:
+    def get_instance_hierarchy(self, instance_id: str) -> list[HopperInstance]:
         """
         Get the full hierarchy for an instance (ancestors and descendants).
 
@@ -97,7 +96,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
                 break
 
         # Get descendants (walk down the tree)
-        def get_all_children(parent_id: str) -> List[HopperInstance]:
+        def get_all_children(parent_id: str) -> list[HopperInstance]:
             children = self.get_child_instances(parent_id)
             all_descendants = list(children)
             for child in children:
@@ -109,7 +108,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
 
         return hierarchy
 
-    def terminate_instance(self, instance_id: str) -> Optional[HopperInstance]:
+    def terminate_instance(self, instance_id: str) -> HopperInstance | None:
         """
         Terminate an instance.
 
@@ -121,11 +120,9 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """
         from datetime import datetime
 
-        return self.update(
-            instance_id, status="terminated", terminated_at=datetime.utcnow()
-        )
+        return self.update(instance_id, status="terminated", terminated_at=datetime.utcnow())
 
-    def pause_instance(self, instance_id: str) -> Optional[HopperInstance]:
+    def pause_instance(self, instance_id: str) -> HopperInstance | None:
         """
         Pause an instance.
 
@@ -137,7 +134,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """
         return self.update(instance_id, status="paused")
 
-    def resume_instance(self, instance_id: str) -> Optional[HopperInstance]:
+    def resume_instance(self, instance_id: str) -> HopperInstance | None:
         """
         Resume a paused instance.
 
@@ -149,7 +146,7 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         """
         return self.update(instance_id, status="active")
 
-    def get_root_instances(self) -> List[HopperInstance]:
+    def get_root_instances(self) -> list[HopperInstance]:
         """
         Get all root instances (instances with no parent).
 

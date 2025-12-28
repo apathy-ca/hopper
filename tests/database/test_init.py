@@ -1,7 +1,9 @@
 """
 Tests for database initialization.
 """
+
 import os
+
 import pytest
 from sqlalchemy import inspect
 

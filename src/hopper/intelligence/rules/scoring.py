@@ -9,7 +9,6 @@ Provides utilities for:
 """
 
 import math
-from typing import List, Optional, Tuple
 
 
 def calculate_confidence(
@@ -35,9 +34,9 @@ def calculate_confidence(
 
 
 def aggregate_scores(
-    scores: List[float],
+    scores: list[float],
     method: str = "max",
-    weights: Optional[List[float]] = None,
+    weights: list[float] | None = None,
 ) -> float:
     """
     Aggregate multiple scores into a single confidence score.
@@ -90,7 +89,7 @@ def aggregate_scores(
         # Formula: 1 - product of (1 - score_i)
         result = 1.0
         for score in scores:
-            result *= (1.0 - score)
+            result *= 1.0 - score
         return 1.0 - result
 
     else:
@@ -119,10 +118,10 @@ def apply_threshold(
 
 
 def calculate_multi_destination_scores(
-    destination_scores: List[Tuple[str, float]],
+    destination_scores: list[tuple[str, float]],
     method: str = "softmax",
     temperature: float = 1.0,
-) -> List[Tuple[str, float]]:
+) -> list[tuple[str, float]]:
     """
     Calculate normalized scores across multiple destinations.
 
@@ -156,8 +155,7 @@ def calculate_multi_destination_scores(
             normalized = [exp_s / total for exp_s in exp_scores]
 
         result = [
-            (dest, norm_score)
-            for (dest, _), norm_score in zip(destination_scores, normalized)
+            (dest, norm_score) for (dest, _), norm_score in zip(destination_scores, normalized)
         ]
 
     elif method == "normalize":
@@ -252,7 +250,7 @@ def decay_score(
 
 def combine_confidence_and_feedback(
     initial_confidence: float,
-    success_rate: Optional[float],
+    success_rate: float | None,
     feedback_weight: float = 0.3,
 ) -> float:
     """
@@ -271,15 +269,13 @@ def combine_confidence_and_feedback(
         return initial_confidence
 
     # Weighted combination
-    combined = (
-        initial_confidence * (1.0 - feedback_weight) + success_rate * feedback_weight
-    )
+    combined = initial_confidence * (1.0 - feedback_weight) + success_rate * feedback_weight
 
     return max(0.0, min(1.0, combined))
 
 
 def estimate_uncertainty(
-    scores: List[float],
+    scores: list[float],
 ) -> float:
     """
     Estimate uncertainty in routing decision.
@@ -318,7 +314,7 @@ def estimate_uncertainty(
 def should_escalate(
     confidence: float,
     threshold: float,
-    uncertainty: Optional[float] = None,
+    uncertainty: float | None = None,
     uncertainty_threshold: float = 0.7,
 ) -> bool:
     """
@@ -351,7 +347,7 @@ def calculate_rule_quality(
     times_correct: int,
     times_incorrect: int,
     min_samples: int = 5,
-) -> Optional[float]:
+) -> float | None:
     """
     Calculate quality score for a rule based on its history.
 

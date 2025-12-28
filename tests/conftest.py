@@ -9,10 +9,10 @@ This module provides comprehensive fixtures for:
 - Mock data factories
 - Test configuration
 """
+
 import os
-import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import AsyncGenerator, Generator
 from unittest.mock import Mock
 
 import pytest
@@ -25,12 +25,12 @@ from sqlalchemy.pool import StaticPool
 # Import models (will be available after integration)
 try:
     from hopper.models.base import Base
-    from hopper.models.task import Task
-    from hopper.models.project import Project
-    from hopper.models.hopper_instance import HopperInstance
-    from hopper.models.routing_decision import RoutingDecision
-    from hopper.models.task_feedback import TaskFeedback
     from hopper.models.external_mapping import ExternalMapping
+    from hopper.models.hopper_instance import HopperInstance
+    from hopper.models.project import Project
+    from hopper.models.routing_decision import RoutingDecision
+    from hopper.models.task import Task
+    from hopper.models.task_feedback import TaskFeedback
 except ImportError:
     # Models not yet integrated, create mock Base
     from sqlalchemy.orm import DeclarativeBase
@@ -42,6 +42,7 @@ except ImportError:
 # ============================================================================
 # Database Fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def sqlite_engine() -> Generator[Engine, None, None]:
@@ -97,6 +98,17 @@ def db_session(sqlite_engine: Engine) -> Generator[Session, None, None]:
     connection.close()
 
 
+@pytest.fixture(scope="function")
+def clean_db(db_session: Session) -> Session:
+    """
+    Alias for db_session fixture for backward compatibility.
+
+    Some tests use 'clean_db' naming convention.
+    This is a simple pass-through to the db_session fixture.
+    """
+    return db_session
+
+
 @pytest.fixture(scope="session")
 def postgres_engine() -> Generator[Engine, None, None]:
     """
@@ -106,10 +118,7 @@ def postgres_engine() -> Generator[Engine, None, None]:
     Falls back to SQLite if PostgreSQL is not available.
     """
     # Get PostgreSQL URL from environment or use default
-    db_url = os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql://hopper:hopper@localhost:5432/hopper_test"
-    )
+    db_url = os.getenv("TEST_DATABASE_URL", "postgresql://hopper:hopper@localhost:5432/hopper_test")
 
     try:
         engine = create_engine(db_url, pool_pre_ping=True)
@@ -157,6 +166,7 @@ def postgres_session(postgres_engine: Engine) -> Generator[Session, None, None]:
 # ============================================================================
 # API Client Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def api_client(db_session: Session) -> TestClient:
@@ -211,6 +221,7 @@ def authenticated_api_client(api_client: TestClient) -> TestClient:
 # MCP Client Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def mcp_client() -> Mock:
     """
@@ -241,6 +252,7 @@ def mcp_context() -> dict:
 # CLI Runner Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def cli_runner():
     """
@@ -249,6 +261,7 @@ def cli_runner():
     Allows testing CLI commands in isolation.
     """
     from click.testing import CliRunner
+
     return CliRunner()
 
 
@@ -288,6 +301,7 @@ def cli_runner_with_config(cli_runner, cli_config_dir: Path):
 # ============================================================================
 # Mock Data Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_task_data() -> dict:
@@ -358,6 +372,7 @@ def sample_routing_decision_data() -> dict:
 # Test Configuration
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def test_config() -> dict:
     """
@@ -399,6 +414,7 @@ routing:
 # Cleanup Fixtures
 # ============================================================================
 
+
 @pytest.fixture(autouse=True)
 def reset_environment():
     """
@@ -432,6 +448,7 @@ def cleanup_temp_files():
             if filepath.exists():
                 if filepath.is_dir():
                     import shutil
+
                     shutil.rmtree(filepath)
                 else:
                     filepath.unlink()
@@ -443,22 +460,15 @@ def cleanup_temp_files():
 # Pytest Configuration
 # ============================================================================
 
+
 def pytest_configure(config):
     """
     Configure pytest with custom markers.
     """
-    config.addinivalue_line(
-        "markers", "unit: Unit tests (fast, isolated)"
-    )
+    config.addinivalue_line("markers", "unit: Unit tests (fast, isolated)")
     config.addinivalue_line(
         "markers", "integration: Integration tests (slower, multiple components)"
     )
-    config.addinivalue_line(
-        "markers", "e2e: End-to-end tests (slowest, full workflows)"
-    )
-    config.addinivalue_line(
-        "markers", "postgres: Tests requiring PostgreSQL"
-    )
-    config.addinivalue_line(
-        "markers", "slow: Slow tests (skip with -m 'not slow')"
-    )
+    config.addinivalue_line("markers", "e2e: End-to-end tests (slowest, full workflows)")
+    config.addinivalue_line("markers", "postgres: Tests requiring PostgreSQL")
+    config.addinivalue_line("markers", "slow: Slow tests (skip with -m 'not slow')")
