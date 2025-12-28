@@ -17,6 +17,7 @@ from mcp.types import Tool, Resource, TextContent, ImageContent, EmbeddedResourc
 from .config import MCPServerConfig, get_mcp_config
 from .context import ServerContext
 from .tools import get_all_tools, call_tool as call_tool_handler
+from .resources import get_all_resources, read_resource
 
 
 logger = logging.getLogger(__name__)
@@ -87,14 +88,23 @@ class HopperMCPServer:
         @self.server.list_resources()
         async def list_resources() -> list[Resource]:
             """List available resources."""
-            return [
-                Resource(
-                    uri="hopper://tasks",
-                    name="All Tasks",
-                    description="List of all tasks in Hopper",
-                    mimeType="application/json",
-                ),
-            ]
+            return get_all_resources()
+
+        @self.server.read_resource()
+        async def read_resource_handler(uri: str) -> str:
+            """Handle resource read requests."""
+            try:
+                client = await self._get_http_client()
+                contents = await read_resource(uri, client, self.config)
+
+                # Combine all text contents into a single string
+                return "\n".join(content.text for content in contents)
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP error reading resource {uri}: {e.response.status_code} - {e.response.text}")
+                return f"API Error ({e.response.status_code}): {e.response.text}"
+            except Exception as e:
+                logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
+                return f"Error: {str(e)}"
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
