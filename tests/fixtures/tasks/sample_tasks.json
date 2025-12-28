@@ -1,0 +1,170 @@
+[
+  {
+    "id": "task-001",
+    "title": "Implement task routing API endpoint",
+    "description": "Create a new API endpoint for intelligent task routing using the rules engine",
+    "project": "hopper",
+    "status": "pending",
+    "priority": "high",
+    "requester": "alice",
+    "owner": null,
+    "tags": {
+      "feature": "routing",
+      "backend": true,
+      "api": true
+    },
+    "source": "api"
+  },
+  {
+    "id": "task-002",
+    "title": "Design task queue UI",
+    "description": "Create mockups and designs for the task queue visualization interface",
+    "project": "frontend",
+    "status": "pending",
+    "priority": "medium",
+    "requester": "bob",
+    "owner": "charlie",
+    "tags": {
+      "design": true,
+      "frontend": true,
+      "ui": true
+    },
+    "source": "cli"
+  },
+  {
+    "id": "task-003",
+    "title": "Optimize database queries",
+    "description": "Review and optimize slow database queries identified in performance testing",
+    "project": "hopper",
+    "status": "in_progress",
+    "priority": "high",
+    "requester": "david",
+    "owner": "david",
+    "tags": {
+      "performance": true,
+      "database": true,
+      "backend": true
+    },
+    "source": "mcp",
+    "depends_on": {
+      "task_ids": ["task-001"]
+    }
+  },
+  {
+    "id": "task-004",
+    "title": "Write integration tests for MCP tools",
+    "description": "Create comprehensive integration tests for all MCP tools to ensure Claude compatibility",
+    "project": "hopper",
+    "status": "pending",
+    "priority": "medium",
+    "requester": "eve",
+    "owner": null,
+    "tags": {
+      "testing": true,
+      "mcp": true,
+      "quality": true
+    },
+    "source": "api"
+  },
+  {
+    "id": "task-005",
+    "title": "Fix: Authentication token expiration bug",
+    "description": "Users are being logged out prematurely due to incorrect token expiration calculation",
+    "project": "hopper",
+    "status": "pending",
+    "priority": "urgent",
+    "requester": "frank",
+    "owner": null,
+    "tags": {
+      "bug": true,
+      "auth": true,
+      "backend": true
+    },
+    "source": "github",
+    "external_id": "issue-42",
+    "external_url": "https://github.com/hopper/hopper/issues/42",
+    "external_platform": "github"
+  },
+  {
+    "id": "task-006",
+    "title": "Update documentation for CLI commands",
+    "description": "Add comprehensive examples and usage instructions for all CLI commands",
+    "project": "hopper",
+    "status": "completed",
+    "priority": "low",
+    "requester": "grace",
+    "owner": "grace",
+    "tags": {
+      "documentation": true,
+      "cli": true
+    },
+    "source": "cli"
+  },
+  {
+    "id": "task-007",
+    "title": "Implement Czarina worker coordination",
+    "description": "Add coordination logic for managing multiple workers in the Czarina orchestration system",
+    "project": "czarina",
+    "status": "pending",
+    "priority": "high",
+    "requester": "henry",
+    "owner": "henry",
+    "tags": {
+      "orchestration": true,
+      "worker": true,
+      "backend": true
+    },
+    "source": "mcp"
+  },
+  {
+    "id": "task-008",
+    "title": "Setup Docker Compose for local development",
+    "description": "Create docker-compose.yml with all required services (PostgreSQL, Redis, API, MCP)",
+    "project": "hopper",
+    "status": "completed",
+    "priority": "medium",
+    "requester": "iris",
+    "owner": "iris",
+    "tags": {
+      "infrastructure": true,
+      "docker": true,
+      "devops": true
+    },
+    "source": "api"
+  },
+  {
+    "id": "task-009",
+    "title": "Implement SAGE memory system integration",
+    "description": "Integrate the SAGE (Semantic, Associative, Generative, Episodic) memory system for advanced routing",
+    "project": "hopper",
+    "status": "pending",
+    "priority": "low",
+    "requester": "jack",
+    "owner": null,
+    "tags": {
+      "feature": "sage",
+      "ai": true,
+      "memory": true
+    },
+    "source": "mcp",
+    "depends_on": {
+      "task_ids": ["task-001", "task-003"]
+    }
+  },
+  {
+    "id": "task-010",
+    "title": "Add task filtering and search functionality",
+    "description": "Implement advanced filtering and full-text search for tasks in the API and CLI",
+    "project": "hopper",
+    "status": "in_progress",
+    "priority": "medium",
+    "requester": "kate",
+    "owner": "kate",
+    "tags": {
+      "feature": "search",
+      "backend": true,
+      "api": true
+    },
+    "source": "api"
+  }
+]

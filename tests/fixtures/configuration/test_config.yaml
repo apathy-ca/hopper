@@ -1,0 +1,57 @@
+# Test configuration file for Hopper
+
+# Database configuration
+database:
+  url: "sqlite:///:memory:"
+  pool_size: 5
+  max_overflow: 10
+  echo: false
+
+# API configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+  workers: 1
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+
+# MCP Server configuration
+mcp:
+  host: "0.0.0.0"
+  port: 8001
+  transport: "stdio"  # stdio or sse
+
+# Routing configuration
+routing:
+  default_strategy: "rules"
+  llm_fallback: true
+  confidence_threshold: 0.7
+  rules_file: "tests/fixtures/routing_rules.yaml"
+
+# Authentication configuration
+auth:
+  jwt_secret: "test-secret-key-do-not-use-in-production"
+  jwt_algorithm: "HS256"
+  jwt_expiration_minutes: 60
+  api_key_enabled: true
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null  # Log to stdout in tests
+
+# Feature flags
+features:
+  sage_memory: false  # SAGE memory system (Phase 2+)
+  federation: false    # Multi-instance federation (Phase 3+)
+  analytics: true      # Routing analytics
+  webhooks: false      # Webhook notifications (Phase 2+)
+
+# Test-specific configuration
+test:
+  skip_migrations: true
+  use_in_memory_db: true
+  mock_external_services: true
