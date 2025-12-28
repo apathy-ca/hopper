@@ -2,14 +2,17 @@
 Task model - Core entity for task management in Hopper.
 """
 
-from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
-from .enums import TaskPriority, TaskSource, TaskStatus
+from .enums import TaskPriority, TaskStatus
+
+if TYPE_CHECKING:
+    from .hopper_instance import HopperInstance
+    from .routing_decision import RoutingDecision
 
 
 class Task(Base, TimestampMixin):
@@ -56,9 +59,7 @@ class Task(Base, TimestampMixin):
 
     # Task metadata (JSONB/JSON fields)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    required_capabilities: Mapped[list[str]] = mapped_column(
-        JSON, default=list, nullable=False
-    )
+    required_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     depends_on: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     blocks: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
@@ -99,9 +100,7 @@ class TaskFeedback(Base, TimestampMixin):
 
     __tablename__ = "task_feedback"
 
-    task_id: Mapped[str] = mapped_column(
-        String(50), ForeignKey("tasks.id"), primary_key=True
-    )
+    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("tasks.id"), primary_key=True)
 
     # Duration tracking
     estimated_duration: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -119,9 +118,7 @@ class TaskFeedback(Base, TimestampMixin):
     routing_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Learning data
-    unexpected_blockers: Mapped[list[Any]] = mapped_column(
-        JSON, default=list, nullable=False
-    )
+    unexpected_blockers: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
     required_skills_not_tagged: Mapped[list[str]] = mapped_column(
         JSON, default=list, nullable=False
     )

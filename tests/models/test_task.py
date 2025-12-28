@@ -4,7 +4,6 @@ Tests for Task model.
 
 from datetime import datetime
 
-import pytest
 from sqlalchemy.orm import Session
 
 from hopper.models import (

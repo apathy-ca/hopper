@@ -2,13 +2,15 @@
 HopperInstance model - Multi-instance hierarchy support.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ForeignKey, Index, JSON, String
+from sqlalchemy import JSON, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
-from .enums import HopperScope
+
+if TYPE_CHECKING:
+    from .task import Task
 
 
 class HopperInstance(Base, TimestampMixin):
@@ -107,7 +109,4 @@ class TaskDelegation(Base, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<TaskDelegation(parent={self.parent_task_id}, "
-            f"child={self.child_task_id})>"
-        )
+        return f"<TaskDelegation(parent={self.parent_task_id}, " f"child={self.child_task_id})>"

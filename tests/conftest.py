@@ -2,7 +2,7 @@
 Pytest configuration and shared fixtures.
 """
 
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 from sqlalchemy import create_engine

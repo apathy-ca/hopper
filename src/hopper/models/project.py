@@ -3,12 +3,15 @@ Project model - Project registry and configuration.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, JSON, String, Text, DateTime
+from sqlalchemy import JSON, Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
+
+if TYPE_CHECKING:
+    from .routing_decision import RoutingDecision
 
 
 class Project(Base, TimestampMixin):
@@ -32,9 +35,7 @@ class Project(Base, TimestampMixin):
 
     # Executor configuration
     executor_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    executor_config: Mapped[dict[str, Any]] = mapped_column(
-        JSON, default=dict, nullable=False
-    )
+    executor_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # Routing preferences
     auto_claim: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -51,9 +52,7 @@ class Project(Base, TimestampMixin):
 
     # Metadata
     created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    last_sync: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     routing_decisions: Mapped[list["RoutingDecision"]] = relationship(

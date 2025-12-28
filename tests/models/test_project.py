@@ -40,9 +40,7 @@ def test_project_with_capabilities_and_tags(clean_db: Session) -> None:
     clean_db.add(project)
     clean_db.commit()
 
-    retrieved_project = (
-        clean_db.query(Project).filter_by(name="backend-service").first()
-    )
+    retrieved_project = clean_db.query(Project).filter_by(name="backend-service").first()
     assert retrieved_project is not None
     assert retrieved_project.capabilities == ["python", "postgresql", "redis"]
     assert retrieved_project.tags == ["backend", "api", "microservice"]
@@ -87,9 +85,7 @@ def test_project_routing_preferences(clean_db: Session) -> None:
     clean_db.add(project)
     clean_db.commit()
 
-    retrieved_project = (
-        clean_db.query(Project).filter_by(name="high-priority-service").first()
-    )
+    retrieved_project = clean_db.query(Project).filter_by(name="high-priority-service").first()
     assert retrieved_project is not None
     assert retrieved_project.auto_claim is True
     assert retrieved_project.priority_boost == priority_boost
@@ -115,9 +111,7 @@ def test_project_sync_configuration(clean_db: Session) -> None:
     clean_db.add(project)
     clean_db.commit()
 
-    retrieved_project = (
-        clean_db.query(Project).filter_by(name="synced-project").first()
-    )
+    retrieved_project = clean_db.query(Project).filter_by(name="synced-project").first()
     assert retrieved_project is not None
     assert retrieved_project.sync_config is not None
     assert retrieved_project.sync_config["github"]["enabled"] is True
@@ -137,7 +131,7 @@ def test_project_unique_slug(clean_db: Session) -> None:
     # This should raise an integrity error
     try:
         clean_db.commit()
-        assert False, "Should have raised integrity error for duplicate slug"
+        raise AssertionError("Should have raised integrity error for duplicate slug")
     except Exception:
         clean_db.rollback()
         # Expected behavior
@@ -154,9 +148,7 @@ def test_project_integration_endpoints(clean_db: Session) -> None:
     clean_db.add(project)
     clean_db.commit()
 
-    retrieved_project = (
-        clean_db.query(Project).filter_by(name="integrated-project").first()
-    )
+    retrieved_project = clean_db.query(Project).filter_by(name="integrated-project").first()
     assert retrieved_project is not None
     assert retrieved_project.webhook_url == "https://example.com/webhook"
     assert retrieved_project.api_endpoint == "https://api.example.com/tasks"

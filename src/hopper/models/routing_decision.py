@@ -2,12 +2,16 @@
 RoutingDecision model - Records how and why tasks were routed.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Float, ForeignKey, JSON, String, Text
+from sqlalchemy import JSON, Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, TimestampMixin
+
+if TYPE_CHECKING:
+    from .project import Project
+    from .task import Task
 
 
 class RoutingDecision(Base, TimestampMixin):
@@ -21,9 +25,7 @@ class RoutingDecision(Base, TimestampMixin):
     __tablename__ = "routing_decisions"
 
     # Primary key - one decision per task
-    task_id: Mapped[str] = mapped_column(
-        String(50), ForeignKey("tasks.id"), primary_key=True
-    )
+    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("tasks.id"), primary_key=True)
 
     # Routing result
     project: Mapped[str | None] = mapped_column(
@@ -33,9 +35,7 @@ class RoutingDecision(Base, TimestampMixin):
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Decision metadata
-    alternatives: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON, default=list, nullable=False
-    )
+    alternatives: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     decided_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
     decision_time_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 

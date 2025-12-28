@@ -16,9 +16,7 @@ def test_hopper_instance_creation(clean_db: Session) -> None:
     clean_db.add(instance)
     clean_db.commit()
 
-    retrieved = (
-        clean_db.query(HopperInstance).filter_by(instance_id="hopper-global").first()
-    )
+    retrieved = clean_db.query(HopperInstance).filter_by(instance_id="hopper-global").first()
     assert retrieved is not None
     assert retrieved.instance_id == "hopper-global"
     assert retrieved.scope == HopperScope.GLOBAL.value
@@ -61,9 +59,7 @@ def test_hopper_instance_hierarchy(clean_db: Session) -> None:
     assert retrieved_project.parent.instance_id == "hopper-global"
 
     # Verify children relationship
-    retrieved_global = (
-        clean_db.query(HopperInstance).filter_by(instance_id="hopper-global").first()
-    )
+    retrieved_global = clean_db.query(HopperInstance).filter_by(instance_id="hopper-global").first()
     assert retrieved_global is not None
     assert len(retrieved_global.children) == 1
     assert retrieved_global.children[0].instance_id == "hopper-czarina"
@@ -91,9 +87,7 @@ def test_hopper_instance_configuration(clean_db: Session) -> None:
     clean_db.add(instance)
     clean_db.commit()
 
-    retrieved = (
-        clean_db.query(HopperInstance).filter_by(instance_id="hopper-project").first()
-    )
+    retrieved = clean_db.query(HopperInstance).filter_by(instance_id="hopper-project").first()
     assert retrieved is not None
     assert retrieved.config == config
     assert retrieved.config["max_concurrent_tasks"] == 10
@@ -116,9 +110,7 @@ def test_hopper_instance_tasks_relationship(clean_db: Session) -> None:
     clean_db.commit()
 
     # Verify instance can access its tasks
-    retrieved = (
-        clean_db.query(HopperInstance).filter_by(instance_id="test-instance").first()
-    )
+    retrieved = clean_db.query(HopperInstance).filter_by(instance_id="test-instance").first()
     assert retrieved is not None
     assert len(retrieved.tasks) == 2
     assert {t.id for t in retrieved.tasks} == {"TASK-001", "TASK-002"}
@@ -181,9 +173,7 @@ def test_task_delegation_relationships(clean_db: Session) -> None:
     clean_db.commit()
 
     # Access delegation through parent instance
-    retrieved_parent = (
-        clean_db.query(HopperInstance).filter_by(instance_id="parent").first()
-    )
+    retrieved_parent = clean_db.query(HopperInstance).filter_by(instance_id="parent").first()
     assert retrieved_parent is not None
     assert len(retrieved_parent.parent_delegations) == 1
     assert retrieved_parent.parent_delegations[0].child_task_id == "TASK-001-CHILD"

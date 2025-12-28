@@ -5,7 +5,6 @@ Provides common functionality for all SQLAlchemy models.
 """
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column

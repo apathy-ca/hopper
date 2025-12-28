@@ -31,9 +31,7 @@ def test_routing_decision_creation(clean_db: Session) -> None:
     clean_db.add(decision)
     clean_db.commit()
 
-    retrieved = (
-        clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    )
+    retrieved = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
     assert retrieved is not None
     assert retrieved.project == "czarina"
     assert retrieved.confidence == 0.85
@@ -67,9 +65,7 @@ def test_routing_decision_with_alternatives(clean_db: Session) -> None:
     clean_db.add(decision)
     clean_db.commit()
 
-    retrieved = (
-        clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    )
+    retrieved = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
     assert retrieved is not None
     assert len(retrieved.alternatives) == 2
     assert retrieved.alternatives[0]["project"] == "sark"
@@ -108,9 +104,7 @@ def test_routing_decision_with_context(clean_db: Session) -> None:
     clean_db.add(decision)
     clean_db.commit()
 
-    retrieved = (
-        clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    )
+    retrieved = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
     assert retrieved is not None
     assert retrieved.workload_snapshot is not None
     assert retrieved.workload_snapshot["czarina"]["pending"] == 5
@@ -145,9 +139,7 @@ def test_routing_decision_task_relationship(clean_db: Session) -> None:
     assert retrieved_task.routing_decision.confidence == 0.80
 
     # Access task from decision
-    retrieved_decision = (
-        clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    )
+    retrieved_decision = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
     assert retrieved_decision is not None
     assert retrieved_decision.task.id == "TASK-001"
     assert retrieved_decision.task.title == "Test task"
@@ -173,9 +165,7 @@ def test_routing_decision_project_relationship(clean_db: Session) -> None:
     clean_db.commit()
 
     # Access project from decision
-    retrieved_decision = (
-        clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    )
+    retrieved_decision = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
     assert retrieved_decision is not None
     assert retrieved_decision.project_obj is not None
     assert retrieved_decision.project_obj.name == "czarina"
@@ -207,9 +197,7 @@ def test_routing_decision_without_project(clean_db: Session) -> None:
     clean_db.add(decision)
     clean_db.commit()
 
-    retrieved = (
-        clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    )
+    retrieved = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
     assert retrieved is not None
     assert retrieved.project is None
     assert retrieved.confidence == 0.0
