@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.types import JSON
 
 from .base import Base, TimestampMixin
@@ -53,6 +54,24 @@ class HopperInstance(Base, TimestampMixin):
     children: Mapped[list["HopperInstance"]] = relationship(
         "HopperInstance", back_populates="parent"
     )
+
+    def __init__(self, **kwargs):
+        """Initialize with support for backward compatibility aliases."""
+        # Handle backward compatibility aliases
+        if 'instance_id' in kwargs:
+            kwargs['id'] = kwargs.pop('instance_id')
+        if 'parent_instance_id' in kwargs:
+            kwargs['parent_id'] = kwargs.pop('parent_instance_id')
+
+        # Auto-generate name from id if not provided
+        if 'name' not in kwargs and 'id' in kwargs:
+            kwargs['name'] = kwargs['id']
+
+        super().__init__(**kwargs)
+
+    # Backward compatibility: Create synonyms that work with filter_by
+    instance_id = synonym('id')
+    parent_instance_id = synonym('parent_id')
 
     def __repr__(self) -> str:
         return f"<HopperInstance(id={self.id}, name={self.name}, scope={self.scope})>"
