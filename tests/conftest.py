@@ -97,6 +97,17 @@ def db_session(sqlite_engine: Engine) -> Generator[Session, None, None]:
     connection.close()
 
 
+@pytest.fixture(scope="function")
+def clean_db(db_session: Session) -> Session:
+    """
+    Alias for db_session fixture for backward compatibility.
+
+    Some tests use 'clean_db' naming convention.
+    This is a simple pass-through to the db_session fixture.
+    """
+    return db_session
+
+
 @pytest.fixture(scope="session")
 def postgres_engine() -> Generator[Engine, None, None]:
     """
