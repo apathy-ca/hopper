@@ -1,7 +1,5 @@
 """Main CLI application entry point."""
 
-import sys
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -43,7 +41,7 @@ class Context:
     help="Output in JSON format",
 )
 @click.pass_context
-def cli(ctx: click.Context, config: Optional[str], verbose: bool, json_output: bool) -> None:
+def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool) -> None:
     """Hopper - Universal task queue for human-AI collaborative workflows.
 
     Hopper provides a powerful CLI for managing tasks, projects, and instances
@@ -67,11 +65,11 @@ def cli(ctx: click.Context, config: Optional[str], verbose: bool, json_output: b
 
 
 # Import command groups
-from hopper.cli.commands.task import task, add_shortcut, ls_shortcut
-from hopper.cli.commands.project import project
+from hopper.cli.commands.config import auth, config_group, init
 from hopper.cli.commands.instance import instance
-from hopper.cli.commands.config import config_group, init, auth
+from hopper.cli.commands.project import project
 from hopper.cli.commands.server import server
+from hopper.cli.commands.task import add_shortcut, ls_shortcut, task
 
 # Register command groups
 cli.add_command(task)

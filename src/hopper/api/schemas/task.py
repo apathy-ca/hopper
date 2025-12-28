@@ -5,13 +5,14 @@ Request and response models for task-related API endpoints.
 """
 
 from datetime import datetime
-from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Priority(str, Enum):
     """Task priority levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -20,6 +21,7 @@ class Priority(str, Enum):
 
 class Status(str, Enum):
     """Task status values."""
+
     PENDING = "pending"
     CLAIMED = "claimed"
     IN_PROGRESS = "in_progress"
@@ -30,14 +32,16 @@ class Status(str, Enum):
 
 class VelocityRequirement(str, Enum):
     """Task velocity/speed requirements."""
-    FAST = "fast"          # Hours
-    MEDIUM = "medium"      # Days
-    SLOW = "slow"          # Weeks
-    GLACIAL = "glacial"    # Months
+
+    FAST = "fast"  # Hours
+    MEDIUM = "medium"  # Days
+    SLOW = "slow"  # Weeks
+    GLACIAL = "glacial"  # Months
 
 
 class TaskSource(str, Enum):
     """Task source/origin."""
+
     MCP = "mcp"
     CLI = "cli"
     API = "api"
@@ -54,35 +58,36 @@ class TaskCreate(BaseModel):
     description: str = Field(..., min_length=1, description="Detailed task explanation")
 
     # Categorization
-    project: Optional[str] = Field(None, description="Explicit project assignment")
-    tags: List[str] = Field(default_factory=list, description="Task tags")
+    project: str | None = Field(None, description="Explicit project assignment")
+    tags: list[str] = Field(default_factory=list, description="Task tags")
     priority: Priority = Field(default=Priority.MEDIUM, description="Task priority")
 
     # Routing
-    executor_preference: Optional[str] = Field(None, description="Preferred executor type")
-    required_capabilities: List[str] = Field(default_factory=list, description="Required capabilities")
-    estimated_effort: Optional[str] = Field(None, description="Estimated effort (e.g., '2h', '3d')")
+    executor_preference: str | None = Field(None, description="Preferred executor type")
+    required_capabilities: list[str] = Field(
+        default_factory=list, description="Required capabilities"
+    )
+    estimated_effort: str | None = Field(None, description="Estimated effort (e.g., '2h', '3d')")
     velocity_requirement: VelocityRequirement = Field(
-        default=VelocityRequirement.MEDIUM,
-        description="Task velocity requirement"
+        default=VelocityRequirement.MEDIUM, description="Task velocity requirement"
     )
 
     # Metadata
-    requester: Optional[str] = Field(None, description="Task requester")
+    requester: str | None = Field(None, description="Task requester")
     source: TaskSource = Field(default=TaskSource.API, description="Task source")
 
     # External links
-    external_id: Optional[str] = Field(None, description="External platform ID")
-    external_url: Optional[str] = Field(None, description="External platform URL")
-    external_platform: Optional[str] = Field(None, description="External platform name")
+    external_id: str | None = Field(None, description="External platform ID")
+    external_url: str | None = Field(None, description="External platform URL")
+    external_platform: str | None = Field(None, description="External platform name")
 
     # Context
-    conversation_id: Optional[str] = Field(None, description="Originating conversation ID")
-    context: Optional[str] = Field(None, description="Additional routing context")
+    conversation_id: str | None = Field(None, description="Originating conversation ID")
+    context: str | None = Field(None, description="Additional routing context")
 
     # Dependencies
-    depends_on: List[str] = Field(default_factory=list, description="Task IDs this depends on")
-    blocks: List[str] = Field(default_factory=list, description="Task IDs this blocks")
+    depends_on: list[str] = Field(default_factory=list, description="Task IDs this depends on")
+    blocks: list[str] = Field(default_factory=list, description="Task IDs this blocks")
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -90,35 +95,35 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     """Schema for updating an existing task."""
 
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, min_length=1)
+    title: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, min_length=1)
 
     # Categorization
-    project: Optional[str] = None
-    tags: Optional[List[str]] = None
-    priority: Optional[Priority] = None
+    project: str | None = None
+    tags: list[str] | None = None
+    priority: Priority | None = None
 
     # Routing
-    executor_preference: Optional[str] = None
-    required_capabilities: Optional[List[str]] = None
-    estimated_effort: Optional[str] = None
-    velocity_requirement: Optional[VelocityRequirement] = None
+    executor_preference: str | None = None
+    required_capabilities: list[str] | None = None
+    estimated_effort: str | None = None
+    velocity_requirement: VelocityRequirement | None = None
 
     # Status
-    status: Optional[Status] = None
-    owner: Optional[str] = None
+    status: Status | None = None
+    owner: str | None = None
 
     # External links
-    external_id: Optional[str] = None
-    external_url: Optional[str] = None
-    external_platform: Optional[str] = None
+    external_id: str | None = None
+    external_url: str | None = None
+    external_platform: str | None = None
 
     # Context
-    context: Optional[str] = None
+    context: str | None = None
 
     # Dependencies
-    depends_on: Optional[List[str]] = None
-    blocks: Optional[List[str]] = None
+    depends_on: list[str] | None = None
+    blocks: list[str] | None = None
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -127,7 +132,7 @@ class TaskStatusUpdate(BaseModel):
     """Schema for updating task status."""
 
     status: Status = Field(..., description="New task status")
-    owner: Optional[str] = Field(None, description="Task owner/assignee")
+    owner: str | None = Field(None, description="Task owner/assignee")
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -141,47 +146,44 @@ class TaskResponse(BaseModel):
     description: str
 
     # Categorization
-    project: Optional[str] = None
-    tags: List[str] = []
+    project: str | None = None
+    tags: list[str] = []
     priority: Priority
 
     # Routing
-    executor_preference: Optional[str] = None
-    required_capabilities: List[str] = []
-    estimated_effort: Optional[str] = None
+    executor_preference: str | None = None
+    required_capabilities: list[str] = []
+    estimated_effort: str | None = None
     velocity_requirement: VelocityRequirement
 
     # Metadata
-    requester: Optional[str] = None
+    requester: str | None = None
     created_at: datetime
     updated_at: datetime
     status: Status
-    owner: Optional[str] = None
+    owner: str | None = None
 
     # External links
-    external_id: Optional[str] = None
-    external_url: Optional[str] = None
-    external_platform: Optional[str] = None
+    external_id: str | None = None
+    external_url: str | None = None
+    external_platform: str | None = None
 
     # Source
     source: TaskSource
-    conversation_id: Optional[str] = None
-    context: Optional[str] = None
+    conversation_id: str | None = None
+    context: str | None = None
 
     # Dependencies
-    depends_on: List[str] = []
-    blocks: List[str] = []
+    depends_on: list[str] = []
+    blocks: list[str] = []
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        use_enum_values=True
-    )
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
 
 class TaskList(BaseModel):
     """Schema for paginated task list response."""
 
-    items: List[TaskResponse]
+    items: list[TaskResponse]
     total: int = Field(..., description="Total number of tasks")
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Maximum number of items returned")
@@ -200,17 +202,17 @@ class TaskFeedbackCreate(BaseModel):
 
     # Routing accuracy
     was_good_match: bool
-    should_have_routed_to: Optional[str] = None
+    should_have_routed_to: str | None = None
     routing_feedback: str
 
     # Quality
     quality_score: float = Field(..., ge=0.0, le=5.0, description="Quality score 0.0-5.0")
     required_rework: bool
-    rework_reason: Optional[str] = None
+    rework_reason: str | None = None
 
     # Learning
-    unexpected_blockers: List[str] = Field(default_factory=list)
-    required_skills_not_tagged: List[str] = Field(default_factory=list)
+    unexpected_blockers: list[str] = Field(default_factory=list)
+    required_skills_not_tagged: list[str] = Field(default_factory=list)
 
     # General
     notes: str

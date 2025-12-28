@@ -9,20 +9,21 @@ Provides utilities for:
 - API testing helpers
 - Time manipulation helpers
 """
+
 import json
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import Mock
 
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-
 # ============================================================================
 # Assertion Helpers
 # ============================================================================
 
-def assert_task_equal(task1: Any, task2: Any, ignore_fields: Optional[List[str]] = None):
+
+def assert_task_equal(task1: Any, task2: Any, ignore_fields: list[str] | None = None):
     """
     Assert that two tasks are equal, ignoring specified fields.
 
@@ -35,11 +36,12 @@ def assert_task_equal(task1: Any, task2: Any, ignore_fields: Optional[List[str]]
 
     for field in ["id", "title", "description", "project", "status", "priority"]:
         if field not in ignore_fields:
-            assert getattr(task1, field) == getattr(task2, field), \
-                f"Field {field} differs: {getattr(task1, field)} != {getattr(task2, field)}"
+            assert getattr(task1, field) == getattr(
+                task2, field
+            ), f"Field {field} differs: {getattr(task1, field)} != {getattr(task2, field)}"
 
 
-def assert_dict_contains(expected: Dict[str, Any], actual: Dict[str, Any]):
+def assert_dict_contains(expected: dict[str, Any], actual: dict[str, Any]):
     """
     Assert that actual dictionary contains all expected key-value pairs.
 
@@ -49,8 +51,9 @@ def assert_dict_contains(expected: Dict[str, Any], actual: Dict[str, Any]):
     """
     for key, value in expected.items():
         assert key in actual, f"Key '{key}' not found in actual dictionary"
-        assert actual[key] == value, \
-            f"Value for key '{key}' differs: expected {value}, got {actual[key]}"
+        assert (
+            actual[key] == value
+        ), f"Value for key '{key}' differs: expected {value}, got {actual[key]}"
 
 
 def assert_response_success(response: Any, status_code: int = 200):
@@ -61,11 +64,12 @@ def assert_response_success(response: Any, status_code: int = 200):
         response: HTTP response object
         status_code: Expected status code (default: 200)
     """
-    assert response.status_code == status_code, \
-        f"Expected status {status_code}, got {response.status_code}. Body: {response.text}"
+    assert (
+        response.status_code == status_code
+    ), f"Expected status {status_code}, got {response.status_code}. Body: {response.text}"
 
 
-def assert_response_error(response: Any, status_code: int, error_detail: Optional[str] = None):
+def assert_response_error(response: Any, status_code: int, error_detail: str | None = None):
     """
     Assert that an API response contains an error.
 
@@ -74,14 +78,16 @@ def assert_response_error(response: Any, status_code: int, error_detail: Optiona
         status_code: Expected error status code
         error_detail: Expected error detail message (optional)
     """
-    assert response.status_code == status_code, \
-        f"Expected status {status_code}, got {response.status_code}"
+    assert (
+        response.status_code == status_code
+    ), f"Expected status {status_code}, got {response.status_code}"
 
     if error_detail:
         body = response.json()
         assert "detail" in body, "Error response missing 'detail' field"
-        assert error_detail in body["detail"], \
-            f"Expected error detail to contain '{error_detail}', got '{body['detail']}'"
+        assert (
+            error_detail in body["detail"]
+        ), f"Expected error detail to contain '{error_detail}', got '{body['detail']}'"
 
 
 def assert_timestamp_recent(timestamp: datetime, seconds: int = 5):
@@ -94,15 +100,17 @@ def assert_timestamp_recent(timestamp: datetime, seconds: int = 5):
     """
     now = datetime.utcnow()
     delta = now - timestamp
-    assert delta.total_seconds() <= seconds, \
-        f"Timestamp {timestamp} is not recent (more than {seconds} seconds old)"
+    assert (
+        delta.total_seconds() <= seconds
+    ), f"Timestamp {timestamp} is not recent (more than {seconds} seconds old)"
 
 
 # ============================================================================
 # Data Validation Helpers
 # ============================================================================
 
-def validate_task_schema(task_data: Dict[str, Any]) -> bool:
+
+def validate_task_schema(task_data: dict[str, Any]) -> bool:
     """
     Validate that a dictionary conforms to the task schema.
 
@@ -124,17 +132,15 @@ def validate_task_schema(task_data: Dict[str, Any]) -> bool:
 
     # Validate enum values
     valid_statuses = ["pending", "routed", "in_progress", "completed", "archived"]
-    assert task_data["status"] in valid_statuses, \
-        f"Invalid status: {task_data['status']}"
+    assert task_data["status"] in valid_statuses, f"Invalid status: {task_data['status']}"
 
     valid_priorities = ["low", "medium", "high", "urgent"]
-    assert task_data["priority"] in valid_priorities, \
-        f"Invalid priority: {task_data['priority']}"
+    assert task_data["priority"] in valid_priorities, f"Invalid priority: {task_data['priority']}"
 
     return True
 
 
-def validate_project_schema(project_data: Dict[str, Any]) -> bool:
+def validate_project_schema(project_data: dict[str, Any]) -> bool:
     """
     Validate that a dictionary conforms to the project schema.
 
@@ -155,7 +161,7 @@ def validate_project_schema(project_data: Dict[str, Any]) -> bool:
     return True
 
 
-def validate_routing_decision_schema(decision_data: Dict[str, Any]) -> bool:
+def validate_routing_decision_schema(decision_data: dict[str, Any]) -> bool:
     """
     Validate that a dictionary conforms to the routing decision schema.
 
@@ -169,14 +175,13 @@ def validate_routing_decision_schema(decision_data: Dict[str, Any]) -> bool:
     for field in required_fields:
         assert field in decision_data, f"Missing required field: {field}"
 
-    assert isinstance(decision_data["confidence"], (int, float)), \
-        "confidence must be a number"
-    assert 0 <= decision_data["confidence"] <= 1, \
-        "confidence must be between 0 and 1"
+    assert isinstance(decision_data["confidence"], (int, float)), "confidence must be a number"
+    assert 0 <= decision_data["confidence"] <= 1, "confidence must be between 0 and 1"
 
     valid_strategies = ["rules", "llm", "sage"]
-    assert decision_data["strategy"] in valid_strategies, \
-        f"Invalid strategy: {decision_data['strategy']}"
+    assert (
+        decision_data["strategy"] in valid_strategies
+    ), f"Invalid strategy: {decision_data['strategy']}"
 
     return True
 
@@ -184,6 +189,7 @@ def validate_routing_decision_schema(decision_data: Dict[str, Any]) -> bool:
 # ============================================================================
 # Database Helpers
 # ============================================================================
+
 
 def clear_database(session: Session, *models):
     """
@@ -216,7 +222,7 @@ def count_records(session: Session, model: Any, **filters) -> int:
     return query.count()
 
 
-def get_all_records(session: Session, model: Any, **filters) -> List[Any]:
+def get_all_records(session: Session, model: Any, **filters) -> list[Any]:
     """
     Get all records from a table with optional filters.
 
@@ -249,7 +255,7 @@ def refresh_from_db(session: Session, instance: Any) -> Any:
     return instance
 
 
-def model_to_dict(instance: Any, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
+def model_to_dict(instance: Any, exclude: list[str] | None = None) -> dict[str, Any]:
     """
     Convert a SQLAlchemy model instance to a dictionary.
 
@@ -279,10 +285,9 @@ def model_to_dict(instance: Any, exclude: Optional[List[str]] = None) -> Dict[st
 # Mock Response Builders
 # ============================================================================
 
+
 def build_api_response(
-    data: Any,
-    status_code: int = 200,
-    headers: Optional[Dict[str, str]] = None
+    data: Any, status_code: int = 200, headers: dict[str, str] | None = None
 ) -> Mock:
     """
     Build a mock API response.
@@ -304,9 +309,7 @@ def build_api_response(
 
 
 def build_error_response(
-    status_code: int,
-    detail: str,
-    headers: Optional[Dict[str, str]] = None
+    status_code: int, detail: str, headers: dict[str, str] | None = None
 ) -> Mock:
     """
     Build a mock error response.
@@ -323,7 +326,7 @@ def build_error_response(
     return build_api_response(error_data, status_code, headers)
 
 
-def build_task_response(task_data: Dict[str, Any]) -> Dict[str, Any]:
+def build_task_response(task_data: dict[str, Any]) -> dict[str, Any]:
     """
     Build a standardized task API response.
 
@@ -346,11 +349,8 @@ def build_task_response(task_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_paginated_response(
-    items: List[Any],
-    page: int = 1,
-    page_size: int = 10,
-    total: Optional[int] = None
-) -> Dict[str, Any]:
+    items: list[Any], page: int = 1, page_size: int = 10, total: int | None = None
+) -> dict[str, Any]:
     """
     Build a paginated API response.
 
@@ -376,6 +376,7 @@ def build_paginated_response(
 # ============================================================================
 # Time Helpers
 # ============================================================================
+
 
 def days_ago(days: int) -> datetime:
     """
@@ -420,6 +421,7 @@ def hours_ago(hours: int) -> datetime:
 # API Testing Helpers
 # ============================================================================
 
+
 def extract_id_from_location(location: str) -> str:
     """
     Extract resource ID from Location header.
@@ -433,7 +435,7 @@ def extract_id_from_location(location: str) -> str:
     return location.split("/")[-1]
 
 
-def assert_pagination_valid(response_data: Dict[str, Any]):
+def assert_pagination_valid(response_data: dict[str, Any]):
     """
     Assert that a paginated response has valid pagination metadata.
 
@@ -460,7 +462,8 @@ def assert_pagination_valid(response_data: Dict[str, Any]):
 # CLI Testing Helpers
 # ============================================================================
 
-def parse_cli_table_output(output: str) -> List[Dict[str, str]]:
+
+def parse_cli_table_output(output: str) -> list[dict[str, str]]:
     """
     Parse CLI table output into list of dictionaries.
 
@@ -488,7 +491,7 @@ def parse_cli_table_output(output: str) -> List[Dict[str, str]]:
     return rows
 
 
-def assert_cli_success(result: Any, expected_output: Optional[str] = None):
+def assert_cli_success(result: Any, expected_output: str | None = None):
     """
     Assert that a CLI command succeeded.
 
@@ -496,15 +499,17 @@ def assert_cli_success(result: Any, expected_output: Optional[str] = None):
         result: Click CLI result
         expected_output: Expected output string (optional)
     """
-    assert result.exit_code == 0, \
-        f"CLI command failed with exit code {result.exit_code}. Output: {result.output}"
+    assert (
+        result.exit_code == 0
+    ), f"CLI command failed with exit code {result.exit_code}. Output: {result.output}"
 
     if expected_output:
-        assert expected_output in result.output, \
-            f"Expected output to contain '{expected_output}', got: {result.output}"
+        assert (
+            expected_output in result.output
+        ), f"Expected output to contain '{expected_output}', got: {result.output}"
 
 
-def assert_cli_error(result: Any, expected_error: Optional[str] = None):
+def assert_cli_error(result: Any, expected_error: str | None = None):
     """
     Assert that a CLI command failed.
 
@@ -512,19 +517,22 @@ def assert_cli_error(result: Any, expected_error: Optional[str] = None):
         result: Click CLI result
         expected_error: Expected error message (optional)
     """
-    assert result.exit_code != 0, \
-        f"Expected CLI command to fail, but it succeeded. Output: {result.output}"
+    assert (
+        result.exit_code != 0
+    ), f"Expected CLI command to fail, but it succeeded. Output: {result.output}"
 
     if expected_error:
-        assert expected_error in result.output, \
-            f"Expected error to contain '{expected_error}', got: {result.output}"
+        assert (
+            expected_error in result.output
+        ), f"Expected error to contain '{expected_error}', got: {result.output}"
 
 
 # ============================================================================
 # MCP Testing Helpers
 # ============================================================================
 
-def build_mcp_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+
+def build_mcp_tool_call(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """
     Build an MCP tool call request.
 
@@ -540,11 +548,11 @@ def build_mcp_tool_call(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, 
         "params": {
             "name": tool_name,
             "arguments": arguments,
-        }
+        },
     }
 
 
-def build_mcp_tool_response(result: Any, is_error: bool = False) -> Dict[str, Any]:
+def build_mcp_tool_response(result: Any, is_error: bool = False) -> dict[str, Any]:
     """
     Build an MCP tool call response.
 
@@ -563,20 +571,19 @@ def build_mcp_tool_response(result: Any, is_error: bool = False) -> Dict[str, An
             }
         }
     else:
-        return {
-            "result": result
-        }
+        return {"result": result}
 
 
-def assert_mcp_tool_response_valid(response: Dict[str, Any]):
+def assert_mcp_tool_response_valid(response: dict[str, Any]):
     """
     Assert that an MCP tool response is valid.
 
     Args:
         response: MCP tool response
     """
-    assert "result" in response or "error" in response, \
-        "MCP response must contain either 'result' or 'error'"
+    assert (
+        "result" in response or "error" in response
+    ), "MCP response must contain either 'result' or 'error'"
 
     if "error" in response:
         assert "code" in response["error"], "MCP error must have 'code'"

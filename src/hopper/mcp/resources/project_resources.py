@@ -5,7 +5,7 @@ Exposes projects as MCP resources accessible via hopper://projects/* URIs.
 """
 
 import json
-from typing import Any
+
 import httpx
 from mcp.types import Resource, TextContent
 
@@ -65,10 +65,7 @@ async def read_project_resource(
             "total": data.get("total", 0),
         }
 
-        return [TextContent(
-            type="text",
-            text=json.dumps(content, indent=2)
-        )]
+        return [TextContent(type="text", text=json.dumps(content, indent=2))]
 
     else:
         # Assume it's a project ID
@@ -80,8 +77,7 @@ async def read_project_resource(
 
         # Also get tasks for this project
         tasks_response = await client.get(
-            "/api/v1/tasks",
-            params={"project": project_id, "limit": 10}
+            "/api/v1/tasks", params={"project": project_id, "limit": 10}
         )
         tasks_response.raise_for_status()
         tasks_data = tasks_response.json()
@@ -93,7 +89,4 @@ async def read_project_resource(
             "recent_tasks": tasks_data.get("tasks", []),
         }
 
-        return [TextContent(
-            type="text",
-            text=json.dumps(content, indent=2)
-        )]
+        return [TextContent(type="text", text=json.dumps(content, indent=2))]

@@ -8,18 +8,16 @@ Provides reusable dependencies for:
 - Common query parameters
 """
 
-from typing import AsyncGenerator, Optional, Annotated
-from fastapi import Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 import os
+from collections.abc import AsyncGenerator
+from typing import Annotated
 
-from hopper.models.base import Base
-
+from fastapi import Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Database configuration
 DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./hopper.db"  # Default to SQLite for development
+    "DATABASE_URL", "sqlite+aiosqlite:///./hopper.db"  # Default to SQLite for development
 )
 
 # Create async engine
@@ -91,11 +89,10 @@ class FilterParams:
 
     def __init__(
         self,
-        search: Annotated[Optional[str], Query(description="Search query")] = None,
-        sort_by: Annotated[Optional[str], Query(description="Sort by field")] = None,
+        search: Annotated[str | None, Query(description="Search query")] = None,
+        sort_by: Annotated[str | None, Query(description="Sort by field")] = None,
         sort_order: Annotated[
-            Optional[str],
-            Query(pattern="^(asc|desc)$", description="Sort order (asc/desc)")
+            str | None, Query(pattern="^(asc|desc)$", description="Sort order (asc/desc)")
         ] = "desc",
     ):
         self.search = search
@@ -138,7 +135,7 @@ async def get_current_active_user(
     return current_user
 
 
-async def get_optional_current_user() -> Optional[dict]:
+async def get_optional_current_user() -> dict | None:
     """
     Dependency that provides the current user if authenticated, None otherwise.
 

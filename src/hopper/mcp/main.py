@@ -5,8 +5,8 @@ Command-line interface for starting and managing the Hopper MCP server.
 """
 
 import asyncio
-import sys
 import logging
+import sys
 
 from .server import create_server
 

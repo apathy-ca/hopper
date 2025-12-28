@@ -4,7 +4,7 @@ Hopper API module.
 FastAPI-based REST API for the Hopper task queue system.
 """
 
-from hopper.api.app import create_app, app
+from hopper.api.app import app, create_app
 
 __version__ = "0.1.0"
 

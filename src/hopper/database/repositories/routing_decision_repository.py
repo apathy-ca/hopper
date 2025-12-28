@@ -1,13 +1,14 @@
 """
 Routing Decision repository for tracking routing outcomes.
 """
+
 from datetime import datetime, timedelta
-from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.routing_decision import RoutingDecision
+
 from .base import BaseRepository
 
 
@@ -18,7 +19,7 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         """Initialize RoutingDecisionRepository."""
         super().__init__(RoutingDecision, session)
 
-    def get_by_task(self, task_id: str) -> Optional[RoutingDecision]:
+    def get_by_task(self, task_id: str) -> RoutingDecision | None:
         """
         Get routing decision for a specific task.
 
@@ -31,8 +32,8 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         return self.get(task_id)
 
     def get_decisions_by_project(
-        self, project: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[RoutingDecision]:
+        self, project: str, skip: int = 0, limit: int | None = None
+    ) -> list[RoutingDecision]:
         """
         Get all routing decisions for a specific project.
 
@@ -47,8 +48,8 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         return self.filter(filters={"project": project}, skip=skip, limit=limit)
 
     def get_decisions_by_strategy(
-        self, decided_by: str, skip: int = 0, limit: Optional[int] = None
-    ) -> List[RoutingDecision]:
+        self, decided_by: str, skip: int = 0, limit: int | None = None
+    ) -> list[RoutingDecision]:
         """
         Get all routing decisions made by a specific strategy.
 
@@ -63,8 +64,8 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         return self.filter(filters={"decided_by": decided_by}, skip=skip, limit=limit)
 
     def get_recent_decisions(
-        self, limit: int = 10, hours: Optional[int] = None
-    ) -> List[RoutingDecision]:
+        self, limit: int = 10, hours: int | None = None
+    ) -> list[RoutingDecision]:
         """
         Get recent routing decisions.
 
@@ -87,8 +88,8 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         return list(result.scalars().all())
 
     def get_decisions_with_low_confidence(
-        self, threshold: float = 0.7, skip: int = 0, limit: Optional[int] = None
-    ) -> List[RoutingDecision]:
+        self, threshold: float = 0.7, skip: int = 0, limit: int | None = None
+    ) -> list[RoutingDecision]:
         """
         Get routing decisions with confidence below a threshold.
 
@@ -100,9 +101,7 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         Returns:
             List of low-confidence routing decisions
         """
-        query = select(RoutingDecision).where(
-            RoutingDecision.confidence < threshold
-        )
+        query = select(RoutingDecision).where(RoutingDecision.confidence < threshold)
 
         query = query.offset(skip)
         if limit:
@@ -111,9 +110,7 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         result = self.session.execute(query)
         return list(result.scalars().all())
 
-    def get_average_decision_time(
-        self, decided_by: Optional[str] = None
-    ) -> Optional[float]:
+    def get_average_decision_time(self, decided_by: str | None = None) -> float | None:
         """
         Get average decision time in milliseconds.
 
@@ -133,9 +130,7 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         result = self.session.execute(query)
         return result.scalar()
 
-    def get_average_confidence(
-        self, decided_by: Optional[str] = None
-    ) -> Optional[float]:
+    def get_average_confidence(self, decided_by: str | None = None) -> float | None:
         """
         Get average confidence score.
 
@@ -168,15 +163,12 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         total = self.count()
 
         # Decisions by strategy
-        query = (
-            select(
-                RoutingDecision.decided_by,
-                func.count(RoutingDecision.task_id),
-                func.avg(RoutingDecision.confidence),
-                func.avg(RoutingDecision.decision_time_ms),
-            )
-            .group_by(RoutingDecision.decided_by)
-        )
+        query = select(
+            RoutingDecision.decided_by,
+            func.count(RoutingDecision.task_id),
+            func.avg(RoutingDecision.confidence),
+            func.avg(RoutingDecision.decision_time_ms),
+        ).group_by(RoutingDecision.decided_by)
         result = self.session.execute(query)
         strategy_stats = {}
         for strategy, count, avg_conf, avg_time in result.all():

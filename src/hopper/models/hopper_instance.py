@@ -1,12 +1,12 @@
 """
 Hopper Instance model for multi-instance support.
 """
+
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.types import JSON
 
@@ -23,17 +23,15 @@ class HopperInstance(Base, TimestampMixin):
 
     # Instance details
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    scope: Mapped[str] = mapped_column(
-        String(50), nullable=False
-    )  # GLOBAL, PROJECT, ORCHESTRATION
+    scope: Mapped[str] = mapped_column(String(50), nullable=False)  # GLOBAL, PROJECT, ORCHESTRATION
 
     # Hierarchy
-    parent_id: Mapped[Optional[str]] = mapped_column(
+    parent_id: Mapped[str | None] = mapped_column(
         String(100), ForeignKey("hopper_instances.id"), nullable=True
     )
 
     # Configuration
-    config: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    config: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
 
@@ -43,9 +41,9 @@ class HopperInstance(Base, TimestampMixin):
     )  # active, paused, terminated
 
     # Metadata
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    terminated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     parent: Mapped[Optional["HopperInstance"]] = relationship(
@@ -54,27 +52,25 @@ class HopperInstance(Base, TimestampMixin):
     children: Mapped[list["HopperInstance"]] = relationship(
         "HopperInstance", back_populates="parent"
     )
-    tasks: Mapped[list["Task"]] = relationship(
-        "Task", back_populates="instance"
-    )
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="instance")
 
     def __init__(self, **kwargs):
         """Initialize with support for backward compatibility aliases."""
         # Handle backward compatibility aliases
-        if 'instance_id' in kwargs:
-            kwargs['id'] = kwargs.pop('instance_id')
-        if 'parent_instance_id' in kwargs:
-            kwargs['parent_id'] = kwargs.pop('parent_instance_id')
+        if "instance_id" in kwargs:
+            kwargs["id"] = kwargs.pop("instance_id")
+        if "parent_instance_id" in kwargs:
+            kwargs["parent_id"] = kwargs.pop("parent_instance_id")
 
         # Auto-generate name from id if not provided
-        if 'name' not in kwargs and 'id' in kwargs:
-            kwargs['name'] = kwargs['id']
+        if "name" not in kwargs and "id" in kwargs:
+            kwargs["name"] = kwargs["id"]
 
         super().__init__(**kwargs)
 
     # Backward compatibility: Create synonyms that work with filter_by
-    instance_id = synonym('id')
-    parent_instance_id = synonym('parent_id')
+    instance_id = synonym("id")
+    parent_instance_id = synonym("parent_id")
 
     def __repr__(self) -> str:
         return f"<HopperInstance(id={self.id}, name={self.name}, scope={self.scope})>"

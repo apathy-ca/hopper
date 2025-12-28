@@ -1,7 +1,9 @@
 """
 Tests for ProjectRepository.
 """
+
 import os
+
 import pytest
 
 from hopper.database.connection import create_sync_engine, reset_session_factories
@@ -19,6 +21,7 @@ def test_session():
     init_database(engine, create_tables=True)
 
     from sqlalchemy.orm import sessionmaker
+
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = SessionLocal()
 
@@ -82,8 +85,12 @@ def test_get_projects_with_active_tasks(test_session):
     project_repo.create(name="project-c", slug="proj-c")
 
     # Create tasks
-    task_repo.create(id="task-1", title="Task 1", project="project-a", status="pending", priority="medium")
-    task_repo.create(id="task-2", title="Task 2", project="project-b", status="completed", priority="medium")
+    task_repo.create(
+        id="task-1", title="Task 1", project="project-a", status="pending", priority="medium"
+    )
+    task_repo.create(
+        id="task-2", title="Task 2", project="project-b", status="completed", priority="medium"
+    )
 
     # Get projects with active tasks
     projects = project_repo.get_projects_with_active_tasks()
@@ -113,9 +120,15 @@ def test_get_project_task_count(test_session):
 
     project_repo.create(name="test-project", slug="test-proj")
 
-    task_repo.create(id="task-1", title="Task 1", project="test-project", status="pending", priority="medium")
-    task_repo.create(id="task-2", title="Task 2", project="test-project", status="pending", priority="medium")
-    task_repo.create(id="task-3", title="Task 3", project="test-project", status="completed", priority="medium")
+    task_repo.create(
+        id="task-1", title="Task 1", project="test-project", status="pending", priority="medium"
+    )
+    task_repo.create(
+        id="task-2", title="Task 2", project="test-project", status="pending", priority="medium"
+    )
+    task_repo.create(
+        id="task-3", title="Task 3", project="test-project", status="completed", priority="medium"
+    )
 
     count = project_repo.get_project_task_count("test-project")
     assert count == 3
@@ -128,10 +141,18 @@ def test_get_project_statistics(test_session):
 
     project_repo.create(name="test-project", slug="test-proj")
 
-    task_repo.create(id="task-1", title="Task 1", project="test-project", status="pending", priority="medium")
-    task_repo.create(id="task-2", title="Task 2", project="test-project", status="pending", priority="medium")
-    task_repo.create(id="task-3", title="Task 3", project="test-project", status="in_progress", priority="medium")
-    task_repo.create(id="task-4", title="Task 4", project="test-project", status="completed", priority="medium")
+    task_repo.create(
+        id="task-1", title="Task 1", project="test-project", status="pending", priority="medium"
+    )
+    task_repo.create(
+        id="task-2", title="Task 2", project="test-project", status="pending", priority="medium"
+    )
+    task_repo.create(
+        id="task-3", title="Task 3", project="test-project", status="in_progress", priority="medium"
+    )
+    task_repo.create(
+        id="task-4", title="Task 4", project="test-project", status="completed", priority="medium"
+    )
 
     stats = project_repo.get_project_statistics("test-project")
 

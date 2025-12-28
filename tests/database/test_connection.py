@@ -1,7 +1,9 @@
 """
 Tests for database connection management.
 """
+
 import os
+
 import pytest
 from sqlalchemy import text
 
@@ -50,7 +52,7 @@ def test_get_database_url_async_mode():
     # Test SQLite async URL
     os.environ["DATABASE_URL"] = "sqlite:///./test.db"
     url = get_database_url(async_mode=True)
-    assert url.startswith("sqlite+aiosqlite:///" )
+    assert url.startswith("sqlite+aiosqlite:///")
 
     os.environ.pop("DATABASE_URL", None)
 

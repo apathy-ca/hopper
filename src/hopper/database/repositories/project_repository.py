@@ -1,13 +1,14 @@
 """
 Project repository with project-specific queries and operations.
 """
-from typing import List, Optional
+
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.project import Project
 from hopper.models.task import Task
+
 from .base import BaseRepository
 
 
@@ -18,7 +19,7 @@ class ProjectRepository(BaseRepository[Project]):
         """Initialize ProjectRepository."""
         super().__init__(Project, session)
 
-    def get_by_slug(self, slug: str) -> Optional[Project]:
+    def get_by_slug(self, slug: str) -> Project | None:
         """
         Get a project by its slug.
 
@@ -32,7 +33,7 @@ class ProjectRepository(BaseRepository[Project]):
         result = self.session.execute(query)
         return result.scalar_one_or_none()
 
-    def get_by_name(self, name: str) -> Optional[Project]:
+    def get_by_name(self, name: str) -> Project | None:
         """
         Get a project by its name (primary key).
 
@@ -44,7 +45,7 @@ class ProjectRepository(BaseRepository[Project]):
         """
         return self.get(name)
 
-    def get_projects_with_active_tasks(self) -> List[Project]:
+    def get_projects_with_active_tasks(self) -> list[Project]:
         """
         Get all projects that have active (non-completed) tasks.
 
@@ -60,7 +61,7 @@ class ProjectRepository(BaseRepository[Project]):
         result = self.session.execute(query)
         return list(result.scalars().all())
 
-    def get_projects_by_executor_type(self, executor_type: str) -> List[Project]:
+    def get_projects_by_executor_type(self, executor_type: str) -> list[Project]:
         """
         Get all projects with a specific executor type.
 
@@ -72,7 +73,7 @@ class ProjectRepository(BaseRepository[Project]):
         """
         return self.filter(filters={"executor_type": executor_type})
 
-    def get_auto_claim_projects(self) -> List[Project]:
+    def get_auto_claim_projects(self) -> list[Project]:
         """
         Get all projects with auto_claim enabled.
 
@@ -81,7 +82,7 @@ class ProjectRepository(BaseRepository[Project]):
         """
         return self.filter(filters={"auto_claim": True})
 
-    def update_last_sync(self, name: str) -> Optional[Project]:
+    def update_last_sync(self, name: str) -> Project | None:
         """
         Update the last_sync timestamp for a project.
 

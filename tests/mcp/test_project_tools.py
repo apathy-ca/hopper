@@ -1,12 +1,12 @@
 """Tests for MCP project management tools."""
 
 import pytest
+
 from hopper.mcp.tools.project_tools import (
+    create_project,
+    get_project,
     get_project_tools,
     list_projects,
-    get_project,
-    create_project,
-    get_project_tasks,
 )
 
 
@@ -50,11 +50,16 @@ class TestProjectFunctions:
     async def test_create_project(self, mock_http_client, mock_http_response):
         """Test creating a project."""
         mock_http_client.post.return_value = mock_http_response(
-            json_data={"id": "project-new", "name": "new-project", "platform": "github", "external_id": "owner/repo"}
+            json_data={
+                "id": "project-new",
+                "name": "new-project",
+                "platform": "github",
+                "external_id": "owner/repo",
+            }
         )
         result = await create_project(
             client=mock_http_client,
-            args={"name": "new-project", "platform": "github", "external_id": "owner/repo"}
+            args={"name": "new-project", "platform": "github", "external_id": "owner/repo"},
         )
         assert result["project_id"] == "project-new"
         assert "message" in result

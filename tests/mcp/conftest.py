@@ -4,10 +4,11 @@ Pytest configuration and fixtures for MCP tests.
 Provides shared fixtures for testing MCP server, tools, and resources.
 """
 
-import pytest
-from typing import AsyncGenerator, Dict, Any
+from typing import Any
 from unittest.mock import AsyncMock, Mock
+
 import httpx
+import pytest
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def mock_http_response():
 
     def _create_response(
         status_code: int = 200,
-        json_data: Dict[str, Any] = None,
+        json_data: dict[str, Any] = None,
         text: str = "",
     ) -> Mock:
         response = Mock(spec=httpx.Response)
@@ -56,11 +57,7 @@ async def mock_http_client(mock_http_response):
     client = AsyncMock(spec=httpx.AsyncClient)
 
     # Default successful responses
-    client.get = AsyncMock(
-        return_value=mock_http_response(
-            json_data={"tasks": [], "total": 0}
-        )
-    )
+    client.get = AsyncMock(return_value=mock_http_response(json_data={"tasks": [], "total": 0}))
     client.post = AsyncMock(
         return_value=mock_http_response(
             json_data={
@@ -86,14 +83,17 @@ async def mock_http_client(mock_http_response):
 @pytest.fixture
 def mock_context():
     """Mock server context."""
-    from hopper.mcp.context import ServerContext
     from unittest.mock import Mock
 
+    from hopper.mcp.context import ServerContext
+
     context = Mock(spec=ServerContext)
-    context.get_context = Mock(return_value={
-        "user": "test-user",
-        "active_project": "test-project",
-    })
+    context.get_context = Mock(
+        return_value={
+            "user": "test-user",
+            "active_project": "test-project",
+        }
+    )
     context.add_recent_task = Mock()
     context.cleanup = AsyncMock()
 
@@ -178,11 +178,7 @@ async def mcp_server(mock_config, monkeypatch):
     async def mock_get_client(self):
         return AsyncMock(spec=httpx.AsyncClient)
 
-    monkeypatch.setattr(
-        HopperMCPServer,
-        "_get_http_client",
-        mock_get_client
-    )
+    monkeypatch.setattr(HopperMCPServer, "_get_http_client", mock_get_client)
 
     server = HopperMCPServer(config=mock_config)
     yield server

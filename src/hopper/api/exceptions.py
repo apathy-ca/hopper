@@ -4,10 +4,11 @@ Custom exception classes and handlers for the Hopper API.
 Provides standardized error responses and exception handling.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
+
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 
 class HopperException(Exception):
@@ -17,7 +18,7 @@ class HopperException(Exception):
         self,
         message: str,
         status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail: Optional[Dict[str, Any]] = None,
+        detail: dict[str, Any] | None = None,
     ):
         self.message = message
         self.status_code = status_code
@@ -50,7 +51,7 @@ class AlreadyExistsException(HopperException):
 class ValidationException(HopperException):
     """Exception raised when validation fails."""
 
-    def __init__(self, message: str, field: Optional[str] = None):
+    def __init__(self, message: str, field: str | None = None):
         detail = {"field": field} if field else {}
         super().__init__(
             message=message,
@@ -95,7 +96,7 @@ class InvalidStateTransitionException(HopperException):
 class DatabaseException(HopperException):
     """Exception raised for database-related errors."""
 
-    def __init__(self, message: str, operation: Optional[str] = None):
+    def __init__(self, message: str, operation: str | None = None):
         detail = {"operation": operation} if operation else {}
         super().__init__(
             message=message,

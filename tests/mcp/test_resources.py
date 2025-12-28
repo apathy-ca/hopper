@@ -1,12 +1,12 @@
 """Tests for MCP resources."""
 
 import pytest
+
 from hopper.mcp.resources import (
     get_all_resources,
-    read_resource,
 )
-from hopper.mcp.resources.task_resources import read_task_resource
 from hopper.mcp.resources.project_resources import read_project_resource
+from hopper.mcp.resources.task_resources import read_task_resource
 
 
 class TestResourceDefinitions:
@@ -37,9 +37,7 @@ class TestTaskResources:
     @pytest.mark.asyncio
     async def test_read_pending_tasks(self, mock_http_client, mock_http_response):
         """Test reading pending tasks resource."""
-        mock_http_client.get.return_value = mock_http_response(
-            json_data={"tasks": [], "total": 0}
-        )
+        mock_http_client.get.return_value = mock_http_response(json_data={"tasks": [], "total": 0})
 
         contents = await read_task_resource("hopper://tasks/pending", mock_http_client)
         assert len(contents) == 1
@@ -57,7 +55,9 @@ class TestProjectResources:
     """Test project resource reading."""
 
     @pytest.mark.asyncio
-    async def test_read_all_projects(self, mock_http_client, mock_http_response, sample_project_list):
+    async def test_read_all_projects(
+        self, mock_http_client, mock_http_response, sample_project_list
+    ):
         """Test reading all projects resource."""
         mock_http_client.get.return_value = mock_http_response(json_data=sample_project_list)
 

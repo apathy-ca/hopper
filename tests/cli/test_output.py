@@ -1,12 +1,11 @@
 """Tests for output formatting utilities."""
 
-import pytest
 from datetime import datetime, timedelta
 
 from hopper.cli.output import (
     format_datetime,
-    get_status_style,
     get_priority_style,
+    get_status_style,
 )
 
 

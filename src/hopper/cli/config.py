@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-from typing import Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -19,8 +18,8 @@ class APIConfig(BaseModel):
 class AuthConfig(BaseModel):
     """Authentication configuration."""
 
-    token: Optional[str] = Field(default=None, description="Authentication token")
-    api_key: Optional[str] = Field(default=None, description="API key")
+    token: str | None = Field(default=None, description="Authentication token")
+    api_key: str | None = Field(default=None, description="API key")
 
 
 class ProfileConfig(BaseModel):
@@ -38,14 +37,13 @@ class Config(BaseSettings):
 
     # Configuration profiles
     profiles: dict[str, ProfileConfig] = Field(
-        default_factory=lambda: {"default": ProfileConfig()},
-        description="Configuration profiles"
+        default_factory=lambda: {"default": ProfileConfig()}, description="Configuration profiles"
     )
 
     # Configuration file path
     config_path: Path = Field(
         default_factory=lambda: Path.home() / ".hopper" / "config.yaml",
-        description="Path to configuration file"
+        description="Path to configuration file",
     )
 
     class Config:
@@ -72,10 +70,10 @@ class Config(BaseSettings):
                     "auth": {
                         "token": profile.auth.token,
                         "api_key": profile.auth.api_key,
-                    }
+                    },
                 }
                 for name, profile in self.profiles.items()
-            }
+            },
         }
 
         with open(self.config_path, "w") as f:
@@ -94,17 +92,17 @@ class Config(BaseSettings):
         for name, profile_data in data.get("profiles", {}).items():
             profiles[name] = ProfileConfig(
                 api=APIConfig(**profile_data.get("api", {})),
-                auth=AuthConfig(**profile_data.get("auth", {}))
+                auth=AuthConfig(**profile_data.get("auth", {})),
             )
 
         return cls(
             active_profile=data.get("active_profile", "default"),
             profiles=profiles or {"default": ProfileConfig()},
-            config_path=config_path
+            config_path=config_path,
         )
 
 
-def load_config(config_path: Optional[str] = None) -> Config:
+def load_config(config_path: str | None = None) -> Config:
     """Load Hopper configuration.
 
     Args:

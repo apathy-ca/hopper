@@ -5,12 +5,14 @@ Request and response models for project-related API endpoints.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExecutorType(str):
     """Executor type constants."""
+
     CZARINA = "czarina"
     SARK = "sark"
     HUMAN = "human"
@@ -20,6 +22,7 @@ class ExecutorType(str):
 
 class SyncMode(str):
     """Sync mode for external platforms."""
+
     IMPORT = "import"
     EXPORT = "export"
     BIDIRECTIONAL = "bidirectional"
@@ -37,25 +40,22 @@ class SyncConfigCreate(BaseModel):
     sync_interval: int = Field(default=15, ge=1, description="Sync interval in minutes")
 
     # Field mapping
-    label_to_tag: Dict[str, str] = Field(default_factory=dict, description="Label to tag mapping")
-    milestone_to_priority: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Milestone to priority mapping"
+    label_to_tag: dict[str, str] = Field(default_factory=dict, description="Label to tag mapping")
+    milestone_to_priority: dict[str, str] = Field(
+        default_factory=dict, description="Milestone to priority mapping"
     )
-    assignee_to_executor: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Assignee to executor mapping"
+    assignee_to_executor: dict[str, str] = Field(
+        default_factory=dict, description="Assignee to executor mapping"
     )
 
     # Filtering
-    import_labels: List[str] = Field(
-        default_factory=list,
-        description="Only import issues with these labels"
+    import_labels: list[str] = Field(
+        default_factory=list, description="Only import issues with these labels"
     )
-    export_filter: Optional[str] = Field(None, description="Python expression for export filter")
+    export_filter: str | None = Field(None, description="Python expression for export filter")
 
     # Webhook
-    webhook_secret: Optional[str] = Field(None, description="Webhook secret for verification")
+    webhook_secret: str | None = Field(None, description="Webhook secret for verification")
 
 
 class SyncConfigResponse(SyncConfigCreate):
@@ -75,69 +75,60 @@ class ProjectCreate(BaseModel):
     # Identity
     name: str = Field(..., min_length=1, max_length=100, description="Project name")
     slug: str = Field(
-        ...,
-        min_length=1,
-        max_length=50,
-        pattern="^[a-z0-9-]+$",
-        description="URL-friendly slug"
+        ..., min_length=1, max_length=50, pattern="^[a-z0-9-]+$", description="URL-friendly slug"
     )
     repository: str = Field(..., description="Git URL or local path")
-    description: Optional[str] = Field(None, description="Project description")
+    description: str | None = Field(None, description="Project description")
 
     # Capabilities
-    capabilities: List[str] = Field(default_factory=list, description="Project capabilities")
-    tags: List[str] = Field(default_factory=list, description="Project tags")
+    capabilities: list[str] = Field(default_factory=list, description="Project capabilities")
+    tags: list[str] = Field(default_factory=list, description="Project tags")
 
     # Executor configuration
     executor_type: str = Field(default=ExecutorType.CUSTOM, description="Executor type")
-    executor_config: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Type-specific configuration"
+    executor_config: dict[str, Any] = Field(
+        default_factory=dict, description="Type-specific configuration"
     )
 
     # Routing preferences
     auto_claim: bool = Field(default=False, description="Auto-assign matching tasks")
-    priority_boost: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Priority boost factors"
+    priority_boost: dict[str, float] = Field(
+        default_factory=dict, description="Priority boost factors"
     )
     velocity: str = Field(default="medium", description="Project velocity")
 
     # SLA expectations
-    sla: Dict[str, str] = Field(
-        default_factory=dict,
-        description="SLA configuration"
-    )
+    sla: dict[str, str] = Field(default_factory=dict, description="SLA configuration")
 
     # Integration
-    webhook_url: Optional[str] = Field(None, description="Webhook URL for task notifications")
-    api_endpoint: Optional[str] = Field(None, description="REST API endpoint")
+    webhook_url: str | None = Field(None, description="Webhook URL for task notifications")
+    api_endpoint: str | None = Field(None, description="REST API endpoint")
 
     # External sync
-    sync_config: Optional[SyncConfigCreate] = Field(None, description="Sync configuration")
+    sync_config: SyncConfigCreate | None = Field(None, description="Sync configuration")
 
 
 class ProjectUpdate(BaseModel):
     """Schema for updating an existing project."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    repository: Optional[str] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    repository: str | None = None
 
-    capabilities: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
+    capabilities: list[str] | None = None
+    tags: list[str] | None = None
 
-    executor_type: Optional[str] = None
-    executor_config: Optional[Dict[str, Any]] = None
+    executor_type: str | None = None
+    executor_config: dict[str, Any] | None = None
 
-    auto_claim: Optional[bool] = None
-    priority_boost: Optional[Dict[str, float]] = None
-    velocity: Optional[str] = None
+    auto_claim: bool | None = None
+    priority_boost: dict[str, float] | None = None
+    velocity: str | None = None
 
-    sla: Optional[Dict[str, str]] = None
+    sla: dict[str, str] | None = None
 
-    webhook_url: Optional[str] = None
-    api_endpoint: Optional[str] = None
+    webhook_url: str | None = None
+    api_endpoint: str | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -148,33 +139,33 @@ class ProjectResponse(BaseModel):
     name: str
     slug: str
     repository: str
-    description: Optional[str] = None
+    description: str | None = None
 
     # Capabilities
-    capabilities: List[str] = []
-    tags: List[str] = []
+    capabilities: list[str] = []
+    tags: list[str] = []
 
     # Executor configuration
     executor_type: str
-    executor_config: Dict[str, Any] = {}
+    executor_config: dict[str, Any] = {}
 
     # Routing preferences
     auto_claim: bool
-    priority_boost: Dict[str, float] = {}
+    priority_boost: dict[str, float] = {}
     velocity: str
 
     # SLA expectations
-    sla: Dict[str, str] = {}
+    sla: dict[str, str] = {}
 
     # Integration
-    webhook_url: Optional[str] = None
-    api_endpoint: Optional[str] = None
+    webhook_url: str | None = None
+    api_endpoint: str | None = None
 
     # Metadata
     created_at: datetime
     created_by: str
     updated_at: datetime
-    last_sync: Optional[datetime] = None
+    last_sync: datetime | None = None
 
     # Stats
     task_count: int = Field(default=0, description="Number of tasks in project")
@@ -186,7 +177,7 @@ class ProjectResponse(BaseModel):
 class ProjectList(BaseModel):
     """Schema for paginated project list response."""
 
-    items: List[ProjectResponse]
+    items: list[ProjectResponse]
     total: int = Field(..., description="Total number of projects")
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Maximum number of items returned")
@@ -200,7 +191,7 @@ class ProjectTasksResponse(BaseModel):
 
     project_id: str
     project_name: str
-    tasks: List[Any] = []  # Will be TaskResponse when imported
+    tasks: list[Any] = []  # Will be TaskResponse when imported
     total: int
 
     model_config = ConfigDict(from_attributes=True)

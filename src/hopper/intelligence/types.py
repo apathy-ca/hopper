@@ -7,7 +7,7 @@ Defines data structures used across all routing intelligence implementations.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class DecisionStrategy(Enum):
@@ -37,27 +37,27 @@ class RoutingContext:
     task_id: str
     task_title: str
     task_description: str
-    task_tags: List[str] = field(default_factory=list)
-    task_priority: Optional[str] = None  # low, medium, high, critical
-    task_metadata: Dict[str, Any] = field(default_factory=dict)
+    task_tags: list[str] = field(default_factory=list)
+    task_priority: str | None = None  # low, medium, high, critical
+    task_metadata: dict[str, Any] = field(default_factory=dict)
 
     # Available destinations
-    available_destinations: List[str] = field(default_factory=list)
+    available_destinations: list[str] = field(default_factory=list)
 
     # Historical context
-    similar_tasks: List[Dict[str, Any]] = field(default_factory=list)
-    recent_decisions: List[Dict[str, Any]] = field(default_factory=list)
+    similar_tasks: list[dict[str, Any]] = field(default_factory=list)
+    recent_decisions: list[dict[str, Any]] = field(default_factory=list)
 
     # User preferences
-    user_id: Optional[str] = None
-    user_preferences: Dict[str, Any] = field(default_factory=dict)
+    user_id: str | None = None
+    user_preferences: dict[str, Any] = field(default_factory=dict)
 
     # Timing information
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     # Additional context
-    source: Optional[str] = None  # Where the task came from (MCP, CLI, API, etc.)
-    conversation_id: Optional[str] = None  # Link to conversation if from MCP
+    source: str | None = None  # Where the task came from (MCP, CLI, API, etc.)
+    conversation_id: str | None = None  # Link to conversation if from MCP
 
 
 @dataclass
@@ -76,16 +76,16 @@ class RoutingDecision:
     # Decision context
     strategy: DecisionStrategy
     reasoning: str  # Human-readable explanation
-    matched_rules: List[str] = field(default_factory=list)  # For rules-based routing
-    decision_factors: Dict[str, Any] = field(default_factory=dict)
+    matched_rules: list[str] = field(default_factory=list)  # For rules-based routing
+    decision_factors: dict[str, Any] = field(default_factory=dict)
 
     # Metadata
-    decision_id: Optional[str] = None
+    decision_id: str | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    intelligence_version: Optional[str] = None
+    intelligence_version: str | None = None
 
     # Alternative suggestions
-    alternatives: List["RoutingDecision"] = field(default_factory=list)
+    alternatives: list["RoutingDecision"] = field(default_factory=list)
 
     def __post_init__(self):
         """Validate confidence score is in valid range."""
@@ -116,20 +116,20 @@ class DecisionFeedback:
 
     decision_id: str
     correct: bool
-    actual_destination: Optional[str] = None  # If incorrect, what was the right answer
+    actual_destination: str | None = None  # If incorrect, what was the right answer
     feedback_type: str = "binary"  # binary, rating, detailed
-    rating: Optional[float] = None  # 0.0 to 1.0 for more nuanced feedback
-    notes: Optional[str] = None
+    rating: float | None = None  # 0.0 to 1.0 for more nuanced feedback
+    notes: str | None = None
 
     # Who provided feedback
     feedback_source: str = "user"  # user, system, automatic
-    feedback_by: Optional[str] = None  # User ID
+    feedback_by: str | None = None  # User ID
 
     # When
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     # Metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -151,14 +151,14 @@ class RoutingRule:
     # Metadata
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    created_by: Optional[str] = None
+    created_by: str | None = None
 
     # Statistics
     times_matched: int = 0
     times_correct: int = 0
     times_incorrect: int = 0
 
-    def success_rate(self) -> Optional[float]:
+    def success_rate(self) -> float | None:
         """
         Calculate the success rate of this rule.
 
@@ -180,7 +180,7 @@ class RoutingStatistics:
     """
 
     total_decisions: int = 0
-    decisions_by_strategy: Dict[DecisionStrategy, int] = field(default_factory=dict)
+    decisions_by_strategy: dict[DecisionStrategy, int] = field(default_factory=dict)
 
     # Feedback statistics
     total_feedback: int = 0
@@ -194,10 +194,10 @@ class RoutingStatistics:
     low_confidence_correct: int = 0  # Low confidence but correct
 
     # Performance over time
-    decisions_per_day: Dict[str, int] = field(default_factory=dict)
-    accuracy_per_day: Dict[str, float] = field(default_factory=dict)
+    decisions_per_day: dict[str, int] = field(default_factory=dict)
+    accuracy_per_day: dict[str, float] = field(default_factory=dict)
 
-    def overall_accuracy(self) -> Optional[float]:
+    def overall_accuracy(self) -> float | None:
         """
         Calculate overall routing accuracy.
 
@@ -208,7 +208,7 @@ class RoutingStatistics:
             return None
         return self.correct_decisions / self.total_feedback
 
-    def precision_at_high_confidence(self, threshold: float = 0.7) -> Optional[float]:
+    def precision_at_high_confidence(self, threshold: float = 0.7) -> float | None:
         """
         Calculate precision when making high-confidence decisions.
 

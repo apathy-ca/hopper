@@ -9,12 +9,12 @@ Supports multiple rule types:
 - CompositeRule: Combine multiple rules (AND, OR, NOT)
 """
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
-import re
+from typing import Any
 
 from hopper.intelligence.types import RoutingContext
 
@@ -50,7 +50,7 @@ class RuleMatch:
     matched: bool
     score: float = 0.0  # Match strength (0.0 to 1.0)
     reason: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class Rule(ABC):
@@ -69,7 +69,7 @@ class Rule(ABC):
         weight: float = 1.0,
         enabled: bool = True,
         priority: int = 0,
-        created_by: Optional[str] = None,
+        created_by: str | None = None,
     ):
         """
         Initialize a rule.
@@ -115,7 +115,7 @@ class Rule(ABC):
         """
         pass
 
-    def success_rate(self) -> Optional[float]:
+    def success_rate(self) -> float | None:
         """
         Calculate the success rate of this rule based on feedback.
 
@@ -127,7 +127,7 @@ class Rule(ABC):
             return None
         return self.times_correct / total_feedback
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert rule to dictionary for serialization.
 
@@ -168,10 +168,10 @@ class KeywordRule(Rule):
 
     def __init__(
         self,
-        keywords: List[str],
+        keywords: list[str],
         case_sensitive: bool = False,
         whole_word: bool = False,
-        keyword_weights: Optional[Dict[str, float]] = None,
+        keyword_weights: dict[str, float] | None = None,
         **kwargs,
     ):
         """
@@ -237,7 +237,7 @@ class KeywordRule(Rule):
             reason="No keywords matched",
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result = super().to_dict()
         result.update(
@@ -263,9 +263,9 @@ class TagRule(Rule):
 
     def __init__(
         self,
-        required_tags: Optional[List[str]] = None,
-        optional_tags: Optional[List[str]] = None,
-        tag_patterns: Optional[List[str]] = None,
+        required_tags: list[str] | None = None,
+        optional_tags: list[str] | None = None,
+        tag_patterns: list[str] | None = None,
         **kwargs,
     ):
         """
@@ -338,7 +338,7 @@ class TagRule(Rule):
             reason="No tags matched",
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result = super().to_dict()
         result.update(
@@ -360,9 +360,9 @@ class PriorityRule(Rule):
 
     def __init__(
         self,
-        min_priority: Optional[str] = None,
-        max_priority: Optional[str] = None,
-        priorities: Optional[List[str]] = None,
+        min_priority: str | None = None,
+        max_priority: str | None = None,
+        priorities: list[str] | None = None,
         **kwargs,
     ):
         """
@@ -440,7 +440,7 @@ class PriorityRule(Rule):
             reason=f"Priority {task_priority} not matched",
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result = super().to_dict()
         result.update(
@@ -463,7 +463,7 @@ class CompositeRule(Rule):
     def __init__(
         self,
         operator: CompositeOperator,
-        sub_rules: List[Rule],
+        sub_rules: list[Rule],
         **kwargs,
     ):
         """
@@ -561,7 +561,7 @@ class CompositeRule(Rule):
             reason="Unknown operator",
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         result = super().to_dict()
         result.update(

@@ -5,6 +5,7 @@ Provides MCP tools for task routing and getting routing suggestions.
 """
 
 from typing import Any
+
 import httpx
 from mcp.types import Tool
 
@@ -104,10 +105,7 @@ async def route_task(
     if "context" in args:
         route_data["context"] = args["context"]
 
-    response = await client.post(
-        f"/api/v1/tasks/{task_id}/route",
-        json=route_data
-    )
+    response = await client.post(f"/api/v1/tasks/{task_id}/route", json=route_data)
     response.raise_for_status()
 
     result = response.json()
@@ -141,10 +139,7 @@ async def get_routing_suggestions(
         "limit": args.get("limit", 3),
     }
 
-    response = await client.post(
-        "/api/v1/routing/suggestions",
-        json=suggestion_data
-    )
+    response = await client.post("/api/v1/routing/suggestions", json=suggestion_data)
     response.raise_for_status()
 
     result = response.json()

@@ -1,15 +1,14 @@
 """Pytest fixtures for CLI tests."""
 
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from click.testing import CliRunner
 
-from hopper.cli.config import Config, ProfileConfig, APIConfig, AuthConfig
-from hopper.cli.main import cli
+from hopper.cli.config import APIConfig, AuthConfig, Config, ProfileConfig
 
 
 @pytest.fixture
@@ -41,10 +40,10 @@ def mock_config(temp_config_dir: Path) -> Config:
                 auth=AuthConfig(
                     token="test-token-12345",
                     api_key=None,
-                )
+                ),
             )
         },
-        config_path=config_path
+        config_path=config_path,
     )
 
 
@@ -76,7 +75,7 @@ def mock_client(monkeypatch: pytest.MonkeyPatch) -> Mock:
             "status": "in_progress",
             "priority": "medium",
             "created_at": "2025-12-28T01:00:00Z",
-        }
+        },
     ]
 
     mock.get_task.return_value = {
@@ -128,7 +127,7 @@ def mock_client(monkeypatch: pytest.MonkeyPatch) -> Mock:
             "scope": "project",
             "status": "active",
             "parent_id": "inst-global",
-        }
+        },
     ]
 
     # Mock context manager
@@ -137,6 +136,7 @@ def mock_client(monkeypatch: pytest.MonkeyPatch) -> Mock:
 
     # Patch HopperClient
     from hopper.cli import client
+
     monkeypatch.setattr(client, "HopperClient", lambda config: mock)
 
     return mock

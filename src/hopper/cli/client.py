@@ -1,9 +1,8 @@
 """HTTP client wrapper for Hopper API."""
 
-from typing import Any, Optional
+from typing import Any
 
 import httpx
-from pydantic import BaseModel
 
 from hopper.cli.config import Config
 
@@ -11,7 +10,7 @@ from hopper.cli.config import Config
 class APIError(Exception):
     """API request error."""
 
-    def __init__(self, message: str, status_code: Optional[int] = None):
+    def __init__(self, message: str, status_code: int | None = None):
         self.message = message
         self.status_code = status_code
         super().__init__(message)

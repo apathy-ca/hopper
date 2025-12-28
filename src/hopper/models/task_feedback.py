@@ -1,8 +1,9 @@
 """
 Task Feedback model for Hopper.
 """
+
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -18,38 +19,34 @@ class TaskFeedback(Base):
     __tablename__ = "task_feedback"
 
     # Primary key (also foreign key to tasks)
-    task_id: Mapped[str] = mapped_column(
-        String(50), ForeignKey("tasks.id"), primary_key=True
-    )
+    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("tasks.id"), primary_key=True)
 
     # Duration estimates
-    estimated_duration: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    actual_duration: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    complexity_rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    estimated_duration: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    actual_duration: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    complexity_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Quality metrics
-    quality_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    required_rework: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    rework_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    required_rework: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rework_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Routing feedback
-    was_good_match: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    should_have_routed_to: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    routing_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    was_good_match: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    should_have_routed_to: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    routing_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Unexpected issues
-    unexpected_blockers: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    unexpected_blockers: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
-    required_skills_not_tagged: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    required_skills_not_tagged: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
 
     # Additional notes
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
     task: Mapped["Task"] = relationship("Task", back_populates="feedback")

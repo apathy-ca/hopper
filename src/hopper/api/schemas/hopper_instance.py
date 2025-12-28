@@ -5,20 +5,23 @@ Request and response models for Hopper instance-related API endpoints.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HopperScope(str, Enum):
     """Hopper instance scope levels."""
-    GLOBAL = "global"          # Strategic routing across all projects
-    PROJECT = "project"        # Project-level task management
+
+    GLOBAL = "global"  # Strategic routing across all projects
+    PROJECT = "project"  # Project-level task management
     ORCHESTRATION = "orchestration"  # Execution-level queue management
 
 
 class InstanceStatus(str, Enum):
     """Hopper instance status."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     STARTING = "starting"
@@ -32,28 +35,25 @@ class InstanceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Instance name")
     scope: HopperScope = Field(..., description="Instance scope level")
 
-    parent_id: Optional[str] = Field(None, description="Parent instance ID")
-    project_id: Optional[str] = Field(None, description="Associated project ID")
+    parent_id: str | None = Field(None, description="Parent instance ID")
+    project_id: str | None = Field(None, description="Associated project ID")
 
     # Configuration
-    config: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Instance-specific configuration"
+    config: dict[str, Any] = Field(
+        default_factory=dict, description="Instance-specific configuration"
     )
 
     # Routing configuration
     routing_strategy: str = Field(
-        default="rules",
-        description="Routing strategy (rules, llm, sage)"
+        default="rules", description="Routing strategy (rules, llm, sage)"
     )
     auto_delegate: bool = Field(
-        default=True,
-        description="Automatically delegate tasks to child instances"
+        default=True, description="Automatically delegate tasks to child instances"
     )
 
     # Metadata
-    description: Optional[str] = Field(None, description="Instance description")
-    tags: List[str] = Field(default_factory=list, description="Instance tags")
+    description: str | None = Field(None, description="Instance description")
+    tags: list[str] = Field(default_factory=list, description="Instance tags")
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -61,15 +61,15 @@ class InstanceCreate(BaseModel):
 class InstanceUpdate(BaseModel):
     """Schema for updating an existing instance."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    status: Optional[InstanceStatus] = None
+    name: str | None = Field(None, min_length=1, max_length=100)
+    status: InstanceStatus | None = None
 
-    config: Optional[Dict[str, Any]] = None
-    routing_strategy: Optional[str] = None
-    auto_delegate: Optional[bool] = None
+    config: dict[str, Any] | None = None
+    routing_strategy: str | None = None
+    auto_delegate: bool | None = None
 
-    description: Optional[str] = None
-    tags: Optional[List[str]] = None
+    description: str | None = None
+    tags: list[str] | None = None
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -84,17 +84,17 @@ class InstanceResponse(BaseModel):
     status: InstanceStatus
 
     # Hierarchy
-    parent_id: Optional[str] = None
-    project_id: Optional[str] = None
+    parent_id: str | None = None
+    project_id: str | None = None
 
     # Configuration
-    config: Dict[str, Any] = {}
+    config: dict[str, Any] = {}
     routing_strategy: str
     auto_delegate: bool
 
     # Metadata
-    description: Optional[str] = None
-    tags: List[str] = []
+    description: str | None = None
+    tags: list[str] = []
     created_at: datetime
     updated_at: datetime
     created_by: str
@@ -104,16 +104,13 @@ class InstanceResponse(BaseModel):
     active_task_count: int = Field(default=0, description="Number of active tasks")
     child_instance_count: int = Field(default=0, description="Number of child instances")
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        use_enum_values=True
-    )
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
 
 class InstanceList(BaseModel):
     """Schema for paginated instance list response."""
 
-    items: List[InstanceResponse]
+    items: list[InstanceResponse]
     total: int = Field(..., description="Total number of instances")
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Maximum number of items returned")
@@ -126,7 +123,7 @@ class InstanceHierarchyNode(BaseModel):
     """Schema for a node in the instance hierarchy tree."""
 
     instance: InstanceResponse
-    children: List["InstanceHierarchyNode"] = []
+    children: list["InstanceHierarchyNode"] = []
     depth: int = Field(..., description="Depth in hierarchy (0 = root)")
 
     model_config = ConfigDict(from_attributes=True)
@@ -146,7 +143,7 @@ class InstanceTasksResponse(BaseModel):
 
     instance_id: str
     instance_name: str
-    tasks: List[Any] = []  # Will be TaskResponse when imported
+    tasks: list[Any] = []  # Will be TaskResponse when imported
     total: int
 
     model_config = ConfigDict(from_attributes=True)
@@ -173,7 +170,4 @@ class InstanceLifecycleResponse(BaseModel):
     message: str
     timestamp: datetime
 
-    model_config = ConfigDict(
-        from_attributes=True,
-        use_enum_values=True
-    )
+    model_config = ConfigDict(from_attributes=True, use_enum_values=True)

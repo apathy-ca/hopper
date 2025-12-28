@@ -6,24 +6,18 @@ and pattern-based rules.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from hopper.intelligence.base import BaseIntelligence, RoutingError
+from hopper.intelligence.rules.rule import Rule, RuleMatch
+from hopper.intelligence.rules.scoring import (
+    aggregate_scores,
+)
 from hopper.intelligence.types import (
     DecisionStrategy,
     RoutingContext,
     RoutingDecision,
-)
-from hopper.intelligence.rules.matchers import (
-    match_keywords,
-    match_tags,
-    match_priority,
-)
-from hopper.intelligence.rules.rule import Rule, RuleMatch
-from hopper.intelligence.rules.scoring import (
-    aggregate_scores,
-    calculate_confidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,8 +40,8 @@ class RulesIntelligence(BaseIntelligence):
 
     def __init__(
         self,
-        rules: Optional[List[Rule]] = None,
-        default_destination: Optional[str] = None,
+        rules: list[Rule] | None = None,
+        default_destination: str | None = None,
         confidence_threshold: float = 0.7,
     ):
         """
@@ -61,7 +55,7 @@ class RulesIntelligence(BaseIntelligence):
         self.rules = rules or []
         self.default_destination = default_destination
         self._confidence_threshold = confidence_threshold
-        self._decision_history: Dict[str, Dict[str, Any]] = {}
+        self._decision_history: dict[str, dict[str, Any]] = {}
 
         # Sort rules by priority (higher priority first)
         self.rules.sort(key=lambda r: r.priority, reverse=True)
@@ -90,7 +84,7 @@ class RulesIntelligence(BaseIntelligence):
         logger.debug(f"Routing task {context.task_id}: {context.task_title}")
 
         # Evaluate all rules
-        matches: List[RuleMatch] = []
+        matches: list[RuleMatch] = []
         for rule in self.rules:
             if not rule.enabled:
                 continue
@@ -98,9 +92,7 @@ class RulesIntelligence(BaseIntelligence):
             match = await rule.evaluate(context)
             if match.matched:
                 matches.append(match)
-                logger.debug(
-                    f"Rule '{rule.name}' matched with score {match.score:.2f}"
-                )
+                logger.debug(f"Rule '{rule.name}' matched with score {match.score:.2f}")
 
         # If we have matches, aggregate them
         if matches:
@@ -137,7 +129,7 @@ class RulesIntelligence(BaseIntelligence):
         self,
         context: RoutingContext,
         limit: int = 5,
-    ) -> List[RoutingDecision]:
+    ) -> list[RoutingDecision]:
         """
         Suggest multiple possible destinations with confidence scores.
 
@@ -151,7 +143,7 @@ class RulesIntelligence(BaseIntelligence):
         logger.debug(f"Suggesting destinations for task {context.task_id}")
 
         # Evaluate all rules and collect matches by destination
-        destination_matches: Dict[str, List[RuleMatch]] = {}
+        destination_matches: dict[str, list[RuleMatch]] = {}
 
         for rule in self.rules:
             if not rule.enabled:
@@ -165,21 +157,17 @@ class RulesIntelligence(BaseIntelligence):
                 destination_matches[dest].append(match)
 
         # Create a decision for each destination
-        decisions: List[RoutingDecision] = []
+        decisions: list[RoutingDecision] = []
 
         for destination, matches in destination_matches.items():
-            decision = self._create_decision_from_matches(
-                context, matches, destination
-            )
+            decision = self._create_decision_from_matches(context, matches, destination)
             decisions.append(decision)
 
         # Sort by confidence (highest first) and limit
         decisions.sort(key=lambda d: d.confidence, reverse=True)
         decisions = decisions[:limit]
 
-        logger.debug(
-            f"Generated {len(decisions)} suggestions for task {context.task_id}"
-        )
+        logger.debug(f"Generated {len(decisions)} suggestions for task {context.task_id}")
 
         return decisions
 
@@ -187,7 +175,7 @@ class RulesIntelligence(BaseIntelligence):
         self,
         decision: RoutingDecision,
         context: RoutingContext,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Record a routing decision for future learning and analysis.
@@ -216,8 +204,8 @@ class RulesIntelligence(BaseIntelligence):
         self,
         decision_id: str,
         correct: bool,
-        actual_destination: Optional[str] = None,
-        notes: Optional[str] = None,
+        actual_destination: str | None = None,
+        notes: str | None = None,
     ) -> None:
         """
         Provide feedback on a routing decision.
@@ -304,8 +292,8 @@ class RulesIntelligence(BaseIntelligence):
     def _create_decision_from_matches(
         self,
         context: RoutingContext,
-        matches: List[RuleMatch],
-        destination: Optional[str] = None,
+        matches: list[RuleMatch],
+        destination: str | None = None,
     ) -> RoutingDecision:
         """
         Create a routing decision from rule matches.
@@ -335,9 +323,7 @@ class RulesIntelligence(BaseIntelligence):
         for match in matches:
             rule = self._find_rule_by_id(match.rule_id)
             if rule:
-                reasoning_parts.append(
-                    f"{rule.name} (score: {match.score:.2f}): {match.reason}"
-                )
+                reasoning_parts.append(f"{rule.name} (score: {match.score:.2f}): {match.reason}")
 
         reasoning = "; ".join(reasoning_parts)
 
@@ -357,7 +343,7 @@ class RulesIntelligence(BaseIntelligence):
             decision_factors=decision_factors,
         )
 
-    def _find_rule_by_id(self, rule_id: str) -> Optional[Rule]:
+    def _find_rule_by_id(self, rule_id: str) -> Rule | None:
         """Find a rule by its ID."""
         for rule in self.rules:
             if rule.rule_id == rule_id:
@@ -392,7 +378,7 @@ class RulesIntelligence(BaseIntelligence):
                 return True
         return False
 
-    def get_rule(self, rule_id: str) -> Optional[Rule]:
+    def get_rule(self, rule_id: str) -> Rule | None:
         """
         Get a rule by ID.
 
@@ -404,7 +390,7 @@ class RulesIntelligence(BaseIntelligence):
         """
         return self._find_rule_by_id(rule_id)
 
-    def list_rules(self, enabled_only: bool = False) -> List[Rule]:
+    def list_rules(self, enabled_only: bool = False) -> list[Rule]:
         """
         List all rules.
 

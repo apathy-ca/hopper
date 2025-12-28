@@ -5,8 +5,9 @@ Request and response models for routing decision-related API endpoints.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectMatch(BaseModel):
@@ -15,16 +16,10 @@ class ProjectMatch(BaseModel):
     project: str = Field(..., description="Project identifier")
     score: float = Field(..., ge=0.0, le=1.0, description="Match score")
     reasoning: str = Field(..., description="Explanation of the match")
-    factor_scores: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Individual factor scores"
+    factor_scores: dict[str, float] = Field(
+        default_factory=dict, description="Individual factor scores"
     )
-    adjusted_score: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Score after attention shaping"
-    )
+    adjusted_score: float = Field(..., ge=0.0, le=1.0, description="Score after attention shaping")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,24 +33,18 @@ class DecisionCreate(BaseModel):
     reasoning: str = Field(..., description="Explanation of the decision")
 
     # Alternatives considered
-    alternatives: List[ProjectMatch] = Field(
-        default_factory=list,
-        description="Alternative project matches"
+    alternatives: list[ProjectMatch] = Field(
+        default_factory=list, description="Alternative project matches"
     )
 
     # Context at decision time
-    workload_snapshot: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Project workloads when decided"
+    workload_snapshot: dict[str, Any] = Field(
+        default_factory=dict, description="Project workloads when decided"
     )
-    sprint_context: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Active sprints/milestones"
+    sprint_context: dict[str, Any] = Field(
+        default_factory=dict, description="Active sprints/milestones"
     )
-    recent_history: List[str] = Field(
-        default_factory=list,
-        description="Recent similar task IDs"
-    )
+    recent_history: list[str] = Field(default_factory=list, description="Recent similar task IDs")
 
     # Decision metadata
     decided_by: str = Field(..., description="Who/what made the decision (rules, llm, sage-name)")
@@ -69,11 +58,11 @@ class DecisionResponse(DecisionCreate):
     decided_at: datetime
 
     # Task information (denormalized for convenience)
-    task_title: Optional[str] = None
-    task_tags: List[str] = []
+    task_title: str | None = None
+    task_tags: list[str] = []
 
     # Project information
-    project_name: Optional[str] = None
+    project_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,7 +70,7 @@ class DecisionResponse(DecisionCreate):
 class DecisionList(BaseModel):
     """Schema for paginated decision list response."""
 
-    items: List[DecisionResponse]
+    items: list[DecisionResponse]
     total: int = Field(..., description="Total number of decisions")
     skip: int = Field(..., description="Number of items skipped")
     limit: int = Field(..., description="Maximum number of items returned")
@@ -94,21 +83,17 @@ class DecisionStats(BaseModel):
     """Schema for routing decision statistics."""
 
     total_decisions: int
-    by_decider: Dict[str, int] = Field(
-        default_factory=dict,
-        description="Count by decision maker"
-    )
+    by_decider: dict[str, int] = Field(default_factory=dict, description="Count by decision maker")
     avg_confidence: float
     avg_decision_time_ms: float
 
     # Top projects
-    top_projects: List[Dict[str, Any]] = Field(
-        default_factory=list,
-        description="Most routed-to projects"
+    top_projects: list[dict[str, Any]] = Field(
+        default_factory=list, description="Most routed-to projects"
     )
 
     # Accuracy metrics (if feedback available)
-    accuracy_rate: Optional[float] = None
-    reroute_rate: Optional[float] = None
+    accuracy_rate: float | None = None
+    reroute_rate: float | None = None
 
     model_config = ConfigDict(from_attributes=True)

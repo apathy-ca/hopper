@@ -3,6 +3,7 @@ Hopper data models.
 
 This package contains all SQLAlchemy models for the Hopper system.
 """
+
 from .base import Base, TimestampMixin
 from .enums import (
     DecisionStrategy,

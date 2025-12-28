@@ -1,8 +1,8 @@
 """
 Task model for Hopper.
 """
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+
+from typing import Any, Optional
 
 from sqlalchemy import Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -21,48 +21,48 @@ class Task(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
 
     # Instance association
-    instance_id: Mapped[Optional[str]] = mapped_column(
+    instance_id: Mapped[str | None] = mapped_column(
         String(100), ForeignKey("hopper_instances.id"), nullable=True
     )
 
     # Basic info
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    project: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    project: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
     priority: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
 
     # Metadata
-    requester: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    owner: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    requester: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # External links
-    external_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    external_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    external_platform: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    external_platform: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Context
-    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    conversation_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Arrays/JSON - use JSONB for PostgreSQL, JSON for SQLite
-    tags: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    tags: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
-    required_capabilities: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    required_capabilities: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
-    depends_on: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    depends_on: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
-    blocks: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+    blocks: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
 
     # Routing
-    routing_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    routing_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    routing_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    routing_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     instance: Mapped[Optional["HopperInstance"]] = relationship(
@@ -74,7 +74,7 @@ class Task(Base, TimestampMixin):
     feedback: Mapped[Optional["TaskFeedback"]] = relationship(
         "TaskFeedback", back_populates="task", uselist=False
     )
-    external_mappings: Mapped[List["ExternalMapping"]] = relationship(
+    external_mappings: Mapped[list["ExternalMapping"]] = relationship(
         "ExternalMapping", back_populates="task"
     )
 

@@ -6,7 +6,7 @@ must follow, whether rules-based, LLM-based, or Sage-based.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from hopper.intelligence.types import RoutingContext, RoutingDecision
 
@@ -44,7 +44,7 @@ class BaseIntelligence(ABC):
         self,
         context: RoutingContext,
         limit: int = 5,
-    ) -> List[RoutingDecision]:
+    ) -> list[RoutingDecision]:
         """
         Suggest multiple possible destinations with confidence scores.
 
@@ -65,7 +65,7 @@ class BaseIntelligence(ABC):
         self,
         decision: RoutingDecision,
         context: RoutingContext,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Record a routing decision for future learning and analysis.
@@ -85,8 +85,8 @@ class BaseIntelligence(ABC):
         self,
         decision_id: str,
         correct: bool,
-        actual_destination: Optional[str] = None,
-        notes: Optional[str] = None,
+        actual_destination: str | None = None,
+        notes: str | None = None,
     ) -> None:
         """
         Provide feedback on a routing decision for learning.
@@ -134,8 +134,8 @@ class RoutingError(Exception):
     def __init__(
         self,
         message: str,
-        context: Optional[RoutingContext] = None,
-        partial_decision: Optional[RoutingDecision] = None,
+        context: RoutingContext | None = None,
+        partial_decision: RoutingDecision | None = None,
     ):
         super().__init__(message)
         self.context = context

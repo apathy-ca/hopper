@@ -4,19 +4,19 @@ MCP resources for Hopper.
 Exports all MCP resource definitions and handlers for tasks and projects.
 """
 
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
+
 import httpx
 from mcp.types import Resource, TextContent
 
-from .task_resources import (
-    get_task_resources,
-    read_task_resource,
-)
 from .project_resources import (
     get_project_resources,
     read_project_resource,
 )
-
+from .task_resources import (
+    get_task_resources,
+    read_task_resource,
+)
 
 # Resource handler type
 ResourceHandler = Callable[[str, httpx.AsyncClient], Awaitable[list[TextContent]]]

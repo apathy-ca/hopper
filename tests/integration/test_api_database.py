@@ -9,21 +9,22 @@ Tests API endpoints with real database operations including:
 - Transaction handling
 - Concurrent requests
 """
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from tests.factories import (
-    TaskFactory,
-    ProjectFactory,
     HopperInstanceFactory,
+    ProjectFactory,
+    TaskFactory,
 )
 from tests.utils import (
-    assert_response_success,
     assert_response_error,
+    assert_response_success,
     assert_timestamp_recent,
-    validate_task_schema,
     validate_project_schema,
+    validate_task_schema,
 )
 
 
@@ -57,6 +58,7 @@ class TestTaskCRUDAPI:
         # Verify database persistence
         task_id = response_data["id"]
         from hopper.models.task import Task
+
         db_task = db_session.query(Task).filter(Task.id == task_id).first()
         assert db_task is not None
         assert db_task.title == task_data["title"]
@@ -65,11 +67,7 @@ class TestTaskCRUDAPI:
     def test_get_task(self, api_client: TestClient, db_session: Session):
         """Test retrieving a task via API from database."""
         # Create task in database
-        task = TaskFactory.create(
-            session=db_session,
-            title="Test Get Task",
-            project="hopper"
-        )
+        task = TaskFactory.create(session=db_session, title="Test Get Task", project="hopper")
 
         # Retrieve via API
         response = api_client.get(f"/api/v1/tasks/{task.id}")
@@ -143,18 +141,10 @@ class TestTaskCRUDAPI:
     def test_update_task(self, api_client: TestClient, db_session: Session):
         """Test updating a task via API and verifying database changes."""
         # Create task
-        task = TaskFactory.create(
-            session=db_session,
-            title="Original Title",
-            status="pending"
-        )
+        task = TaskFactory.create(session=db_session, title="Original Title", status="pending")
 
         # Update via API
-        update_data = {
-            "title": "Updated Title",
-            "status": "in_progress",
-            "priority": "high"
-        }
+        update_data = {"title": "Updated Title", "status": "in_progress", "priority": "high"}
         response = api_client.put(f"/api/v1/tasks/{task.id}", json=update_data)
         assert_response_success(response)
 
@@ -194,10 +184,7 @@ class TestTaskCRUDAPI:
         task = TaskFactory.create(session=db_session, status="pending")
 
         # Update status
-        response = api_client.post(
-            f"/api/v1/tasks/{task.id}/status",
-            json={"status": "completed"}
-        )
+        response = api_client.post(f"/api/v1/tasks/{task.id}/status", json={"status": "completed"})
         assert_response_success(response)
 
         # Verify database
@@ -215,10 +202,7 @@ class TestProjectCRUDAPI:
             "name": "Test Project",
             "slug": "test-project",
             "description": "A test project",
-            "configuration": {
-                "routing_rules": ["keyword_match"],
-                "default_priority": "medium"
-            }
+            "configuration": {"routing_rules": ["keyword_match"], "default_priority": "medium"},
         }
 
         response = api_client.post("/api/v1/projects", json=project_data)
@@ -231,9 +215,8 @@ class TestProjectCRUDAPI:
 
         # Verify database
         from hopper.models.project import Project
-        db_project = db_session.query(Project).filter(
-            Project.slug == project_data["slug"]
-        ).first()
+
+        db_project = db_session.query(Project).filter(Project.slug == project_data["slug"]).first()
         assert db_project is not None
         assert db_project.name == project_data["name"]
 
@@ -279,9 +262,8 @@ class TestProjectCRUDAPI:
 
         # Verify deletion
         from hopper.models.project import Project
-        db_project = db_session.query(Project).filter(
-            Project.id == project.id
-        ).first()
+
+        db_project = db_session.query(Project).filter(Project.id == project.id).first()
         assert db_project is None
 
     def test_get_project_tasks(self, api_client: TestClient, db_session: Session):
@@ -308,10 +290,7 @@ class TestInstanceCRUDAPI:
         instance_data = {
             "name": "Test Instance",
             "scope": "global",
-            "configuration": {
-                "routing_engine": "rules",
-                "llm_fallback": True
-            }
+            "configuration": {"routing_engine": "rules", "llm_fallback": True},
         }
 
         response = api_client.post("/api/v1/instances", json=instance_data)
@@ -358,6 +337,7 @@ class TestDataPersistence:
         assert "created_at" in response_data
         # Timestamp should be recent (within last 5 seconds)
         from datetime import datetime
+
         created_at = datetime.fromisoformat(response_data["created_at"].replace("Z", "+00:00"))
         assert_timestamp_recent(created_at, seconds=5)
 
@@ -369,11 +349,9 @@ class TestDataPersistence:
 
         # Update task
         import time
+
         time.sleep(1)  # Ensure timestamp difference
-        response = api_client.put(
-            f"/api/v1/tasks/{task.id}",
-            json={"title": "Updated Title"}
-        )
+        response = api_client.put(f"/api/v1/tasks/{task.id}", json={"title": "Updated Title"})
         assert_response_success(response)
 
         # Verify updated_at changed
@@ -412,13 +390,14 @@ class TestTransactionHandling:
         """Test that invalid task creation doesn't persist partial data."""
         # Count tasks before
         from hopper.models.task import Task
+
         count_before = db_session.query(Task).count()
 
         # Attempt to create task with invalid data
         invalid_data = {
             "title": "",  # Empty title should fail validation
             "project": "hopper",
-            "priority": "invalid_priority"  # Invalid priority
+            "priority": "invalid_priority",  # Invalid priority
         }
 
         response = api_client.post("/api/v1/tasks", json=invalid_data)
@@ -435,10 +414,7 @@ class TestTransactionHandling:
         task = TaskFactory.create(session=db_session, title="Original")
 
         # Attempt invalid update
-        response = api_client.put(
-            f"/api/v1/tasks/{task.id}",
-            json={"status": "invalid_status"}
-        )
+        response = api_client.put(f"/api/v1/tasks/{task.id}", json={"status": "invalid_status"})
         assert response.status_code >= 400
 
         # Verify task unchanged
@@ -469,9 +445,7 @@ class TestLargeDatasets:
         # Create tasks with specific keywords
         for i in range(50):
             TaskFactory.create(
-                session=db_session,
-                title=f"Authentication task {i}",
-                tags={"auth": True}
+                session=db_session, title=f"Authentication task {i}", tags={"auth": True}
             )
 
         # Search for tasks

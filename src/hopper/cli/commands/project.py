@@ -1,20 +1,19 @@
 """Project management commands."""
 
-from typing import Optional
 
 import click
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
 
+from hopper.cli.client import APIError, HopperClient
 from hopper.cli.main import Context
-from hopper.cli.client import HopperClient, APIError
 from hopper.cli.output import (
-    print_json,
-    print_project_table,
-    print_task_table,
-    print_success,
+    console,
     print_error,
     print_info,
-    console,
+    print_json,
+    print_project_table,
+    print_success,
+    print_task_table,
 )
 
 
@@ -35,9 +34,9 @@ def project() -> None:
 @click.pass_obj
 def create_project(
     ctx: Context,
-    name: Optional[str],
-    description: Optional[str],
-    config: Optional[str],
+    name: str | None,
+    description: str | None,
+    config: str | None,
 ) -> None:
     """Create a new project.
 
@@ -65,6 +64,7 @@ def create_project(
 
     if config:
         import json
+
         try:
             project_data["config"] = json.loads(config)
         except json.JSONDecodeError as e:
@@ -81,7 +81,7 @@ def create_project(
         else:
             print_success(f"Created project: {result.get('id', '')}")
             console.print(f"[bold]{result.get('name', '')}[/bold]")
-            if desc := result.get('description'):
+            if desc := result.get("description"):
                 console.print(f"[dim]{desc}[/dim]")
 
     except APIError as e:
@@ -134,19 +134,20 @@ def get_project(ctx: Context, project_id: str) -> None:
             console.print(f"\n[bold cyan]Project {proj.get('id', '')}[/bold cyan]")
             console.print(f"[bold]{proj.get('name', '')}[/bold]\n")
 
-            if desc := proj.get('description'):
+            if desc := proj.get("description"):
                 console.print(f"[bold]Description:[/bold]\n{desc}\n")
 
-            if config := proj.get('config'):
-                console.print(f"[bold]Configuration:[/bold]")
+            if config := proj.get("config"):
+                console.print("[bold]Configuration:[/bold]")
                 print_json(config)
 
-            task_count = proj.get('task_count', 0)
+            task_count = proj.get("task_count", 0)
             console.print(f"\n[bold]Tasks:[/bold] {task_count}")
 
             from hopper.cli.output import format_datetime
+
             console.print(f"\n[dim]Created: {format_datetime(proj.get('created_at'))}[/dim]")
-            if updated := proj.get('updated_at'):
+            if updated := proj.get("updated_at"):
                 console.print(f"[dim]Updated: {format_datetime(updated)}[/dim]")
 
             console.print()
@@ -166,9 +167,9 @@ def get_project(ctx: Context, project_id: str) -> None:
 def update_project(
     ctx: Context,
     project_id: str,
-    name: Optional[str],
-    description: Optional[str],
-    config: Optional[str],
+    name: str | None,
+    description: str | None,
+    config: str | None,
     interactive: bool,
 ) -> None:
     """Update a project.
@@ -202,6 +203,7 @@ def update_project(
         update_data["description"] = description
     if config:
         import json
+
         try:
             update_data["config"] = json.loads(config)
         except json.JSONDecodeError as e:
@@ -248,9 +250,11 @@ def delete_project(ctx: Context, project_id: str, force: bool) -> None:
                 proj = client.get_project(project_id)
 
             console.print(f"\n[bold]Project to delete:[/bold] {proj.get('name', '')}")
-            task_count = proj.get('task_count', 0)
+            task_count = proj.get("task_count", 0)
             if task_count > 0:
-                console.print(f"[bold yellow]Warning:[/bold yellow] This project has {task_count} task(s)")
+                console.print(
+                    f"[bold yellow]Warning:[/bold yellow] This project has {task_count} task(s)"
+                )
             console.print()
 
         except APIError:
@@ -282,8 +286,8 @@ def delete_project(ctx: Context, project_id: str, force: bool) -> None:
 def list_project_tasks(
     ctx: Context,
     project_id: str,
-    status: Optional[str],
-    priority: Optional[str],
+    status: str | None,
+    priority: str | None,
     limit: int,
     compact: bool,
 ) -> None:
@@ -313,7 +317,9 @@ def list_project_tasks(
             # Show project header
             try:
                 proj = client.get_project(project_id)
-                console.print(f"\n[bold cyan]Tasks for project: {proj.get('name', '')}[/bold cyan]\n")
+                console.print(
+                    f"\n[bold cyan]Tasks for project: {proj.get('name', '')}[/bold cyan]\n"
+                )
             except APIError:
                 pass
 

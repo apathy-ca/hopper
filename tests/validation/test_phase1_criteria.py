@@ -12,15 +12,17 @@ Validates all Phase 1 success criteria from the implementation plan:
 
 Each criterion has a dedicated test that validates end-to-end functionality.
 """
-import pytest
-from fastapi.testclient import TestClient
-from click.testing import CliRunner
-from sqlalchemy.orm import Session
+
 from unittest.mock import Mock
 
+import pytest
+from click.testing import CliRunner
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
 from tests.utils import (
-    assert_response_success,
     assert_cli_success,
+    assert_response_success,
     validate_task_schema,
 )
 
@@ -30,9 +32,7 @@ class TestPhase1SuccessCriteria:
     """Validation tests for all Phase 1 success criteria."""
 
     def test_criterion_1_create_tasks_via_http_api(
-        self,
-        api_client: TestClient,
-        db_session: Session
+        self, api_client: TestClient, db_session: Session
     ):
         """
         ✅ Criterion 1: Can create tasks via HTTP API
@@ -45,7 +45,7 @@ class TestPhase1SuccessCriteria:
             "description": "Created via HTTP API for Phase 1 validation",
             "project": "hopper",
             "priority": "high",
-            "tags": {"phase1": True, "validation": True}
+            "tags": {"phase1": True, "validation": True},
         }
 
         # Create task via API
@@ -60,6 +60,7 @@ class TestPhase1SuccessCriteria:
 
         # Verify database persistence
         from hopper.models.task import Task
+
         task_id = response_data["id"]
         db_task = db_session.query(Task).filter(Task.id == task_id).first()
         assert db_task is not None
@@ -67,11 +68,7 @@ class TestPhase1SuccessCriteria:
 
         print("✅ PASS: Can create tasks via HTTP API")
 
-    def test_criterion_2_create_tasks_via_mcp(
-        self,
-        mcp_client: Mock,
-        db_session: Session
-    ):
+    def test_criterion_2_create_tasks_via_mcp(self, mcp_client: Mock, db_session: Session):
         """
         ✅ Criterion 2: Can create tasks via MCP (from Claude)
 
@@ -86,8 +83,8 @@ class TestPhase1SuccessCriteria:
                 "title": "Phase 1 Test Task - MCP",
                 "description": "Created via MCP for Phase 1 validation",
                 "project": "hopper",
-                "priority": "medium"
-            }
+                "priority": "medium",
+            },
         )
 
         # Simulate MCP tool execution
@@ -96,6 +93,7 @@ class TestPhase1SuccessCriteria:
 
         # Verify task in database (created with source="mcp")
         from hopper.models.task import Task
+
         task = db_session.query(Task).filter(Task.id == task_id).first()
         assert task is not None
         assert task.source == "mcp"
@@ -103,11 +101,7 @@ class TestPhase1SuccessCriteria:
 
         print("✅ PASS: Can create tasks via MCP (from Claude)")
 
-    def test_criterion_3_create_tasks_via_cli(
-        self,
-        cli_runner: CliRunner,
-        db_session: Session
-    ):
+    def test_criterion_3_create_tasks_via_cli(self, cli_runner: CliRunner, db_session: Session):
         """
         ✅ Criterion 3: Can create tasks via CLI
 
@@ -116,30 +110,34 @@ class TestPhase1SuccessCriteria:
         """
         from hopper.cli.main import cli
 
-        result = cli_runner.invoke(cli, [
-            'task', 'add',
-            '--title', 'Phase 1 Test Task - CLI',
-            '--description', 'Created via CLI for Phase 1 validation',
-            '--project', 'hopper',
-            '--priority', 'low'
-        ])
+        result = cli_runner.invoke(
+            cli,
+            [
+                "task",
+                "add",
+                "--title",
+                "Phase 1 Test Task - CLI",
+                "--description",
+                "Created via CLI for Phase 1 validation",
+                "--project",
+                "hopper",
+                "--priority",
+                "low",
+            ],
+        )
 
         assert_cli_success(result, "created successfully")
 
         # Verify task in database (created with source="cli")
         from hopper.models.task import Task
-        task = db_session.query(Task).filter(
-            Task.title == "Phase 1 Test Task - CLI"
-        ).first()
+
+        task = db_session.query(Task).filter(Task.title == "Phase 1 Test Task - CLI").first()
         assert task is not None
         assert task.source == "cli"
 
         print("✅ PASS: Can create tasks via CLI")
 
-    def test_criterion_4_tasks_stored_with_proper_schema(
-        self,
-        db_session: Session
-    ):
+    def test_criterion_4_tasks_stored_with_proper_schema(self, db_session: Session):
         """
         ✅ Criterion 4: Tasks stored in database with proper schema
 
@@ -159,7 +157,7 @@ class TestPhase1SuccessCriteria:
             requester="test_user",
             owner="test_owner",
             tags={"test": True, "schema": True},
-            source="test"
+            source="test",
         )
 
         # Verify all fields
@@ -184,9 +182,7 @@ class TestPhase1SuccessCriteria:
         print("✅ PASS: Tasks stored in database with proper schema")
 
     def test_criterion_5_basic_rules_based_routing_works(
-        self,
-        api_client: TestClient,
-        db_session: Session
+        self, api_client: TestClient, db_session: Session
     ):
         """
         ✅ Criterion 5: Basic rules-based routing works
@@ -198,17 +194,14 @@ class TestPhase1SuccessCriteria:
         task_data = {
             "title": "Implement task queue routing logic",
             "description": "Add routing capabilities to the queue",
-            "tags": {"routing": True, "backend": True}
+            "tags": {"routing": True, "backend": True},
         }
 
         response = api_client.post("/api/v1/tasks", json=task_data)
         task_id = response.json()["id"]
 
         # Request routing
-        response = api_client.post(
-            f"/api/v1/tasks/{task_id}/route",
-            json={"strategy": "rules"}
-        )
+        response = api_client.post(f"/api/v1/tasks/{task_id}/route", json={"strategy": "rules"})
         assert_response_success(response)
 
         routing_result = response.json()
@@ -219,24 +212,24 @@ class TestPhase1SuccessCriteria:
 
         # Verify task was routed
         from hopper.models.task import Task
+
         task = db_session.query(Task).filter(Task.id == task_id).first()
         assert task.project == routing_result["destination"]
         assert task.status == "routed"
 
         # Verify routing decision recorded
         from hopper.models.routing_decision import RoutingDecision
-        decision = db_session.query(RoutingDecision).filter(
-            RoutingDecision.task_id == task_id
-        ).first()
+
+        decision = (
+            db_session.query(RoutingDecision).filter(RoutingDecision.task_id == task_id).first()
+        )
         assert decision is not None
         assert decision.strategy == "rules"
 
         print("✅ PASS: Basic rules-based routing works")
 
     def test_criterion_6_list_and_query_tasks_with_filters(
-        self,
-        api_client: TestClient,
-        db_session: Session
+        self, api_client: TestClient, db_session: Session
     ):
         """
         ✅ Criterion 6: Can list and query tasks with filters
@@ -298,15 +291,15 @@ class TestPhase1SuccessCriteria:
         can be used for local development.
         """
         import os
+
         import yaml
 
         # Check for docker-compose.yml
         docker_compose_path = "docker-compose.yml"
-        assert os.path.exists(docker_compose_path), \
-            "docker-compose.yml not found"
+        assert os.path.exists(docker_compose_path), "docker-compose.yml not found"
 
         # Parse and validate docker-compose.yml
-        with open(docker_compose_path, 'r') as f:
+        with open(docker_compose_path) as f:
             compose_config = yaml.safe_load(f)
 
         # Verify required services
@@ -338,18 +331,17 @@ class TestPhase1SuccessCriteria:
             "7. Docker Compose setup": True,
         }
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("PHASE 1 SUCCESS CRITERIA VALIDATION SUMMARY")
-        print("="*60)
+        print("=" * 60)
 
         for criterion, passed in criteria.items():
             status = "✅ PASS" if passed else "❌ FAIL"
             print(f"{status} - {criterion}")
 
-        print("="*60)
+        print("=" * 60)
 
         # All criteria must pass
-        assert all(criteria.values()), \
-            "Not all Phase 1 success criteria are met"
+        assert all(criteria.values()), "Not all Phase 1 success criteria are met"
 
         print("\n🎉 ALL PHASE 1 SUCCESS CRITERIA VALIDATED! 🎉\n")

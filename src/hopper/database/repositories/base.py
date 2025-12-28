@@ -1,9 +1,10 @@
 """
 Base repository with generic CRUD operations.
 """
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
-from sqlalchemy import Select, func, select
+from typing import Any, Generic, TypeVar
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from hopper.models.base import Base
@@ -19,7 +20,7 @@ class BaseRepository(Generic[ModelType]):
     inherited by model-specific repositories.
     """
 
-    def __init__(self, model: Type[ModelType], session: Session):
+    def __init__(self, model: type[ModelType], session: Session):
         """
         Initialize repository.
 
@@ -45,7 +46,7 @@ class BaseRepository(Generic[ModelType]):
         self.session.flush()  # Flush to get ID without committing
         return instance
 
-    def get(self, id: Any) -> Optional[ModelType]:
+    def get(self, id: Any) -> ModelType | None:
         """
         Get a model instance by ID.
 
@@ -58,8 +59,8 @@ class BaseRepository(Generic[ModelType]):
         return self.session.get(self.model, id)
 
     def get_all(
-        self, skip: int = 0, limit: Optional[int] = None, order_by: Optional[str] = None
-    ) -> List[ModelType]:
+        self, skip: int = 0, limit: int | None = None, order_by: str | None = None
+    ) -> list[ModelType]:
         """
         Get all model instances with optional pagination and sorting.
 
@@ -95,11 +96,11 @@ class BaseRepository(Generic[ModelType]):
 
     def filter(
         self,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
         skip: int = 0,
-        limit: Optional[int] = None,
-        order_by: Optional[str] = None,
-    ) -> List[ModelType]:
+        limit: int | None = None,
+        order_by: str | None = None,
+    ) -> list[ModelType]:
         """
         Get filtered model instances.
 
@@ -138,7 +139,7 @@ class BaseRepository(Generic[ModelType]):
         result = self.session.execute(query)
         return list(result.scalars().all())
 
-    def update(self, id: Any, **kwargs: Any) -> Optional[ModelType]:
+    def update(self, id: Any, **kwargs: Any) -> ModelType | None:
         """
         Update a model instance.
 
@@ -178,7 +179,7 @@ class BaseRepository(Generic[ModelType]):
         self.session.flush()
         return True
 
-    def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+    def count(self, filters: dict[str, Any] | None = None) -> int:
         """
         Count model instances.
 
@@ -211,7 +212,7 @@ class BaseRepository(Generic[ModelType]):
         """
         return self.get(id) is not None
 
-    def bulk_create(self, instances: List[Dict[str, Any]]) -> List[ModelType]:
+    def bulk_create(self, instances: list[dict[str, Any]]) -> list[ModelType]:
         """
         Create multiple instances efficiently.
 
@@ -230,7 +231,7 @@ class BaseRepository(Generic[ModelType]):
         self.session.flush()
         return created
 
-    def bulk_update(self, updates: List[Dict[str, Any]]) -> int:
+    def bulk_update(self, updates: list[dict[str, Any]]) -> int:
         """
         Update multiple instances efficiently.
 
@@ -250,7 +251,7 @@ class BaseRepository(Generic[ModelType]):
 
         return updated_count
 
-    def bulk_delete(self, ids: List[Any]) -> int:
+    def bulk_delete(self, ids: list[Any]) -> int:
         """
         Delete multiple instances efficiently.
 

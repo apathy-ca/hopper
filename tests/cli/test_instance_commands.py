@@ -1,8 +1,8 @@
 """Tests for instance management commands."""
 
-import pytest
-from click.testing import CliRunner
 from unittest.mock import Mock
+
+from click.testing import CliRunner
 
 from hopper.cli.main import cli
 
@@ -12,7 +12,7 @@ def test_instance_create(runner: CliRunner, mock_client: Mock, mock_config) -> N
     result = runner.invoke(
         cli,
         ["instance", "create", "test-instance", "--scope", "project", "--json"],
-        obj=mock_config
+        obj=mock_config,
     )
 
     assert result.exit_code == 0
@@ -27,12 +27,16 @@ def test_instance_create_with_parent(runner: CliRunner, mock_client: Mock, mock_
     result = runner.invoke(
         cli,
         [
-            "instance", "create", "child-instance",
-            "--scope", "orchestration",
-            "--parent", "parent-123",
-            "--json"
+            "instance",
+            "create",
+            "child-instance",
+            "--scope",
+            "orchestration",
+            "--parent",
+            "parent-123",
+            "--json",
         ],
-        obj=mock_config
+        obj=mock_config,
     )
 
     assert result.exit_code == 0
@@ -51,9 +55,7 @@ def test_instance_list(runner: CliRunner, mock_client: Mock, mock_config) -> Non
 def test_instance_list_with_scope_filter(runner: CliRunner, mock_client: Mock, mock_config) -> None:
     """Test listing instances with scope filter."""
     result = runner.invoke(
-        cli,
-        ["instance", "list", "--scope", "project", "--json"],
-        obj=mock_config
+        cli, ["instance", "list", "--scope", "project", "--json"], obj=mock_config
     )
 
     assert result.exit_code == 0
@@ -88,11 +90,7 @@ def test_instance_start(runner: CliRunner, mock_client: Mock, mock_config) -> No
     """Test starting an instance."""
     mock_client.start_instance.return_value = {"id": "inst-123", "status": "active"}
 
-    result = runner.invoke(
-        cli,
-        ["instance", "start", "inst-123", "--json"],
-        obj=mock_config
-    )
+    result = runner.invoke(cli, ["instance", "start", "inst-123", "--json"], obj=mock_config)
 
     assert result.exit_code == 0
     mock_client.start_instance.assert_called_once_with("inst-123")
@@ -103,9 +101,7 @@ def test_instance_stop(runner: CliRunner, mock_client: Mock, mock_config) -> Non
     mock_client.stop_instance.return_value = {"id": "inst-123", "status": "inactive"}
 
     result = runner.invoke(
-        cli,
-        ["instance", "stop", "inst-123", "--force", "--json"],
-        obj=mock_config
+        cli, ["instance", "stop", "inst-123", "--force", "--json"], obj=mock_config
     )
 
     assert result.exit_code == 0
@@ -120,11 +116,7 @@ def test_instance_status(runner: CliRunner, mock_client: Mock, mock_config) -> N
         "queue_size": 5,
     }
 
-    result = runner.invoke(
-        cli,
-        ["instance", "status", "inst-123", "--json"],
-        obj=mock_config
-    )
+    result = runner.invoke(cli, ["instance", "status", "inst-123", "--json"], obj=mock_config)
 
     assert result.exit_code == 0
     mock_client.get_instance_status.assert_called_once_with("inst-123")

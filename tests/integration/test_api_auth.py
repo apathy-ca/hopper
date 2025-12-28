@@ -8,14 +8,16 @@ Tests authentication flows including:
 - Permission checks
 - Unauthorized access handling
 """
+
+from datetime import datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 
 from tests.utils import (
-    assert_response_success,
     assert_response_error,
+    assert_response_success,
 )
 
 
@@ -26,10 +28,7 @@ class TestAuthenticationFlow:
     def test_login_with_valid_credentials(self, api_client: TestClient):
         """Test successful login with valid credentials."""
         # Create user first (assumes user registration or exists)
-        login_data = {
-            "username": "testuser",
-            "password": "testpassword123"
-        }
+        login_data = {"username": "testuser", "password": "testpassword123"}
 
         response = api_client.post("/api/v1/auth/login", json=login_data)
         assert_response_success(response)
@@ -41,20 +40,14 @@ class TestAuthenticationFlow:
 
     def test_login_with_invalid_credentials(self, api_client: TestClient):
         """Test login fails with invalid credentials."""
-        login_data = {
-            "username": "testuser",
-            "password": "wrongpassword"
-        }
+        login_data = {"username": "testuser", "password": "wrongpassword"}
 
         response = api_client.post("/api/v1/auth/login", json=login_data)
         assert_response_error(response, 401, "Invalid credentials")
 
     def test_login_with_nonexistent_user(self, api_client: TestClient):
         """Test login fails for non-existent user."""
-        login_data = {
-            "username": "nonexistentuser",
-            "password": "password123"
-        }
+        login_data = {"username": "nonexistentuser", "password": "password123"}
 
         response = api_client.post("/api/v1/auth/login", json=login_data)
         assert_response_error(response, 401)
@@ -64,7 +57,7 @@ class TestAuthenticationFlow:
         registration_data = {
             "username": "newuser",
             "email": "newuser@example.com",
-            "password": "securepassword123"
+            "password": "securepassword123",
         }
 
         response = api_client.post("/api/v1/auth/register", json=registration_data)
@@ -80,7 +73,7 @@ class TestAuthenticationFlow:
         user_data = {
             "username": "existinguser",
             "email": "user1@example.com",
-            "password": "password123"
+            "password": "password123",
         }
 
         # Register first time
@@ -130,9 +123,9 @@ class TestJWTTokenLifecycle:
 
         # Create an expired token (expired 1 hour ago)
         from hopper.api.auth import create_access_token
+
         expired_token = create_access_token(
-            {"sub": "testuser"},
-            expires_delta=timedelta(hours=-1)  # Expired 1 hour ago
+            {"sub": "testuser"}, expires_delta=timedelta(hours=-1)  # Expired 1 hour ago
         )
 
         api_client.headers["Authorization"] = f"Bearer {expired_token}"
@@ -161,8 +154,7 @@ class TestJWTTokenLifecycle:
         if refresh_token:
             # Use refresh token to get new access token
             response = api_client.post(
-                "/api/v1/auth/refresh",
-                json={"refresh_token": refresh_token}
+                "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
             )
             assert_response_success(response)
 
@@ -176,10 +168,7 @@ class TestJWTTokenLifecycle:
         token = authenticated_api_client.headers.get("Authorization").split(" ")[1]
 
         # Revoke token
-        response = authenticated_api_client.post(
-            "/api/v1/auth/revoke",
-            json={"token": token}
-        )
+        response = authenticated_api_client.post("/api/v1/auth/revoke", json={"token": token})
         assert_response_success(response)
 
         # Try to use revoked token
@@ -196,11 +185,8 @@ class TestAPIKeyAuthentication:
         # Create API key for user
         response = api_client.post(
             "/api/v1/auth/api-keys",
-            json={
-                "name": "Test API Key",
-                "expires_in_days": 30
-            },
-            headers={"Authorization": "Bearer user_jwt_token"}
+            json={"name": "Test API Key", "expires_in_days": 30},
+            headers={"Authorization": "Bearer user_jwt_token"},
         )
         assert_response_success(response, 201)
 
@@ -224,8 +210,8 @@ class TestAPIKeyAuthentication:
             "/api/v1/auth/api-keys",
             json={
                 "name": "Expiring Key",
-                "expires_at": (datetime.utcnow() - timedelta(days=1)).isoformat()
-            }
+                "expires_at": (datetime.utcnow() - timedelta(days=1)).isoformat(),
+            },
         )
 
         if response.status_code == 201:
@@ -240,10 +226,7 @@ class TestAPIKeyAuthentication:
         """Test listing user's API keys."""
         # Create some API keys
         for i in range(3):
-            authenticated_api_client.post(
-                "/api/v1/auth/api-keys",
-                json={"name": f"Test Key {i}"}
-            )
+            authenticated_api_client.post("/api/v1/auth/api-keys", json={"name": f"Test Key {i}"})
 
         # List API keys
         response = authenticated_api_client.get("/api/v1/auth/api-keys")
@@ -260,8 +243,7 @@ class TestAPIKeyAuthentication:
         """Test revoking an API key."""
         # Create API key
         response = authenticated_api_client.post(
-            "/api/v1/auth/api-keys",
-            json={"name": "Key to Revoke"}
+            "/api/v1/auth/api-keys", json={"name": "Key to Revoke"}
         )
         assert_response_success(response, 201)
 
@@ -289,10 +271,8 @@ class TestPermissions:
         """Test that users can access their own tasks."""
         # Create task owned by user
         from tests.factories import TaskFactory
-        task = TaskFactory.create(
-            session=db_session,
-            owner="testuser"
-        )
+
+        task = TaskFactory.create(session=db_session, owner="testuser")
 
         response = authenticated_api_client.get(f"/api/v1/tasks/{task.id}")
         assert_response_success(response)
@@ -303,18 +283,13 @@ class TestPermissions:
         """Test that users cannot access other users' private tasks."""
         # Create task owned by different user and marked private
         from tests.factories import TaskFactory
-        task = TaskFactory.create(
-            session=db_session,
-            owner="otheruser",
-            tags={"private": True}
-        )
+
+        task = TaskFactory.create(session=db_session, owner="otheruser", tags={"private": True})
 
         response = authenticated_api_client.get(f"/api/v1/tasks/{task.id}")
         assert_response_error(response, 403, "Forbidden")
 
-    def test_admin_can_access_all_tasks(
-        self, api_client: TestClient, db_session: Session
-    ):
+    def test_admin_can_access_all_tasks(self, api_client: TestClient, db_session: Session):
         """Test that admin users can access all tasks."""
         # Login as admin
         login_data = {"username": "admin", "password": "adminpassword"}
@@ -326,11 +301,8 @@ class TestPermissions:
 
         # Access any task
         from tests.factories import TaskFactory
-        task = TaskFactory.create(
-            session=db_session,
-            owner="someuser",
-            tags={"private": True}
-        )
+
+        task = TaskFactory.create(session=db_session, owner="someuser", tags={"private": True})
 
         response = api_client.get(f"/api/v1/tasks/{task.id}")
         assert_response_success(response)
@@ -340,10 +312,8 @@ class TestPermissions:
     ):
         """Test that users cannot delete other users' tasks."""
         from tests.factories import TaskFactory
-        task = TaskFactory.create(
-            session=db_session,
-            owner="otheruser"
-        )
+
+        task = TaskFactory.create(session=db_session, owner="otheruser")
 
         response = authenticated_api_client.delete(f"/api/v1/tasks/{task.id}")
         assert_response_error(response, 403, "Forbidden")
@@ -362,17 +332,11 @@ class TestPermissions:
 
             # Create and modify task in hopper project
             from tests.factories import TaskFactory
-            task = TaskFactory.create(
-                session=db_session,
-                project="hopper",
-                owner="someuser"
-            )
+
+            task = TaskFactory.create(session=db_session, project="hopper", owner="someuser")
 
             # Should be able to update task
-            response = api_client.put(
-                f"/api/v1/tasks/{task.id}",
-                json={"status": "completed"}
-            )
+            response = api_client.put(f"/api/v1/tasks/{task.id}", json={"status": "completed"})
             assert_response_success(response)
 
 
@@ -387,24 +351,19 @@ class TestUnauthorizedAccess:
         response = api_client.post("/api/v1/tasks", json=task_data)
         assert_response_error(response, 401, "Not authenticated")
 
-    def test_unauthenticated_cannot_update_task(
-        self, api_client: TestClient, db_session: Session
-    ):
+    def test_unauthenticated_cannot_update_task(self, api_client: TestClient, db_session: Session):
         """Test that unauthenticated users cannot update tasks."""
         from tests.factories import TaskFactory
+
         task = TaskFactory.create(session=db_session)
 
-        response = api_client.put(
-            f"/api/v1/tasks/{task.id}",
-            json={"title": "Updated"}
-        )
+        response = api_client.put(f"/api/v1/tasks/{task.id}", json={"title": "Updated"})
         assert_response_error(response, 401)
 
-    def test_unauthenticated_cannot_delete_task(
-        self, api_client: TestClient, db_session: Session
-    ):
+    def test_unauthenticated_cannot_delete_task(self, api_client: TestClient, db_session: Session):
         """Test that unauthenticated users cannot delete tasks."""
         from tests.factories import TaskFactory
+
         task = TaskFactory.create(session=db_session)
 
         response = api_client.delete(f"/api/v1/tasks/{task.id}")
@@ -442,26 +401,20 @@ class TestPasswordManagement:
         """Test changing user password."""
         password_data = {
             "current_password": "testpassword123",
-            "new_password": "newsecurepassword456"
+            "new_password": "newsecurepassword456",
         }
 
-        response = authenticated_api_client.post(
-            "/api/v1/auth/change-password",
-            json=password_data
-        )
+        response = authenticated_api_client.post("/api/v1/auth/change-password", json=password_data)
         assert_response_success(response)
 
     def test_change_password_wrong_current(self, authenticated_api_client: TestClient):
         """Test that password change fails with wrong current password."""
         password_data = {
             "current_password": "wrongpassword",
-            "new_password": "newsecurepassword456"
+            "new_password": "newsecurepassword456",
         }
 
-        response = authenticated_api_client.post(
-            "/api/v1/auth/change-password",
-            json=password_data
-        )
+        response = authenticated_api_client.post("/api/v1/auth/change-password", json=password_data)
         assert_response_error(response, 401, "current password")
 
     def test_request_password_reset(self, api_client: TestClient):
@@ -478,7 +431,7 @@ class TestPasswordManagement:
         registration_data = {
             "username": "newuser",
             "email": "newuser@example.com",
-            "password": "123"  # Too weak
+            "password": "123",  # Too weak
         }
 
         response = api_client.post("/api/v1/auth/register", json=registration_data)

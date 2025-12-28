@@ -10,7 +10,7 @@ Records all routing decisions to enable:
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from hopper.intelligence.types import (
@@ -35,7 +35,7 @@ class DecisionRecord:
         decision_id: str,
         decision: RoutingDecision,
         context: RoutingContext,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ):
         """
         Initialize a decision record.
@@ -51,9 +51,9 @@ class DecisionRecord:
         self.context = context
         self.metadata = metadata or {}
         self.recorded_at = datetime.utcnow()
-        self.feedback: Optional[DecisionFeedback] = None
+        self.feedback: DecisionFeedback | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """
         Convert to dictionary for serialization.
 
@@ -95,9 +95,9 @@ class DecisionRecorder:
 
     def __init__(self):
         """Initialize the decision recorder."""
-        self._records: Dict[str, DecisionRecord] = {}
-        self._task_decisions: Dict[str, List[str]] = {}  # task_id -> decision_ids
-        self._strategy_decisions: Dict[DecisionStrategy, List[str]] = {}
+        self._records: dict[str, DecisionRecord] = {}
+        self._task_decisions: dict[str, list[str]] = {}  # task_id -> decision_ids
+        self._strategy_decisions: dict[DecisionStrategy, list[str]] = {}
 
         logger.info("Initialized DecisionRecorder (in-memory)")
 
@@ -105,7 +105,7 @@ class DecisionRecorder:
         self,
         decision: RoutingDecision,
         context: RoutingContext,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Record a routing decision.
@@ -170,12 +170,9 @@ class DecisionRecorder:
         record = self._records[decision_id]
         record.feedback = feedback
 
-        logger.info(
-            f"Added feedback to decision {decision_id}: "
-            f"correct={feedback.correct}"
-        )
+        logger.info(f"Added feedback to decision {decision_id}: " f"correct={feedback.correct}")
 
-    async def get_decision(self, decision_id: str) -> Optional[DecisionRecord]:
+    async def get_decision(self, decision_id: str) -> DecisionRecord | None:
         """
         Get a decision record by ID.
 
@@ -187,7 +184,7 @@ class DecisionRecorder:
         """
         return self._records.get(decision_id)
 
-    async def get_decisions_for_task(self, task_id: str) -> List[DecisionRecord]:
+    async def get_decisions_for_task(self, task_id: str) -> list[DecisionRecord]:
         """
         Get all decisions for a specific task.
 
@@ -200,9 +197,7 @@ class DecisionRecorder:
         decision_ids = self._task_decisions.get(task_id, [])
         return [self._records[did] for did in decision_ids if did in self._records]
 
-    async def get_decisions_by_strategy(
-        self, strategy: DecisionStrategy
-    ) -> List[DecisionRecord]:
+    async def get_decisions_by_strategy(self, strategy: DecisionStrategy) -> list[DecisionRecord]:
         """
         Get all decisions made by a specific strategy.
 
@@ -215,9 +210,7 @@ class DecisionRecorder:
         decision_ids = self._strategy_decisions.get(strategy, [])
         return [self._records[did] for did in decision_ids if did in self._records]
 
-    async def get_decisions_by_destination(
-        self, destination: str
-    ) -> List[DecisionRecord]:
+    async def get_decisions_by_destination(self, destination: str) -> list[DecisionRecord]:
         """
         Get all decisions for a specific destination.
 
@@ -233,7 +226,7 @@ class DecisionRecorder:
             if record.decision.destination == destination
         ]
 
-    async def get_recent_decisions(self, limit: int = 100) -> List[DecisionRecord]:
+    async def get_recent_decisions(self, limit: int = 100) -> list[DecisionRecord]:
         """
         Get recent decisions.
 
@@ -253,9 +246,9 @@ class DecisionRecorder:
 
     async def get_decision_success_rate(
         self,
-        strategy: Optional[DecisionStrategy] = None,
-        destination: Optional[str] = None,
-    ) -> Optional[float]:
+        strategy: DecisionStrategy | None = None,
+        destination: str | None = None,
+    ) -> float | None:
         """
         Calculate success rate for decisions.
 
@@ -290,7 +283,7 @@ class DecisionRecorder:
 
         return correct_feedback / total_feedback
 
-    async def get_statistics(self) -> Dict[str, Any]:
+    async def get_statistics(self) -> dict[str, Any]:
         """
         Get overall statistics about recorded decisions.
 
@@ -316,9 +309,9 @@ class DecisionRecorder:
 
         # Calculate average confidence
         if total_decisions > 0:
-            avg_confidence = sum(
-                r.decision.confidence for r in self._records.values()
-            ) / total_decisions
+            avg_confidence = (
+                sum(r.decision.confidence for r in self._records.values()) / total_decisions
+            )
         else:
             avg_confidence = 0.0
 
@@ -384,18 +377,14 @@ class DecisionRecorder:
             task_id = record.context.task_id
             if task_id in self._task_decisions:
                 self._task_decisions[task_id] = [
-                    did
-                    for did in self._task_decisions[task_id]
-                    if did != decision_id
+                    did for did in self._task_decisions[task_id] if did != decision_id
                 ]
 
             # Remove from strategy index
             strategy = record.decision.strategy
             if strategy in self._strategy_decisions:
                 self._strategy_decisions[strategy] = [
-                    did
-                    for did in self._strategy_decisions[strategy]
-                    if did != decision_id
+                    did for did in self._strategy_decisions[strategy] if did != decision_id
                 ]
 
         logger.info(f"Cleared {len(old_decision_ids)} decisions older than {days} days")
@@ -404,7 +393,7 @@ class DecisionRecorder:
 
 
 # Global decision recorder instance
-_recorder: Optional[DecisionRecorder] = None
+_recorder: DecisionRecorder | None = None
 
 
 def get_decision_recorder() -> DecisionRecorder:
@@ -425,7 +414,7 @@ def get_decision_recorder() -> DecisionRecorder:
 async def record_decision(
     decision: RoutingDecision,
     context: RoutingContext,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Record a routing decision using the global recorder.

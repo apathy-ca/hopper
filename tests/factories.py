@@ -13,20 +13,21 @@ Usage:
     task = TaskFactory.create(title="Custom title")
     tasks = TaskFactory.create_batch(5, project="hopper")
 """
+
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 # Import models (will be available after integration)
 try:
-    from hopper.models.task import Task
-    from hopper.models.project import Project
-    from hopper.models.hopper_instance import HopperInstance
-    from hopper.models.routing_decision import RoutingDecision
-    from hopper.models.task_feedback import TaskFeedback
     from hopper.models.external_mapping import ExternalMapping
+    from hopper.models.hopper_instance import HopperInstance
+    from hopper.models.project import Project
+    from hopper.models.routing_decision import RoutingDecision
+    from hopper.models.task import Task
+    from hopper.models.task_feedback import TaskFeedback
 except ImportError:
     # Models not yet integrated, define mock classes
     Task = None
@@ -80,7 +81,7 @@ class BaseFactory:
         return cls.model(**attributes)
 
     @classmethod
-    def create(cls, session: Optional[Session] = None, **kwargs) -> Any:
+    def create(cls, session: Session | None = None, **kwargs) -> Any:
         """
         Create and persist an instance to the database.
 
@@ -101,9 +102,7 @@ class BaseFactory:
         return instance
 
     @classmethod
-    def create_batch(
-        cls, size: int, session: Optional[Session] = None, **kwargs
-    ) -> List[Any]:
+    def create_batch(cls, size: int, session: Session | None = None, **kwargs) -> list[Any]:
         """
         Create and persist multiple instances.
 
@@ -128,7 +127,7 @@ class BaseFactory:
         return instances
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         """Get default attributes for the model. Override in subclasses."""
         return {}
 
@@ -141,7 +140,7 @@ class TaskFactory(BaseFactory):
     model = Task
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         seq = cls._get_sequence()
         return {
             "id": cls._generate_id("task"),
@@ -159,43 +158,35 @@ class TaskFactory(BaseFactory):
         }
 
     @classmethod
-    def create_pending(cls, session: Optional[Session] = None, **kwargs) -> Task:
+    def create_pending(cls, session: Session | None = None, **kwargs) -> Task:
         """Create a task with pending status."""
         return cls.create(session=session, status="pending", **kwargs)
 
     @classmethod
-    def create_routed(cls, session: Optional[Session] = None, **kwargs) -> Task:
+    def create_routed(cls, session: Session | None = None, **kwargs) -> Task:
         """Create a task with routed status."""
         return cls.create(session=session, status="routed", **kwargs)
 
     @classmethod
-    def create_in_progress(cls, session: Optional[Session] = None, **kwargs) -> Task:
+    def create_in_progress(cls, session: Session | None = None, **kwargs) -> Task:
         """Create a task with in_progress status."""
         return cls.create(session=session, status="in_progress", **kwargs)
 
     @classmethod
-    def create_completed(cls, session: Optional[Session] = None, **kwargs) -> Task:
+    def create_completed(cls, session: Session | None = None, **kwargs) -> Task:
         """Create a task with completed status."""
         return cls.create(session=session, status="completed", **kwargs)
 
     @classmethod
-    def create_with_high_priority(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> Task:
+    def create_with_high_priority(cls, session: Session | None = None, **kwargs) -> Task:
         """Create a task with high priority."""
         return cls.create(session=session, priority="high", **kwargs)
 
     @classmethod
-    def create_with_dependencies(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> Task:
+    def create_with_dependencies(cls, session: Session | None = None, **kwargs) -> Task:
         """Create a task with dependencies."""
         depends_on = kwargs.pop("depends_on", ["task-dep-1", "task-dep-2"])
-        return cls.create(
-            session=session,
-            depends_on={"task_ids": depends_on},
-            **kwargs
-        )
+        return cls.create(session=session, depends_on={"task_ids": depends_on}, **kwargs)
 
 
 class ProjectFactory(BaseFactory):
@@ -206,7 +197,7 @@ class ProjectFactory(BaseFactory):
     model = Project
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         seq = cls._get_sequence()
         slug = f"test-project-{seq}"
         return {
@@ -225,7 +216,7 @@ class ProjectFactory(BaseFactory):
 
     @classmethod
     def create_with_custom_config(
-        cls, config: Dict[str, Any], session: Optional[Session] = None, **kwargs
+        cls, config: dict[str, Any], session: Session | None = None, **kwargs
     ) -> Project:
         """Create a project with custom configuration."""
         return cls.create(session=session, configuration=config, **kwargs)
@@ -239,7 +230,7 @@ class HopperInstanceFactory(BaseFactory):
     model = HopperInstance
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         seq = cls._get_sequence()
         return {
             "id": cls._generate_id("inst"),
@@ -255,20 +246,18 @@ class HopperInstanceFactory(BaseFactory):
         }
 
     @classmethod
-    def create_global(cls, session: Optional[Session] = None, **kwargs) -> HopperInstance:
+    def create_global(cls, session: Session | None = None, **kwargs) -> HopperInstance:
         """Create a global-scope instance."""
         return cls.create(session=session, scope="global", **kwargs)
 
     @classmethod
-    def create_project_scoped(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> HopperInstance:
+    def create_project_scoped(cls, session: Session | None = None, **kwargs) -> HopperInstance:
         """Create a project-scoped instance."""
         return cls.create(session=session, scope="project", **kwargs)
 
     @classmethod
     def create_orchestration_scoped(
-        cls, session: Optional[Session] = None, **kwargs
+        cls, session: Session | None = None, **kwargs
     ) -> HopperInstance:
         """Create an orchestration-scoped instance."""
         return cls.create(session=session, scope="orchestration", **kwargs)
@@ -282,7 +271,7 @@ class RoutingDecisionFactory(BaseFactory):
     model = RoutingDecision
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         return {
             "id": cls._generate_id("decision"),
             "task_id": cls._generate_id("task"),
@@ -298,36 +287,30 @@ class RoutingDecisionFactory(BaseFactory):
         }
 
     @classmethod
-    def create_rules_based(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> RoutingDecision:
+    def create_rules_based(cls, session: Session | None = None, **kwargs) -> RoutingDecision:
         """Create a rules-based routing decision."""
         return cls.create(session=session, strategy="rules", **kwargs)
 
     @classmethod
-    def create_llm_based(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> RoutingDecision:
+    def create_llm_based(cls, session: Session | None = None, **kwargs) -> RoutingDecision:
         """Create an LLM-based routing decision."""
         return cls.create(
             session=session,
             strategy="llm",
             confidence=0.75,
             reasoning="LLM analysis suggests this routing",
-            **kwargs
+            **kwargs,
         )
 
     @classmethod
-    def create_sage_based(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> RoutingDecision:
+    def create_sage_based(cls, session: Session | None = None, **kwargs) -> RoutingDecision:
         """Create a SAGE-based routing decision."""
         return cls.create(
             session=session,
             strategy="sage",
             confidence=0.95,
             reasoning="SAGE memory system found historical patterns",
-            **kwargs
+            **kwargs,
         )
 
 
@@ -339,7 +322,7 @@ class TaskFeedbackFactory(BaseFactory):
     model = TaskFeedback
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         return {
             "id": cls._generate_id("feedback"),
             "task_id": cls._generate_id("task"),
@@ -351,22 +334,18 @@ class TaskFeedbackFactory(BaseFactory):
         }
 
     @classmethod
-    def create_positive(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> TaskFeedback:
+    def create_positive(cls, session: Session | None = None, **kwargs) -> TaskFeedback:
         """Create positive feedback."""
         return cls.create(
             session=session,
             routing_correct=True,
             confidence_rating=5,
             comments="Perfect routing!",
-            **kwargs
+            **kwargs,
         )
 
     @classmethod
-    def create_negative(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> TaskFeedback:
+    def create_negative(cls, session: Session | None = None, **kwargs) -> TaskFeedback:
         """Create negative feedback with correction."""
         return cls.create(
             session=session,
@@ -374,7 +353,7 @@ class TaskFeedbackFactory(BaseFactory):
             confidence_rating=2,
             comments="Should have been routed elsewhere",
             suggested_destination=kwargs.pop("suggested_destination", "other-project"),
-            **kwargs
+            **kwargs,
         )
 
 
@@ -386,7 +365,7 @@ class ExternalMappingFactory(BaseFactory):
     model = ExternalMapping
 
     @classmethod
-    def _get_defaults(cls) -> Dict[str, Any]:
+    def _get_defaults(cls) -> dict[str, Any]:
         seq = cls._get_sequence()
         return {
             "id": cls._generate_id("mapping"),
@@ -403,16 +382,12 @@ class ExternalMappingFactory(BaseFactory):
         }
 
     @classmethod
-    def create_github_mapping(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> ExternalMapping:
+    def create_github_mapping(cls, session: Session | None = None, **kwargs) -> ExternalMapping:
         """Create a GitHub issue mapping."""
         return cls.create(session=session, platform="github", **kwargs)
 
     @classmethod
-    def create_gitlab_mapping(
-        cls, session: Optional[Session] = None, **kwargs
-    ) -> ExternalMapping:
+    def create_gitlab_mapping(cls, session: Session | None = None, **kwargs) -> ExternalMapping:
         """Create a GitLab issue mapping."""
         seq = cls._get_sequence()
         return cls.create(
@@ -420,7 +395,7 @@ class ExternalMappingFactory(BaseFactory):
             platform="gitlab",
             external_id=f"issue-{seq}",
             external_url=f"https://gitlab.com/test/repo/-/issues/{seq}",
-            **kwargs
+            **kwargs,
         )
 
 
@@ -428,10 +403,11 @@ class ExternalMappingFactory(BaseFactory):
 # Utility Functions
 # ============================================================================
 
+
 def create_task_with_routing(
-    session: Optional[Session] = None,
-    task_kwargs: Optional[Dict[str, Any]] = None,
-    decision_kwargs: Optional[Dict[str, Any]] = None,
+    session: Session | None = None,
+    task_kwargs: dict[str, Any] | None = None,
+    decision_kwargs: dict[str, Any] | None = None,
 ) -> tuple:
     """
     Create a task with associated routing decision.
@@ -458,9 +434,9 @@ def create_task_with_routing(
 
 
 def create_task_with_feedback(
-    session: Optional[Session] = None,
-    task_kwargs: Optional[Dict[str, Any]] = None,
-    feedback_kwargs: Optional[Dict[str, Any]] = None,
+    session: Session | None = None,
+    task_kwargs: dict[str, Any] | None = None,
+    feedback_kwargs: dict[str, Any] | None = None,
 ) -> tuple:
     """
     Create a task with associated feedback.
@@ -486,10 +462,7 @@ def create_task_with_feedback(
     return task, feedback
 
 
-def create_complete_task_workflow(
-    session: Optional[Session] = None,
-    **kwargs
-) -> Dict[str, Any]:
+def create_complete_task_workflow(session: Session | None = None, **kwargs) -> dict[str, Any]:
     """
     Create a complete task workflow with all related entities.
 
@@ -507,23 +480,14 @@ def create_complete_task_workflow(
 
     # Create routing decision
     decision = RoutingDecisionFactory.create(
-        session=session,
-        task_id=task.id,
-        destination=kwargs.get("project", "default-project")
+        session=session, task_id=task.id, destination=kwargs.get("project", "default-project")
     )
 
     # Create feedback
-    feedback = TaskFeedbackFactory.create(
-        session=session,
-        task_id=task.id,
-        routing_correct=True
-    )
+    feedback = TaskFeedbackFactory.create(session=session, task_id=task.id, routing_correct=True)
 
     # Create external mapping
-    mapping = ExternalMappingFactory.create(
-        session=session,
-        task_id=task.id
-    )
+    mapping = ExternalMappingFactory.create(session=session, task_id=task.id)
 
     return {
         "task": task,
