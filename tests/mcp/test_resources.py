@@ -8,6 +8,10 @@ from hopper.mcp.resources import (
 from hopper.mcp.resources.project_resources import read_project_resource
 from hopper.mcp.resources.task_resources import read_task_resource
 
+# Mark tests requiring API integration
+pytestmark = pytest.mark.skip(reason="MCP integration: Requires running API")
+
+
 
 class TestResourceDefinitions:
     """Test resource definitions."""

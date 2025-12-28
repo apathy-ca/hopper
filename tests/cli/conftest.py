@@ -48,6 +48,14 @@ def mock_config(temp_config_dir: Path) -> Config:
 
 
 @pytest.fixture
+def mock_context(mock_config: Config) -> "Context":
+    """Create a mock CLI context."""
+    from hopper.cli.main import Context
+
+    return Context(config=mock_config, verbose=False, json_output=True)
+
+
+@pytest.fixture
 def mock_client(monkeypatch: pytest.MonkeyPatch) -> Mock:
     """Create a mock Hopper client."""
     mock = MagicMock()
@@ -134,9 +142,13 @@ def mock_client(monkeypatch: pytest.MonkeyPatch) -> Mock:
     mock.__enter__ = Mock(return_value=mock)
     mock.__exit__ = Mock(return_value=None)
 
-    # Patch HopperClient
-    from hopper.cli import client
+    # Patch HopperClient - patch it in the client module itself
+    monkeypatch.setattr("hopper.cli.client.HopperClient", lambda config: mock)
 
-    monkeypatch.setattr(client, "HopperClient", lambda config: mock)
+    # Also patch in all command modules that import it
+    monkeypatch.setattr("hopper.cli.commands.task.HopperClient", lambda config: mock)
+    monkeypatch.setattr("hopper.cli.commands.project.HopperClient", lambda config: mock)
+    monkeypatch.setattr("hopper.cli.commands.instance.HopperClient", lambda config: mock)
+    monkeypatch.setattr("hopper.cli.commands.config.HopperClient", lambda config: mock)
 
     return mock
