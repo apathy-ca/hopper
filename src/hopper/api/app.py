@@ -120,9 +120,10 @@ def create_app() -> FastAPI:
             "health": "/health",
         }
 
-    # Import and include routers (will be added in later tasks)
-    # from hopper.api.routes import tasks, projects, instances, auth
-    # app.include_router(tasks.router, prefix="/api/v1", tags=["Tasks"])
+    # Import and include routers
+    from hopper.api.routes import tasks
+    app.include_router(tasks.router, prefix="/api/v1", tags=["Tasks"])
+    # from hopper.api.routes import projects, instances, auth
     # app.include_router(projects.router, prefix="/api/v1", tags=["Projects"])
     # app.include_router(instances.router, prefix="/api/v1", tags=["Instances"])
     # app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])

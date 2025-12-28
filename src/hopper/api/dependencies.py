@@ -11,8 +11,9 @@ Provides reusable dependencies for:
 from typing import AsyncGenerator, Optional, Annotated
 from fastapi import Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
 import os
+
+from hopper.models.base import Base
 
 
 # Database configuration
@@ -34,11 +35,6 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-class Base(DeclarativeBase):
-    """Base class for SQLAlchemy models."""
-    pass
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
