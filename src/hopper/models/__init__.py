@@ -4,6 +4,16 @@ Hopper data models.
 This package contains all SQLAlchemy models for the Hopper system.
 """
 from .base import Base, TimestampMixin
+from .enums import (
+    DecisionStrategy,
+    ExecutorType,
+    ExternalPlatform,
+    HopperScope,
+    TaskPriority,
+    TaskSource,
+    TaskStatus,
+    VelocityRequirement,
+)
 from .external_mapping import ExternalMapping
 from .hopper_instance import HopperInstance
 from .project import Project
@@ -20,4 +30,13 @@ __all__ = [
     "TaskFeedback",
     "ExternalMapping",
     "HopperInstance",
+    # Enums
+    "TaskStatus",
+    "TaskPriority",
+    "HopperScope",
+    "DecisionStrategy",
+    "ExecutorType",
+    "VelocityRequirement",
+    "ExternalPlatform",
+    "TaskSource",
 ]
