@@ -68,9 +68,13 @@ def cli(ctx: click.Context, config: Optional[str], verbose: bool, json_output: b
 
 # Import command groups
 from hopper.cli.commands.task import task, add_shortcut, ls_shortcut
+from hopper.cli.commands.project import project
+from hopper.cli.commands.instance import instance
 
 # Register command groups
 cli.add_command(task)
+cli.add_command(project)
+cli.add_command(instance)
 
 # Register shortcuts
 cli.add_command(add_shortcut)
