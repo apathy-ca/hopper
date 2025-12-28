@@ -100,7 +100,7 @@ async def list_tasks(
     requester: Optional[str] = None,
     # Sorting
     sort_by: str = Query("created_at", description="Field to sort by"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    sort_order: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> TaskList:
     """
     List tasks with filtering, pagination, and sorting.

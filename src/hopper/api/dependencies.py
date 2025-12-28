@@ -95,7 +95,7 @@ class FilterParams:
         sort_by: Annotated[Optional[str], Query(description="Sort by field")] = None,
         sort_order: Annotated[
             Optional[str],
-            Query(regex="^(asc|desc)$", description="Sort order (asc/desc)")
+            Query(pattern="^(asc|desc)$", description="Sort order (asc/desc)")
         ] = "desc",
     ):
         self.search = search

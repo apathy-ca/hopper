@@ -33,7 +33,7 @@ class TestMCPTaskTools:
                 "description": "Add MCP support to Hopper",
                 "project": "hopper",
                 "priority": "high",
-                "tags": {"mcp": True, "backend": True}
+                "tags": ["mcp", "backend"]
             }
         )
 

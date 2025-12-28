@@ -52,7 +52,7 @@ class TaskFeedback(Base):
     )
 
     # Relationships
-    task: Mapped["Task"] = relationship("Task", back_populates="task_feedback")
+    task: Mapped["Task"] = relationship("Task", back_populates="feedback")
 
     def __repr__(self) -> str:
         return f"<TaskFeedback(task_id={self.task_id}, was_good_match={self.was_good_match})>"

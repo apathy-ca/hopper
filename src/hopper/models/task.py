@@ -20,6 +20,11 @@ class Task(Base, TimestampMixin):
     # Primary key
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
 
+    # Instance association
+    instance_id: Mapped[Optional[str]] = mapped_column(
+        String(100), ForeignKey("hopper_instances.id"), nullable=True
+    )
+
     # Basic info
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -59,16 +64,14 @@ class Task(Base, TimestampMixin):
     routing_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     routing_reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # Feedback
-    feedback: Mapped[Optional[Dict[str, Any]]] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=True
-    )
-
     # Relationships
+    instance: Mapped[Optional["HopperInstance"]] = relationship(
+        "HopperInstance", back_populates="tasks"
+    )
     routing_decision: Mapped[Optional["RoutingDecision"]] = relationship(
         "RoutingDecision", back_populates="task", uselist=False
     )
-    task_feedback: Mapped[Optional["TaskFeedback"]] = relationship(
+    feedback: Mapped[Optional["TaskFeedback"]] = relationship(
         "TaskFeedback", back_populates="task", uselist=False
     )
     external_mappings: Mapped[List["ExternalMapping"]] = relationship(

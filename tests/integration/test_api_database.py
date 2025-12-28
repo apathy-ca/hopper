@@ -38,7 +38,7 @@ class TestTaskCRUDAPI:
             "description": "Task created via API",
             "project": "hopper",
             "priority": "high",
-            "tags": {"api": True, "test": True},
+            "tags": ["api", "test"],
         }
 
         # Create task via API
