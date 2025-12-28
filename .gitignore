@@ -137,3 +137,15 @@ Thumbs.db
 *.db
 hopper.db
 hopper-*.db
+
+# Czarina runtime files
+.czarina/logs/
+.czarina/status/
+.czarina/worktrees/
+.czarina/work/
+.czarina/phases/
+.czarina/*.json.bak
+.czarina/COORDINATION_LOG.md
+.czarina/ORCHESTRATION_POSTMORTEM.md
+.czarina/CLOSEOUT_*.md
+.czarina/worker-status.json
