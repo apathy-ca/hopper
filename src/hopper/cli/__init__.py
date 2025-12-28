@@ -1,7 +1,5 @@
-"""
-Hopper CLI commands.
+"""Hopper CLI - Command-line interface for managing Hopper tasks, projects, and instances."""
 
-Command-line interface for managing Hopper and its MCP server.
-"""
+from hopper.cli.main import cli
 
-__all__ = ["main"]
+__all__ = ["cli"]
