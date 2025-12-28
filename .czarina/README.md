@@ -1,214 +1,219 @@
-# Hopper Phase 1 Czarina Orchestration
+# Hopper Phase 2 Czarina Orchestration
 
-This directory contains the Czarina orchestration configuration for Hopper Phase 1 (Core Foundation).
+This directory contains the Czarina orchestration configuration for Hopper Phase 2 (Multi-Instance Support).
 
 ## Overview
 
 **Project:** Hopper - Universal Task Queue
-**Version:** 1.0.0
-**Phase:** 1 (Core Foundation)
-**Omnibus Branch:** `cz1/release/v1.0.0-phase1`
+**Version:** 2.0.0
+**Phase:** 2 (Multi-Instance Support)
+**Omnibus Branch:** `cz2/release/v2.0.0-phase2`
+
+## Phase 2 Goals
+
+Implement hierarchical Hopper instances with:
+- Global → Project → Orchestration hierarchy
+- Task delegation between instances
+- Completion notification bubbling up
+- Scope-specific routing behaviors
+- Instance visualization and monitoring
+- Czarina integration for orchestrations
 
 ## Workers
 
-Phase 1 consists of 8 workers organized in dependency order:
+Phase 2 consists of 7 workers organized in dependency order:
 
-### 1. project-setup
-**Branch:** `cz1/feat/project-setup`
+### 1. instance-architecture
+**Branch:** `cz2/feat/instance-architecture`
 **Dependencies:** None
-**Mission:** Initialize Python project structure, development environment, and core data models
+**Mission:** Enhance HopperInstance model with scope support, lifecycle management, and configuration
 
 **Key Deliverables:**
-- Python project structure with proper packaging
-- Docker Compose setup (PostgreSQL, Redis)
-- Core data models (Task, Project, HopperInstance, RoutingDecision)
-- Configuration management
-- Initial test suite
+- Enhanced HopperInstance model with status, lifecycle states
+- Instance lifecycle manager with state machine
+- Scope-specific configuration system
+- Configuration templates for all scopes
+- Enhanced repository with hierarchy queries
 
-### 2. database
-**Branch:** `cz1/feat/database`
-**Dependencies:** project-setup
-**Mission:** Implement database schema, migrations, and CRUD operations
-
-**Key Deliverables:**
-- Alembic migrations
-- Database connection management
-- Repository pattern with CRUD operations
-- Database utilities and seed data
-- Comprehensive repository tests
-
-### 3. api-core
-**Branch:** `cz1/feat/api-core`
-**Dependencies:** database
-**Mission:** Build FastAPI application with task endpoints and authentication
+### 2. instance-registry
+**Branch:** `cz2/feat/instance-registry`
+**Dependencies:** instance-architecture
+**Mission:** Create instance registry and discovery system
 
 **Key Deliverables:**
-- FastAPI application with proper structure
-- Task, Project, and Instance management endpoints
-- Authentication and authorization (JWT + API keys)
-- Pydantic schemas for all entities
-- OpenAPI documentation
+- Central instance registry
+- Discovery service
+- Parent-child relationship management
+- Health monitoring
+- Registry API endpoints
 
-### 4. mcp-integration
-**Branch:** `cz1/feat/mcp-integration`
-**Dependencies:** api-core
-**Mission:** Create MCP server for Claude integration
-
-**Key Deliverables:**
-- MCP server implementation
-- Task management tools for Claude
-- Project and routing tools
-- MCP resources
-- Context management
-- Claude Desktop configuration
-
-### 5. cli-tool
-**Branch:** `cz1/feat/cli-tool`
-**Dependencies:** api-core
-**Mission:** Build CLI tool for task management
+### 3. delegation-protocol
+**Branch:** `cz2/feat/delegation-protocol`
+**Dependencies:** instance-registry
+**Mission:** Implement task delegation and completion notification between instances
 
 **Key Deliverables:**
-- Click-based CLI framework
-- Task management commands (add, list, get, update, status, delete, search)
-- Project and instance management commands
-- Configuration and authentication commands
-- Rich terminal output
-- Shell completion scripts
+- Delegation protocol implementation
+- Multi-instance routing logic
+- Completion notification system
+- Coordination protocol
+- Delegation API endpoints
 
-### 6. routing-engine
-**Branch:** `cz1/feat/routing-engine`
-**Dependencies:** api-core
-**Mission:** Implement rules-based routing intelligence
-
-**Key Deliverables:**
-- Base intelligence interface
-- Rules-based intelligence implementation
-- Rule configuration system (YAML)
-- Decision recording and feedback
-- Routing API endpoints
-- Rule management interface
-
-### 7. testing
-**Branch:** `cz1/feat/testing`
-**Dependencies:** mcp-integration, cli-tool, routing-engine
-**Mission:** Create comprehensive test suite for Phase 1 features
+### 4. scope-behaviors
+**Branch:** `cz2/feat/scope-behaviors`
+**Dependencies:** delegation-protocol
+**Mission:** Implement Global, Project, and Orchestration specific routing logic
 
 **Key Deliverables:**
-- Enhanced test infrastructure
-- API integration tests
-- MCP integration tests
-- CLI integration tests
-- End-to-end workflow tests
-- >90% code coverage for core modules
-- Phase 1 success criteria validation
+- Global Hopper routing to projects
+- Project Hopper orchestration decisions
+- Orchestration Hopper worker queue management
+- Scope-specific intelligence
+- Czarina integration
 
-### 8. integration
-**Branch:** `cz1/feat/integration`
+### 5. instance-visualization
+**Branch:** `cz2/feat/instance-visualization`
+**Dependencies:** scope-behaviors
+**Mission:** Build CLI commands and tools for viewing instance hierarchy
+
+**Key Deliverables:**
+- Instance tree visualization
+- Live status dashboard
+- Task flow visualization
+- Monitoring and metrics tools
+- Interactive explorer
+
+### 6. testing
+**Branch:** `cz2/feat/testing`
+**Dependencies:** instance-visualization
+**Mission:** Create comprehensive test suite for Phase 2 features
+
+**Key Deliverables:**
+- Instance architecture tests
+- Registry and discovery tests
+- Delegation protocol tests
+- Scope behavior tests
+- Integration and E2E tests
+- Performance tests
+- >90% code coverage
+
+### 7. integration
+**Branch:** `cz2/feat/integration`
 **Dependencies:** testing
 **Role:** integration
-**Mission:** Merge all workers, resolve conflicts, and prepare for release
+**Mission:** Merge all workers and prepare Phase 2 release
 
 **Key Deliverables:**
-- All worker branches merged
+- All workers merged
 - Conflicts resolved
-- Full test suite passing
-- Code quality validation
-- Comprehensive documentation
+- Phase 2 documentation
 - Release preparation
-- Integration summary
+- Phase 2 validation
 
 ## Worker Dependency Graph
 
 ```
-project-setup (foundation)
-    └── database
-        └── api-core
-            ├── mcp-integration ──┐
-            ├── cli-tool ─────────┤
-            └── routing-engine ───┤
-                                  │
-                            testing
-                                  │
-                            integration (merges all)
+instance-architecture (foundation)
+    └── instance-registry
+        └── delegation-protocol
+            └── scope-behaviors
+                └── instance-visualization
+                    └── testing
+                        └── integration (merges all)
 ```
 
-## Phase 1 Success Criteria
+## Phase 2 Success Criteria
 
-- ✅ Can create tasks via HTTP API
-- ✅ Can create tasks via MCP (from Claude)
-- ✅ Can create tasks via CLI
-- ✅ Tasks stored in database with proper schema
-- ✅ Basic rules-based routing works
-- ✅ Can list and query tasks with filters
-- ✅ Docker Compose setup for local development
+- ✅ Can create Global, Project, and Orchestration instances
+- ✅ Tasks flow down hierarchy (Global → Project → Orchestration)
+- ✅ Completion bubbles up hierarchy
+- ✅ Each scope has appropriate configuration
+- ✅ Can visualize instance tree
+- ✅ Czarina can use Orchestration Hopper for runs
 
 ## Getting Started
 
-1. **Initialize orchestration:**
+1. **Launch Phase 2 orchestration:**
    ```bash
-   czarina init
+   czarina launch
    ```
 
-2. **Start workers:**
-   ```bash
-   czarina start
-   ```
-
-3. **Monitor progress:**
+2. **Monitor progress:**
    ```bash
    czarina status
+   czarina dashboard
    ```
 
-4. **View worker details:**
+3. **View worker details:**
    ```bash
    cat .czarina/workers/<worker-id>.md
    ```
 
 ## Architecture
 
-Hopper Phase 1 implements the core foundation:
+Phase 2 extends the Phase 1 foundation with:
 
-- **Input Layer:** MCP Server, HTTP API, CLI
-- **Hopper Core:** Task queue, routing engine, instance management
-- **Intelligence Layer:** Rules-based routing (Phase 1)
-- **Storage Layer:** PostgreSQL/SQLite with SQLAlchemy
-- **Memory System:** Basic working memory (full 3-tier in Phase 3)
+**Multi-Instance Hierarchy:**
+```
+Global Hopper (hopper-global)
+├── Project Hopper: czarina
+│   ├── Orchestration Hopper: czarina-run-abc123
+│   └── Orchestration Hopper: czarina-run-xyz789
+└── Project Hopper: hopper
+    └── Orchestration Hopper: hopper-dev-001
+```
+
+**Delegation Flow:**
+```
+1. Task created at Global Hopper
+2. Global routes to best Project Hopper
+3. Project decides: orchestration or manual
+4. If orchestration: creates Orchestration Hopper
+5. Orchestration distributes to workers
+6. Workers complete tasks
+7. Completion bubbles up to Global
+```
 
 ## Technology Stack
 
-- **Language:** Python 3.11+
-- **Web Framework:** FastAPI
-- **Database:** PostgreSQL (production), SQLite (development)
-- **ORM:** SQLAlchemy 2.0
-- **MCP:** Model Context Protocol SDK
-- **CLI:** Click + Rich
-- **Testing:** pytest + pytest-asyncio
-- **Containerization:** Docker + Docker Compose
+Same as Phase 1, with additions:
+- **Instance Management:** Lifecycle state machine
+- **Delegation:** Event-driven coordination
+- **Visualization:** Rich terminal dashboards
+- **Monitoring:** Health checks and metrics
 
 ## References
 
-- **Implementation Plan:** `/home/jhenry/Source/hopper/plans/Hopper-Implementation-Plan.md`
+- **Implementation Plan:** `/home/jhenry/Source/hopper/plans/Hopper-Implementation-Plan.md` (Phase 2)
 - **Specification:** `/home/jhenry/Source/hopper/docs/Hopper.Specification.md`
-- **Worker Definitions:** `.czarina/workers/*.md`
+- **Phase 1 Archive:** `.czarina/phases/phase-1-v1.0.0/`
 
 ## Notes
 
-- Workers follow dependency order
-- Each worker has comprehensive test requirements
-- Integration worker merges all branches
-- Phase 1 focuses on core functionality
-- Future phases will add multi-instance (Phase 2), memory (Phase 3), LLM routing (Phase 4), GitHub/GitLab sync (Phase 5), and federation (Phase 6)
+- Phase 2 builds on Phase 1 foundation
+- Multi-instance architecture is core feature
+- Czarina integration is primary use case
+- Visualization helps understand hierarchy
+- Testing is critical due to complexity
+- Phase 3 will add 3-tier memory system
 
-## Next Steps After Phase 1
+## Transition from Phase 1
 
-Phase 2 will implement:
-- Multi-instance support (Global → Project → Orchestration)
-- Instance hierarchy and delegation
-- Scope-specific behavior
-- Czarina integration with Orchestration Hopper
+Phase 1 completed:
+- ✅ Core task queue with MCP, API, CLI
+- ✅ Rules-based routing
+- ✅ Database layer
+- ✅ Basic instance model
+
+Phase 2 extends:
+- 🚀 Full instance hierarchy
+- 🚀 Delegation protocol
+- 🚀 Scope-specific behaviors
+- 🚀 Visualization tools
 
 ---
 
-**Czarina Orchestration:** v0.6.1+
+**Czarina Orchestration:** v0.7.0
 **Created:** 2025-12-28
 **Status:** Ready for implementation
+**Previous Phase:** phase-1-v1.0.0 (archived)

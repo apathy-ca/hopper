@@ -1,10 +1,10 @@
 {
   "project": {
     "name": "hopper",
-    "slug": "hopper-v1_0_0",
-    "version": "1.0.0",
-    "phase": 1,
-    "omnibus_branch": "cz1/release/v1.0.0-phase1",
+    "slug": "hopper-v2_0_0",
+    "version": "2.0.0",
+    "phase": 2,
+    "omnibus_branch": "cz2/release/v2.0.0-phase2",
     "repository": "/home/jhenry/Source/hopper",
     "orchestration_dir": ".czarina"
   },
@@ -14,62 +14,55 @@
   },
   "workers": [
     {
-      "id": "project-setup",
+      "id": "instance-architecture",
       "agent": "claude",
-      "branch": "cz1/feat/project-setup",
-      "description": "Initialize Python project structure, dev environment, and core models",
+      "branch": "cz2/feat/instance-architecture",
+      "description": "Implement HopperInstance class with scope support and lifecycle management",
       "dependencies": []
     },
     {
-      "id": "database",
+      "id": "instance-registry",
       "agent": "claude",
-      "branch": "cz1/feat/database",
-      "description": "Implement database schema, models, and migrations",
-      "dependencies": ["project-setup"]
+      "branch": "cz2/feat/instance-registry",
+      "description": "Create instance registry, discovery, and parent-child relationships",
+      "dependencies": ["instance-architecture"]
     },
     {
-      "id": "api-core",
+      "id": "delegation-protocol",
       "agent": "claude",
-      "branch": "cz1/feat/api-core",
-      "description": "Build FastAPI application with task endpoints and authentication",
-      "dependencies": ["database"]
+      "branch": "cz2/feat/delegation-protocol",
+      "description": "Build task delegation and completion notification between instances",
+      "dependencies": ["instance-registry"]
     },
     {
-      "id": "mcp-integration",
+      "id": "scope-behaviors",
       "agent": "claude",
-      "branch": "cz1/feat/mcp-integration",
-      "description": "Create MCP server for Claude integration",
-      "dependencies": ["api-core"]
+      "branch": "cz2/feat/scope-behaviors",
+      "description": "Implement Global, Project, and Orchestration specific routing logic",
+      "dependencies": ["delegation-protocol"]
     },
     {
-      "id": "cli-tool",
+      "id": "instance-visualization",
       "agent": "claude",
-      "branch": "cz1/feat/cli-tool",
-      "description": "Build CLI tool for task management (hopper add, list, etc.)",
-      "dependencies": ["api-core"]
-    },
-    {
-      "id": "routing-engine",
-      "agent": "claude",
-      "branch": "cz1/feat/routing-engine",
-      "description": "Implement rules-based routing intelligence",
-      "dependencies": ["api-core"]
+      "branch": "cz2/feat/instance-visualization",
+      "description": "Build CLI commands and tools for viewing instance hierarchy",
+      "dependencies": ["scope-behaviors"]
     },
     {
       "id": "testing",
       "agent": "claude",
-      "branch": "cz1/feat/testing",
-      "description": "Create comprehensive test suite for Phase 1 features",
-      "dependencies": ["mcp-integration", "cli-tool", "routing-engine"]
+      "branch": "cz2/feat/testing",
+      "description": "Create comprehensive test suite for Phase 2 multi-instance features",
+      "dependencies": ["instance-visualization"]
     },
     {
       "id": "integration",
       "agent": "claude",
-      "branch": "cz1/feat/integration",
-      "description": "Integration testing and end-to-end workflow validation",
+      "branch": "cz2/feat/integration",
+      "description": "Integration testing and Phase 2 completion",
       "role": "integration",
       "dependencies": ["testing"],
-      "merges": ["project-setup", "database", "api-core", "mcp-integration", "cli-tool", "routing-engine", "testing"]
+      "merges": ["instance-architecture", "instance-registry", "delegation-protocol", "scope-behaviors", "instance-visualization", "testing"]
     }
   ],
   "daemon": {

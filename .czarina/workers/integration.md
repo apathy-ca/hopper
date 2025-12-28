@@ -1,331 +1,221 @@
 # Worker: Integration
 
-**Branch:** cz1/feat/integration
+**Branch:** cz2/feat/integration
 **Dependencies:** testing
 **Duration:** 2-3 days
 
 ## Mission
 
-Merge all Phase 1 worker branches, resolve conflicts, ensure everything works together, and prepare the omnibus release branch for Phase 1.
+Merge all Phase 2 worker branches, resolve conflicts, ensure everything works together, validate Phase 2 success criteria, and prepare the Phase 2 release.
 
 ## Background
 
-This is the integration worker - responsible for:
-- Merging all worker branches (project-setup, database, api-core, mcp-integration, cli-tool, routing-engine, testing)
-- Resolving merge conflicts
-- Running full test suite
-- Fixing integration issues
-- Creating comprehensive documentation
-- Preparing for release
+This integration worker merges:
+- instance-architecture
+- instance-registry
+- delegation-protocol
+- scope-behaviors
+- instance-visualization
+- testing
 
-This worker has a special `"role": "integration"` and merges all other workers.
+And ensures Phase 2 multi-instance support is production-ready.
 
 ## Tasks
 
 ### Task 1: Review All Worker Branches
 
-1. Check status of all worker branches:
+1. Check status of Phase 2 worker branches:
    ```bash
-   git branch --list 'cz1/feat/*'
+   git branch --list 'cz2/feat/*'
    ```
 
 2. Review each worker's deliverables:
-   - project-setup: Project structure, models, Docker setup
-   - database: Migrations, repositories, CRUD operations
-   - api-core: FastAPI, endpoints, authentication
-   - mcp-integration: MCP server, tools, resources
-   - cli-tool: CLI commands, configuration
-   - routing-engine: Rules engine, decision recording
-   - testing: Test suite, coverage
+   - instance-architecture: Enhanced model, lifecycle
+   - instance-registry: Registry, discovery, health
+   - delegation-protocol: Delegation, completion, coordination
+   - scope-behaviors: Global, Project, Orchestration logic
+   - instance-visualization: CLI tools, dashboards
+   - testing: Comprehensive test suite
 
-3. Create integration checklist:
-   - List all components from each worker
-   - Identify potential conflicts
-   - Note dependencies between components
-   - Plan merge order
+3. Create integration checklist and plan merge order
 
 **Checkpoint:** Document integration plan
 
 ### Task 2: Merge Worker Branches in Dependency Order
 
-1. Merge branches in this order:
+1. Merge in order:
    ```
-   1. project-setup (foundation)
-   2. database (depends on project-setup)
-   3. api-core (depends on database)
-   4. routing-engine (depends on api-core)
-   5. mcp-integration (depends on api-core)
-   6. cli-tool (depends on api-core)
-   7. testing (depends on all above)
+   1. instance-architecture (foundation)
+   2. instance-registry (depends on architecture)
+   3. delegation-protocol (depends on registry)
+   4. scope-behaviors (depends on delegation)
+   5. instance-visualization (depends on behaviors)
+   6. testing (depends on all)
    ```
 
 2. For each merge:
-   ```bash
-   git merge --no-ff cz1/feat/<worker-id>
-   ```
+   - Run tests before merge
+   - Merge with `git merge --no-ff cz2/feat/<worker-id>`
+   - Resolve conflicts carefully
+   - Test after merge
+   - Fix integration issues
 
-3. Resolve conflicts:
-   - Check for conflicting files
-   - Prefer newer code when both are valid
-   - Test after each merge
-   - Commit conflict resolutions with clear messages
+3. Document conflict resolutions
 
-4. Run tests after each merge:
-   ```bash
-   pytest tests/
-   ```
-
-5. Fix any integration issues before proceeding to next merge
-
-**Checkpoint:** All worker branches merged successfully
+**Checkpoint:** All workers merged
 
 ### Task 3: Integration Testing and Bug Fixes
 
 1. Run full test suite:
    ```bash
-   pytest tests/ -v --cov=src/hopper --cov-report=html
+   pytest tests/ -v --cov=src/hopper
    ```
 
-2. Verify all Phase 1 success criteria:
-   - ✅ Can create tasks via HTTP API
-   - ✅ Can create tasks via MCP (from Claude)
-   - ✅ Can create tasks via CLI
-   - ✅ Tasks stored in database with proper schema
-   - ✅ Basic rules-based routing works
-   - ✅ Can list and query tasks with filters
-   - ✅ Docker Compose setup for local development
+2. Verify all Phase 2 success criteria:
+   - ✅ Can create Global, Project, and Orchestration instances
+   - ✅ Tasks flow down hierarchy
+   - ✅ Completion bubbles up hierarchy
+   - ✅ Each scope has appropriate configuration
+   - ✅ Can visualize instance tree
+   - ✅ Czarina can use Orchestration Hopper
 
-3. Run Docker deployment test:
-   ```bash
-   docker-compose up -d
-   docker-compose exec hopper pytest tests/e2e/
-   docker-compose down
-   ```
+3. Test multi-instance workflows end-to-end
+4. Fix integration bugs
+5. Performance testing
+6. Load testing
 
-4. Test end-to-end workflows manually:
-   - Start Hopper API server
-   - Start MCP server
-   - Test from Claude Desktop
-   - Test CLI commands
-   - Verify database state
-
-5. Fix integration bugs:
-   - Document each bug found
-   - Create fix with test
-   - Verify fix doesn't break other tests
-   - Commit with clear message
-
-6. Performance testing:
-   - Test API response times
-   - Test database query performance
-   - Test MCP responsiveness
-   - Optimize if needed
-
-**Checkpoint:** All tests passing, integration bugs fixed
+**Checkpoint:** All tests passing, bugs fixed
 
 ### Task 4: Code Quality and Consistency
 
-1. Run code quality checks:
+1. Run quality checks:
    ```bash
    black src/ tests/
    ruff check src/ tests/
    mypy src/
    ```
 
-2. Fix any linting or type checking issues:
-   - Address black formatting issues
-   - Fix ruff warnings
-   - Resolve mypy type errors
+2. Fix issues and ensure consistency
+3. Add missing docstrings
+4. Update type hints
 
-3. Review code consistency:
-   - Consistent naming conventions
-   - Consistent error handling
-   - Consistent logging
-   - Consistent documentation strings
-
-4. Add missing docstrings:
-   - All public classes
-   - All public functions
-   - Complex internal logic
-
-5. Update type hints:
-   - Ensure all function signatures have types
-   - Use modern type hint syntax
-   - Add generic types where appropriate
-
-**Checkpoint:** Code quality checks passing
+**Checkpoint:** Code quality passing
 
 ### Task 5: Documentation Integration
 
-1. Create comprehensive `README.md`:
-   - Project overview
-   - Features (Phase 1)
-   - Installation instructions
-   - Quick start guide
+1. Create comprehensive Phase 2 documentation:
+   - Update README with Phase 2 features
+   - Create ARCHITECTURE_PHASE2.md
+   - Document multi-instance hierarchy
+   - Add configuration examples
+   - Update API reference
+
+2. Create `docs/multi-instance-guide.md`:
+   - Overview of multi-instance system
+   - How to use each scope
+   - Delegation workflows
    - Configuration guide
-   - Development setup
-   - Testing instructions
-   - Architecture overview
-   - Links to detailed docs
+   - Troubleshooting
 
-2. Create `docs/ARCHITECTURE.md`:
-   - System architecture diagram
-   - Component descriptions
-   - Data flow diagrams
-   - Technology stack
-   - Design decisions
+3. Update CHANGELOG for Phase 2
 
-3. Create `docs/API_REFERENCE.md`:
-   - Consolidate API documentation
-   - All endpoints with examples
-   - Authentication guide
-   - Error codes and handling
+**Checkpoint:** Documentation complete
 
-4. Create `docs/DEVELOPMENT.md`:
-   - Development setup
-   - Running tests
-   - Code style guide
-   - Contributing guidelines
-   - Release process
+### Task 6: Czarina Integration Validation
 
-5. Create `docs/DEPLOYMENT.md`:
-   - Docker deployment
-   - Configuration options
-   - Environment variables
-   - Database setup
-   - Monitoring and logging
+1. Test Hopper with real Czarina orchestration:
+   - Create Orchestration Hopper
+   - Feed tasks to Czarina workers
+   - Validate coordination
+   - Test status updates
 
-6. Create `CHANGELOG.md`:
-   - Phase 1 v1.0.0 release notes
-   - Features implemented
-   - Known limitations
-   - Future roadmap
+2. Document Czarina-Hopper integration:
+   - How to set up
+   - Configuration
+   - Workflows
+   - Examples
 
-7. Update all worker documentation:
-   - Ensure consistency
-   - Fix broken links
-   - Update examples
+**Checkpoint:** Czarina integration validated
 
-**Checkpoint:** Documentation complete and consistent
-
-### Task 6: Release Preparation
+### Task 7: Release Preparation
 
 1. Update version numbers:
-   - `pyproject.toml`: version = "1.0.0"
-   - `src/hopper/__init__.py`: __version__ = "1.0.0"
-   - Update all documentation references
+   - pyproject.toml: version = "2.0.0"
+   - __init__.py: __version__ = "2.0.0"
 
-2. Create release notes in `RELEASE_NOTES.md`:
-   - Phase 1 Overview
-   - What's New
-   - Breaking Changes (none for first release)
-   - Migration Guide (none for first release)
-   - Known Issues
-   - Future Plans (Phase 2 preview)
+2. Create release notes `RELEASE_NOTES_PHASE2.md`:
+   - Phase 2 overview
+   - New features
+   - Breaking changes
+   - Migration guide from Phase 1
+   - Known issues
 
-3. Create installation verification script `scripts/verify-install.sh`:
-   - Check Python version
-   - Check dependencies
-   - Test database connection
-   - Test API startup
-   - Test MCP server
-   - Test CLI
-
-4. Tag the integration branch:
+3. Tag release:
    ```bash
-   git tag -a v1.0.0-phase1 -m "Phase 1 Complete: Core Foundation"
+   git tag -a v2.0.0-phase2 -m "Phase 2 Complete: Multi-Instance Support"
    ```
-
-5. Create GitHub release (if using GitHub):
-   - Release title: "Hopper v1.0.0 - Phase 1: Core Foundation"
-   - Release notes from RELEASE_NOTES.md
-   - Attach any binaries or assets
 
 **Checkpoint:** Release ready
 
-### Task 7: Final Validation and Handoff
+### Task 8: Final Validation and Handoff
 
-1. Run complete test suite one final time:
-   ```bash
-   make test-all
-   ```
+1. Complete validation:
+   - Fresh installation test
+   - All features work
+   - Documentation accurate
+   - No critical bugs
 
-2. Test installation from scratch:
-   - Fresh clone
-   - Fresh environment
-   - Follow README instructions
-   - Verify everything works
-
-3. Create handoff document `INTEGRATION_SUMMARY.md`:
-   - What was integrated from each worker
-   - Conflicts resolved and how
+2. Create `INTEGRATION_SUMMARY_PHASE2.md`:
+   - What was integrated
+   - Conflicts resolved
    - Integration challenges
-   - Test results summary
-   - Code coverage summary
+   - Test results
+   - Code coverage
    - Performance metrics
-   - Recommendations for Phase 2
+   - Recommendations for Phase 3
 
-4. Create demo/tutorial:
-   - Video or written walkthrough
-   - Shows all Phase 1 features
-   - Demonstrates key workflows
-   - Useful for onboarding
+3. Prepare for Phase 3 (Memory & Learning)
 
-5. Update project board/tracking:
-   - Mark all Phase 1 tasks complete
-   - Document any technical debt
-   - Create Phase 2 planning issues
-
-**Checkpoint:** Integration complete, ready for release
+**Checkpoint:** Integration complete
 
 ## Deliverables
 
-- [ ] All worker branches merged into integration branch
-- [ ] All merge conflicts resolved
-- [ ] Full test suite passing (>90% coverage)
-- [ ] Code quality checks passing (black, ruff, mypy)
-- [ ] Comprehensive documentation (README, ARCHITECTURE, API, DEVELOPMENT, DEPLOYMENT)
-- [ ] CHANGELOG and RELEASE_NOTES
-- [ ] Installation verification script
-- [ ] Version tagged (v1.0.0-phase1)
-- [ ] Integration summary document
-- [ ] Demo/tutorial created
-- [ ] All Phase 1 success criteria validated
+- [ ] All Phase 2 workers merged
+- [ ] All conflicts resolved
+- [ ] Full test suite passing
+- [ ] Code quality checks passing
+- [ ] Comprehensive Phase 2 documentation
+- [ ] Czarina integration validated
+- [ ] CHANGELOG and release notes
+- [ ] Version tagged (v2.0.0-phase2)
+- [ ] Integration summary
+- [ ] Ready for Phase 3
 
 ## Success Criteria
 
-- ✅ All 7 worker branches successfully merged
+- ✅ All 6 worker branches merged successfully
 - ✅ Zero merge conflicts remaining
 - ✅ All tests passing (unit, integration, e2e)
-- ✅ Code coverage >90% for core, >80% overall
-- ✅ All Phase 1 success criteria met
-- ✅ Docker deployment works end-to-end
-- ✅ MCP integration works with Claude Desktop
-- ✅ CLI works for all commands
-- ✅ API fully functional and documented
-- ✅ Fresh installation succeeds
-- ✅ Documentation is complete and accurate
-- ✅ Ready for release to main/master
+- ✅ Code coverage >90% for Phase 2 features
+- ✅ All Phase 2 success criteria met
+- ✅ Czarina integration works
+- ✅ Multi-instance hierarchy functional
+- ✅ CLI visualization tools work
+- ✅ Documentation complete
+- ✅ Ready for production use
 
 ## References
 
-- Implementation Plan: `/home/jhenry/Source/hopper/plans/Hopper-Implementation-Plan.md`
-- All worker branches: cz1/feat/*
-- Phase 1 Success Criteria (from Implementation Plan)
+- Implementation Plan: Phase 2
+- All worker branches: cz2/feat/*
+- Phase 2 Success Criteria
 
 ## Notes
 
-- Integration worker has special role - merges all other workers
-- Merge order matters - follow dependency graph
-- Test after each merge to catch issues early
-- Document all conflict resolutions
-- Keep integration branch clean and organized
-- Use `git merge --no-ff` to preserve worker history
-- Tag the integration point for future reference
-- Integration is not just merging - it's ensuring quality
-- May discover issues not caught by individual worker tests
-- Integration testing often reveals edge cases
-- Take time to ensure quality - this becomes the foundation
-- Consider creating integration regression tests
-- Document any workarounds or technical debt
-- Prepare handoff for Phase 2 workers
+- Integration is critical - take time for quality
+- Test multi-instance scenarios thoroughly
+- Czarina integration is key use case
+- Document integration issues for learning
+- Prepare handoff notes for Phase 3
+- Consider creating regression tests
+- Performance metrics important for production
