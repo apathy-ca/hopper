@@ -23,7 +23,7 @@ from hopper.api.schemas.task import (
     Status as TaskStatus,
 )
 from hopper.api.exceptions import NotFoundException, ValidationException, InvalidStateTransitionException
-from hopper.models.task import Task, TaskFeedback, StatusEnum
+from hopper.models import Task, TaskFeedback, TaskStatus as StatusEnum
 
 
 router = APIRouter()
