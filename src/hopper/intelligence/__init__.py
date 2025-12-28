@@ -11,16 +11,43 @@ This package provides the intelligence layer for task routing, including:
 - Decision recording and feedback
 """
 
-from hopper.intelligence.base import BaseIntelligence
+from hopper.intelligence.base import BaseIntelligence, RoutingError
+from hopper.intelligence.decision_recorder import (
+    DecisionRecord,
+    DecisionRecorder,
+    get_decision_recorder,
+    record_decision,
+    add_feedback,
+)
+from hopper.intelligence.feedback import (
+    FeedbackCollector,
+    get_feedback_collector,
+    provide_feedback,
+)
 from hopper.intelligence.types import (
+    DecisionFeedback,
+    DecisionStrategy,
     RoutingContext,
     RoutingDecision,
-    DecisionStrategy,
+    RoutingRule,
+    RoutingStatistics,
 )
 
 __all__ = [
     "BaseIntelligence",
+    "RoutingError",
     "RoutingContext",
     "RoutingDecision",
     "DecisionStrategy",
+    "DecisionFeedback",
+    "RoutingRule",
+    "RoutingStatistics",
+    "DecisionRecord",
+    "DecisionRecorder",
+    "get_decision_recorder",
+    "record_decision",
+    "add_feedback",
+    "FeedbackCollector",
+    "get_feedback_collector",
+    "provide_feedback",
 ]
