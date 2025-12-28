@@ -1,5 +1,7 @@
 """
-Hopper command-line interface.
+Hopper CLI commands.
 
-CLI tools for interacting with the Hopper system.
+Command-line interface for managing Hopper and its MCP server.
 """
+
+__all__ = ["main"]
