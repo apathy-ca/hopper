@@ -138,6 +138,10 @@ Thumbs.db
 hopper.db
 hopper-*.db
 
+# Inbox drop files (keep README and processed/.gitkeep)
+inbox/*.json
+inbox/processed/*.json
+
 # Czarina runtime files
 .czarina/logs/
 .czarina/status/

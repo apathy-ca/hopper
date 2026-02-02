@@ -84,6 +84,7 @@ class TaskSource(str, Enum):
     EMAIL = "email"
     HTTP = "http"
     API = "api"
+    CZARINA = "czarina"  # Learnings from Czarina phase closeouts
 
 
 class InstanceStatus(str, Enum):
