@@ -220,26 +220,32 @@ def get_instance(ctx: Context, instance_id: str) -> None:
 
 @instance.command(name="tree")
 @click.option("--root", help="Root instance ID (default: show all)")
+@click.option("--scope", type=click.Choice(["global", "project", "orchestration"]), help="Filter by scope")
+@click.option("--no-tasks", is_flag=True, help="Hide task counts")
 @click.pass_obj
-def show_tree(ctx: Context, root: str | None) -> None:
+def show_tree(ctx: Context, root: str | None, scope: str | None, no_tasks: bool) -> None:
     """Show instance hierarchy as a tree.
 
     Examples:
         hopper instance tree
         hopper instance tree --root global-id
+        hopper instance tree --scope project
+        hopper instance tree --no-tasks
     """
     try:
         with HopperClient(ctx.config) as client:
             params = {}
             if root:
                 params["root"] = root
+            if scope:
+                params["scope"] = scope
 
             instances = client.list_instances(**params)
 
         if ctx.json_output:
             print_json(instances)
         else:
-            print_instance_tree(instances)
+            print_instance_tree(instances, show_tasks=not no_tasks)
 
     except APIError as e:
         print_error(f"Failed to get instance tree: {e.message}")

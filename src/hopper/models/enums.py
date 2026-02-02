@@ -84,3 +84,24 @@ class TaskSource(str, Enum):
     EMAIL = "email"
     HTTP = "http"
     API = "api"
+
+
+class InstanceStatus(str, Enum):
+    """Hopper instance status values."""
+
+    CREATED = "created"
+    STARTING = "starting"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
+    PAUSED = "paused"
+    ERROR = "error"
+    TERMINATED = "terminated"
+
+
+class InstanceType(str, Enum):
+    """Hopper instance types."""
+
+    PERSISTENT = "persistent"
+    EPHEMERAL = "ephemeral"
+    TEMPORARY = "temporary"

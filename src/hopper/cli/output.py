@@ -232,11 +232,12 @@ def print_project_table(projects: list[dict[str, Any]]) -> None:
     console.print(table)
 
 
-def print_instance_tree(instances: list[dict[str, Any]]) -> None:
+def print_instance_tree(instances: list[dict[str, Any]], show_tasks: bool = True) -> None:
     """Print instance hierarchy as a tree.
 
     Args:
         instances: List of instance dictionaries
+        show_tasks: Show task counts per instance
     """
     if not instances:
         console.print("[dim]No instances found[/dim]")
@@ -259,6 +260,7 @@ def print_instance_tree(instances: list[dict[str, Any]]) -> None:
             scope = instance.get("scope", "unknown")
             name = instance.get("name", "")
             status = instance.get("status", "inactive")
+            instance_id = instance.get("id", "")
 
             # Color-code by scope
             scope_colors = {
@@ -268,14 +270,29 @@ def print_instance_tree(instances: list[dict[str, Any]]) -> None:
             }
             scope_color = scope_colors.get(scope.lower(), "white")
 
+            # Build label with name, scope, and status
             label = (
                 f"[{scope_color}]{name}[/{scope_color}] "
                 f"[dim]({scope})[/dim] "
                 f"[{get_status_style(status)}]{status}[/]"
             )
 
+            # Add task count if available and enabled
+            if show_tasks:
+                task_count = instance.get("task_count", 0)
+                active_task_count = instance.get("active_task_count", 0)
+                if task_count > 0:
+                    label += f" [dim]│[/dim] [cyan]{task_count} task(s)[/cyan]"
+                    if active_task_count > 0:
+                        label += f" [dim]([/dim][yellow]{active_task_count} active[/yellow][dim])[/dim]"
+
+            # Add child instance count if available
+            child_count = instance.get("child_instance_count", len(by_parent.get(instance_id, [])))
+            if child_count > 0:
+                label += f" [dim]│[/dim] [magenta]{child_count} child instance(s)[/magenta]"
+
             node = parent_node.add(label)
-            add_instances(node, instance.get("id"))
+            add_instances(node, instance_id)
 
     # Add root instances (those with no parent)
     add_instances(tree, None)
