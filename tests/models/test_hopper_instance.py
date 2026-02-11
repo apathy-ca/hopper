@@ -5,7 +5,7 @@ Tests for HopperInstance model.
 import pytest
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, Task
+from hopper.models import HopperInstance, HopperScope, InstanceStatus, Task
 
 
 def test_hopper_instance_creation(clean_db: Session) -> None:
@@ -83,7 +83,7 @@ def test_hopper_instance_configuration(clean_db: Session) -> None:
         instance_id="hopper-project",
         scope=HopperScope.PROJECT.value,
         config=config,
-        status="active",
+        status=InstanceStatus.RUNNING,
     )
     clean_db.add(instance)
     clean_db.commit()
@@ -92,7 +92,7 @@ def test_hopper_instance_configuration(clean_db: Session) -> None:
     assert retrieved is not None
     assert retrieved.config == config
     assert retrieved.config["max_concurrent_tasks"] == 10
-    assert retrieved.status == "active"
+    assert retrieved.status == InstanceStatus.RUNNING
 
 
 def test_hopper_instance_tasks_relationship(clean_db: Session) -> None:

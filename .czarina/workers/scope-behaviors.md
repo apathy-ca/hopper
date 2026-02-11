@@ -1,185 +1,197 @@
-# Worker: Scope Behaviors
+# Worker Identity: scope-behaviors
 
+**Role:** Code
+**Agent:** claude
 **Branch:** cz2/feat/scope-behaviors
+**Phase:** 2
 **Dependencies:** delegation-protocol
-**Duration:** 2-3 days
 
 ## Mission
 
-Implement scope-specific behavior for Global, Project, and Orchestration Hoppers. Each scope has unique routing logic, task handling, and operational characteristics.
+Implement scope-specific routing and behavior logic for each instance type (Global, Project, Orchestration). Different scopes have different responsibilities - Global routes to projects, Project decides orchestration, and Orchestration executes. This worker creates the "personality" of each scope level.
 
-## Background
+## 📚 Knowledge Base
 
-Phase 2 Week 4 focuses on:
-- Global Hopper: Strategic routing to projects
-- Project Hopper: Decides orchestration vs manual handling
-- Orchestration Hopper: Manages worker queues
-- Configuration templates per scope
-- Scope-specific intelligence
+You have custom knowledge tailored for your role and tasks at:
+`.czarina/workers/scope-behaviors-knowledge.md`
 
-## Tasks
+This includes:
+- Design patterns for strategy/behavior patterns
+- Integration patterns with existing routing engine
+- Configuration patterns for pluggable behaviors
+- Testing patterns for behavior-based systems
 
-### Task 1: Global Hopper Behavior
+**Read this before starting work** to understand the patterns and practices you should follow.
 
-1. Create `src/hopper/instance/scopes/global_hopper.py`:
-   - GlobalHopper class
-   - Strategic routing to best project
-   - Project selection algorithm
-   - Load balancing across projects
-   - Fallback project handling
+## 🚀 YOUR FIRST ACTION
 
-2. Implement Global routing logic:
-   - Analyze task characteristics
-   - Match to project capabilities
-   - Consider project load
-   - Route to appropriate Project Hopper
-   - Handle unknown tasks
+**Examine the existing routing engine and delegation protocol:**
 
-3. Add Global-specific features:
-   - Cross-project insights
-   - System-wide metrics
-   - Strategic prioritization
-   - Resource allocation
+```bash
+# Read the routing engine to understand current intelligence
+cat src/hopper/intelligence/rules/engine.py
 
-**Checkpoint:** Commit Global Hopper
+# Check the delegation protocol implementation
+cat src/hopper/delegation/router.py
+cat src/hopper/delegation/policies.py
 
-### Task 2: Project Hopper Behavior
+# Look at the HopperScope enum values
+grep -A20 "class HopperScope" src/hopper/models/enums.py
 
-1. Create `src/hopper/instance/scopes/project_hopper.py`:
-   - ProjectHopper class
-   - Orchestration vs manual decision
-   - Task complexity analysis
-   - Orchestration triggering
-   - Manual task queueing
+# Check existing intelligence package structure
+ls -la src/hopper/intelligence/
+```
 
-2. Implement Project routing logic:
-   - Analyze task requirements
-   - Determine if orchestration needed
-   - Create Orchestration instance if needed
-   - Delegate to Orchestration or handle manually
-   - Manage multiple orchestrations
+**Then:** Create the `src/hopper/intelligence/scopes/` package structure and start with `base.py` defining the abstract scope behavior interface.
 
-3. Add Project-specific features:
-   - Project-specific routing rules
-   - Team capacity tracking
-   - Project metrics
-   - Orchestration history
+## Objectives
 
-**Checkpoint:** Commit Project Hopper
+1. **Create Scopes Package** (`src/hopper/intelligence/scopes/`)
+   ```
+   scopes/
+   ├── __init__.py
+   ├── base.py              # Base scope behavior interface
+   ├── global_scope.py      # Global Hopper behavior
+   ├── project_scope.py     # Project Hopper behavior
+   └── orchestration_scope.py  # Orchestration behavior
+   ```
 
-### Task 3: Orchestration Hopper Behavior
+2. **Define Base Scope Behavior** (`base.py`)
+   ```python
+   class BaseScopeBehavior(ABC):
+       @abstractmethod
+       async def handle_incoming_task(self, task, instance) -> TaskAction
+       @abstractmethod
+       async def should_delegate(self, task, instance) -> bool
+       @abstractmethod
+       async def find_delegation_target(self, task, instance) -> HopperInstance | None
+       @abstractmethod
+       async def on_task_completed(self, task, instance) -> None
+       @abstractmethod
+       async def get_task_queue(self, instance) -> list[Task]
+   ```
 
-1. Create `src/hopper/instance/scopes/orchestration_hopper.py`:
-   - OrchestrationHopper class
-   - Worker queue management
-   - Task distribution to workers
-   - Worker dependency handling
-   - Completion tracking
+3. **Implement GlobalScopeBehavior** (`global_scope.py`)
+   - Route tasks to appropriate Project based on:
+     - Task tags matching project capabilities
+     - Task keywords matching project domains
+     - Explicit project assignment in task metadata
+   - Create new Project instances when needed
+   - Balance load across projects
+   - Never directly execute tasks (always delegate)
 
-2. Implement Orchestration queue logic:
-   - Maintain worker queues
-   - Respect dependencies
-   - Distribute tasks fairly
-   - Track worker progress
-   - Handle worker failures
+4. **Implement ProjectScopeBehavior** (`project_scope.py`)
+   - Decide: manual handling vs orchestration delegation
+   - Criteria for orchestration:
+     - Task complexity (decomposable)
+     - Task type (automatable)
+     - Executor availability
+   - Create Orchestration instances for czarina runs
+   - Track project-level metrics
+   - Can handle simple tasks directly
 
-3. Add Orchestration-specific features:
-   - Czarina integration
-   - Worker health monitoring
-   - Progress reporting
-   - Checkpoint management
+5. **Implement OrchestrationScopeBehavior** (`orchestration_scope.py`)
+   - Manage worker queue
+   - Track task execution status
+   - Report completion to parent Project
+   - Handle worker failures and retries
+   - Never delegate further (execution level)
 
-4. Create Czarina integration:
-   - Bridge to Czarina orchestration
-   - Worker status reporting
-   - Task assignment coordination
+6. **Create Scope Behavior Factory**
+   - `get_behavior_for_scope(scope)` - Returns appropriate behavior class
+   - `get_behavior_for_instance(instance)` - Returns behavior for instance
+   - Registry pattern for extensibility
 
-**Checkpoint:** Commit Orchestration Hopper
+7. **Integrate with Routing Engine**
+   - Modify `src/hopper/intelligence/rules/engine.py` to use scope behaviors
+   - Add scope context to routing decisions
+   - Scope behavior influences routing priority
 
-### Task 4: Scope Intelligence Layer
+8. **Create Configuration System**
+   - `config/scope_behaviors.yaml` - Scope-specific routing rules
+   - Per-scope configuration options
+   - Ability to customize behavior without code changes
 
-1. Create `src/hopper/intelligence/scope_intelligence.py`:
-   - Scope-specific intelligence adapters
-   - GlobalIntelligence
-   - ProjectIntelligence
-   - OrchestrationIntelligence
-
-2. Enhance routing for each scope:
-   - Global: Use LLM for project matching
-   - Project: Rules + heuristics for orchestration decision
-   - Orchestration: Dependency-aware scheduling
-
-3. Add intelligence configuration per scope
-
-**Checkpoint:** Commit scope intelligence
-
-### Task 5: Configuration Templates
-
-1. Enhance configuration templates:
-   - `config/instances/global-instance.yaml`
-   - `config/instances/project-instance.yaml`
-   - `config/instances/orchestration-instance.yaml`
-
-2. Add scope-specific settings:
-   - Routing strategies
-   - Thresholds
-   - Limits
-   - Behaviors
-
-3. Create example configurations:
-   - Different project types
-   - Different orchestration patterns
-
-**Checkpoint:** Commit configuration templates
-
-### Task 6: Testing and Documentation
-
-1. Create test suite:
-   - `tests/instance/scopes/test_global_hopper.py`
-   - `tests/instance/scopes/test_project_hopper.py`
-   - `tests/instance/scopes/test_orchestration_hopper.py`
-   - `tests/instance/test_scope_intelligence.py`
-   - `tests/integration/test_scope_behaviors.py`
-
-2. Create `docs/scope-behaviors.md`:
-   - Overview of each scope
-   - Behavior descriptions
-   - Configuration options
-   - Examples and workflows
-
-**Checkpoint:** Commit tests and docs
+9. **Write Tests**
+   - Unit tests for each scope behavior
+   - Integration tests for scope interactions
+   - Test routing decisions
 
 ## Deliverables
 
-- [ ] Global Hopper implementation
-- [ ] Project Hopper implementation
-- [ ] Orchestration Hopper implementation
-- [ ] Scope-specific intelligence
-- [ ] Configuration templates for all scopes
-- [ ] Czarina integration
-- [ ] Comprehensive tests
-- [ ] Documentation
+- [ ] `src/hopper/intelligence/scopes/` package with all modules
+- [ ] Scope behavior implementations for Global, Project, Orchestration
+- [ ] Scope behavior factory
+- [ ] Integration with routing engine
+- [ ] `config/scope_behaviors.yaml` - Configuration file
+- [ ] `tests/intelligence/scopes/test_global_scope.py`
+- [ ] `tests/intelligence/scopes/test_project_scope.py`
+- [ ] `tests/intelligence/scopes/test_orchestration_scope.py`
 
 ## Success Criteria
 
-- ✅ Global routes to best project accurately
-- ✅ Project decides orchestration vs manual correctly
-- ✅ Orchestration manages worker queues effectively
-- ✅ Each scope has appropriate configuration
-- ✅ Czarina integration works for orchestrations
-- ✅ Scope-specific intelligence improves routing
-- ✅ All tests pass
+- [ ] Global Hopper correctly routes tasks to appropriate projects
+- [ ] Project Hopper correctly decides orchestration vs manual handling
+- [ ] Orchestration Hopper manages task queue effectively
+- [ ] Scope behaviors are pluggable/configurable
+- [ ] Routing engine integrates seamlessly with scope behaviors
+- [ ] 90%+ test coverage on new code
 
-## References
+## Context
 
-- Implementation Plan: Phase 2, Week 4
-- Specification: Multi-instance hierarchy
+### Scope Responsibilities
+
+| Scope | Primary Role | Can Delegate To | Can Execute |
+|-------|-------------|-----------------|-------------|
+| GLOBAL | Strategic routing | PROJECT | No |
+| PROJECT | Tactical decisions | ORCHESTRATION | Yes (simple) |
+| ORCHESTRATION | Execution | None | Yes (all) |
+
+### Routing Decision Factors
+
+**Global → Project:**
+- Task tags (e.g., "czarina" → czarina project)
+- Content keywords (e.g., "security" → security project)
+- Explicit assignment (task.metadata.project_id)
+- Load balancing (prefer least busy project)
+
+**Project → Orchestration:**
+- Task complexity score
+- Task type (routine vs. complex)
+- Available orchestration instances
+- Worker availability
+
+### Example Configuration
+
+```yaml
+# config/scope_behaviors.yaml
+global:
+  routing_strategy: "tag_first"
+  fallback_strategy: "round_robin"
+  auto_create_projects: false
+
+project:
+  orchestration_threshold: 3  # Complexity score threshold
+  auto_create_orchestrations: true
+  max_orchestrations_per_project: 5
+
+orchestration:
+  max_concurrent_tasks: 10
+  retry_on_failure: true
+  max_retries: 3
+```
+
+### Integration Points
+
+- **Delegation Protocol**: Scope behaviors trigger delegation
+- **Routing Engine**: Provides intelligence for routing decisions
+- **Task Model**: Provides task attributes for routing
+- **Instance Model**: Provides hierarchy and status
 
 ## Notes
 
-- Each scope has very different behavior
-- Global should use intelligent routing (LLM/Sage)
-- Project needs good heuristics for orchestration decision
-- Orchestration must integrate seamlessly with Czarina
-- Configuration should be easily customizable
-- Test with real Czarina orchestration scenarios
+- Use Strategy pattern for scope behaviors - easy to extend
+- Behaviors should be stateless (get state from instance/task)
+- Log all routing decisions for debugging and optimization
+- Consider adding metrics collection for routing effectiveness
+- Make behaviors configurable without code changes where possible

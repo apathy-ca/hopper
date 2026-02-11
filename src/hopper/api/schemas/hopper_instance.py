@@ -14,46 +14,57 @@ from pydantic import BaseModel, ConfigDict, Field
 class HopperScope(str, Enum):
     """Hopper instance scope levels."""
 
-    GLOBAL = "global"  # Strategic routing across all projects
-    PROJECT = "project"  # Project-level task management
-    ORCHESTRATION = "orchestration"  # Execution-level queue management
+    GLOBAL = "GLOBAL"
+    PROJECT = "PROJECT"
+    ORCHESTRATION = "ORCHESTRATION"
+    PERSONAL = "PERSONAL"
+    FAMILY = "FAMILY"
+    EVENT = "EVENT"
+    FEDERATED = "FEDERATED"
 
 
 class InstanceStatus(str, Enum):
     """Hopper instance status."""
 
-    ACTIVE = "active"
-    INACTIVE = "inactive"
+    CREATED = "created"
     STARTING = "starting"
+    RUNNING = "running"
     STOPPING = "stopping"
+    STOPPED = "stopped"
+    PAUSED = "paused"
     ERROR = "error"
+    TERMINATED = "terminated"
+
+
+class InstanceType(str, Enum):
+    """Hopper instance types."""
+
+    PERSISTENT = "persistent"
+    EPHEMERAL = "ephemeral"
+    TEMPORARY = "temporary"
 
 
 class InstanceCreate(BaseModel):
     """Schema for creating a new Hopper instance."""
 
+    id: str | None = Field(None, min_length=1, max_length=100, description="Instance ID (auto-generated if not provided)")
     name: str = Field(..., min_length=1, max_length=100, description="Instance name")
     scope: HopperScope = Field(..., description="Instance scope level")
+    instance_type: InstanceType = Field(default=InstanceType.PERSISTENT, description="Instance type")
 
     parent_id: str | None = Field(None, description="Parent instance ID")
-    project_id: str | None = Field(None, description="Associated project ID")
 
     # Configuration
     config: dict[str, Any] = Field(
         default_factory=dict, description="Instance-specific configuration"
     )
-
-    # Routing configuration
-    routing_strategy: str = Field(
-        default="rules", description="Routing strategy (rules, llm, sage)"
-    )
-    auto_delegate: bool = Field(
-        default=True, description="Automatically delegate tasks to child instances"
+    runtime_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Runtime metadata"
     )
 
     # Metadata
     description: str | None = Field(None, description="Instance description")
-    tags: list[str] = Field(default_factory=list, description="Instance tags")
+    created_by: str | None = Field(None, description="Creator identifier")
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -63,13 +74,12 @@ class InstanceUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=100)
     status: InstanceStatus | None = None
+    instance_type: InstanceType | None = None
 
     config: dict[str, Any] | None = None
-    routing_strategy: str | None = None
-    auto_delegate: bool | None = None
+    runtime_metadata: dict[str, Any] | None = None
 
     description: str | None = None
-    tags: list[str] | None = None
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -82,27 +92,24 @@ class InstanceResponse(BaseModel):
     name: str
     scope: HopperScope
     status: InstanceStatus
+    instance_type: InstanceType
 
     # Hierarchy
     parent_id: str | None = None
-    project_id: str | None = None
 
     # Configuration
-    config: dict[str, Any] = {}
-    routing_strategy: str
-    auto_delegate: bool
+    config: dict[str, Any] | None = None
+    runtime_metadata: dict[str, Any] | None = None
 
     # Metadata
     description: str | None = None
-    tags: list[str] = []
     created_at: datetime
     updated_at: datetime
-    created_by: str
+    created_by: str | None = None
 
-    # Stats
-    task_count: int = Field(default=0, description="Number of tasks")
-    active_task_count: int = Field(default=0, description="Number of active tasks")
-    child_instance_count: int = Field(default=0, description="Number of child instances")
+    # Lifecycle
+    started_at: datetime | None = None
+    stopped_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 

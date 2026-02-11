@@ -1,165 +1,172 @@
-# Worker: Delegation Protocol
+# Worker Identity: delegation-protocol
 
+**Role:** Code
+**Agent:** claude
 **Branch:** cz2/feat/delegation-protocol
-**Dependencies:** instance-registry
-**Duration:** 2-3 days
+**Phase:** 2
+**Dependencies:** task-delegation
 
 ## Mission
 
-Implement task delegation protocol between parent and child instances, including routing tasks down the hierarchy and bubbling completions back up.
+Implement the core delegation protocol - the logic that actually moves tasks between instances and bubbles completion status back up the hierarchy. This is the "how" of delegation, building on the TaskDelegation model created by the task-delegation worker.
 
-## Background
+## 📚 Knowledge Base
 
-Phase 2 Week 3 requires:
-- Task delegation from parent to child instances
-- Completion notification from child to parent
-- Delegation routing decisions
-- Task lifecycle across instances
-- Coordination protocol
+You have custom knowledge tailored for your role and tasks at:
+`.czarina/workers/delegation-protocol-knowledge.md`
 
-## Tasks
+This includes:
+- Async patterns for service layer implementation
+- Error handling and recovery patterns
+- API endpoint design patterns
+- Testing patterns for complex workflows
 
-### Task 1: Delegation Core Protocol
+**Read this before starting work** to understand the patterns and practices you should follow.
 
-1. Create `src/hopper/instance/delegation.py`:
-   - DelegationProtocol class
-   - Delegate task to child instance
-   - Accept delegation from parent
-   - Routing logic for delegation
-   - Delegation history tracking
+## 🚀 YOUR FIRST ACTION
 
-2. Create delegation message types:
-   - TaskDelegation (parent → child)
-   - TaskCompletion (child → parent)
-   - TaskUpdate (bidirectional)
-   - DelegationRejection (child → parent)
+**Examine the existing routing intelligence and delegation model:**
 
-3. Implement delegation decision logic:
-   - When to delegate vs handle locally
-   - Which child to delegate to
-   - Fallback if delegation fails
+```bash
+# Read the routing engine to understand existing intelligence
+cat src/hopper/intelligence/rules/engine.py
 
-**Checkpoint:** Commit delegation protocol
+# Check the TaskDelegation model (created by task-delegation worker)
+cat src/hopper/models/task_delegation.py
 
-### Task 2: Task Routing Across Instances
+# Read the task delegation repository
+cat src/hopper/database/repositories/task_delegation_repository.py
 
-1. Enhance routing engine for multi-instance:
-   - Global routes to best Project
-   - Project routes to Orchestration or handles locally
-   - Orchestration queues for workers
+# Look at existing service patterns
+ls -la src/hopper/services/
+cat src/hopper/services/*.py | head -100
+```
 
-2. Create `src/hopper/instance/routing.py`:
-   - Multi-instance routing logic
-   - Scope-specific routing strategies
-   - Delegation routing decisions
+**Then:** Create the `src/hopper/delegation/` package structure and start with `delegator.py` implementing the core delegation logic.
 
-3. Add delegation to task model:
-   - `delegated_from_instance_id`
-   - `delegated_to_instance_id`
-   - `delegation_chain` (track full path)
+## Objectives
 
-**Checkpoint:** Commit multi-instance routing
+1. **Create Delegation Package** (`src/hopper/delegation/`)
+   ```
+   delegation/
+   ├── __init__.py
+   ├── delegator.py      # Main delegation logic
+   ├── router.py         # Instance-to-instance routing
+   ├── completion.py     # Completion bubbling
+   └── policies.py       # Delegation policies per scope
+   ```
 
-### Task 3: Completion and Status Bubbling
+2. **Implement Delegator Class** (`delegator.py`)
+   - `delegate_task(task, target_instance)` - Delegate task down hierarchy
+   - `accept_delegation(delegation_id)` - Accept incoming delegation
+   - `reject_delegation(delegation_id, reason)` - Reject with reason
+   - `complete_delegation(delegation_id, result)` - Mark complete and trigger bubbling
 
-1. Create `src/hopper/instance/completion.py`:
-   - Task completion notification
-   - Status update propagation
-   - Completion bubbling up hierarchy
-   - Success/failure handling
+3. **Implement CompletionBubbler** (`completion.py`)
+   - `bubble_completion(task)` - Notify ancestors of completion
+   - `aggregate_child_completions(parent_task)` - Check if all children done
+   - `propagate_status_change(task, new_status)` - Status change notifications
 
-2. Implement completion flow:
-   - Worker completes task in Orchestration
-   - Orchestration notifies Project
-   - Project notifies Global
-   - Each level updates local state
+4. **Implement InstanceRouter** (`router.py`)
+   - `find_target_instance(task, source_instance)` - Determine delegation target
+   - `can_delegate_to(source, target)` - Check delegation validity
+   - `get_available_instances(scope)` - Get instances accepting tasks
 
-3. Add completion hooks:
-   - on_task_completed
-   - on_task_failed
-   - on_delegation_completed
+5. **Implement DelegationPolicies** (`policies.py`)
+   - `get_policy_for_scope(scope)` - Get delegation rules for scope
+   - Policies define: auto-accept, require-approval, routing-rules
 
-**Checkpoint:** Commit completion protocol
+6. **Create Delegation API Endpoints** (`src/hopper/api/routes/delegations.py`)
+   - `POST /api/v1/tasks/{id}/delegate` - Delegate task to instance
+   - `POST /api/v1/delegations/{id}/accept` - Accept delegation
+   - `POST /api/v1/delegations/{id}/reject` - Reject delegation
+   - `POST /api/v1/delegations/{id}/complete` - Mark delegation complete
+   - `GET /api/v1/instances/{id}/delegations` - Get delegations for instance
+   - `GET /api/v1/tasks/{id}/delegation-chain` - Get full delegation chain
 
-### Task 4: Coordination and Synchronization
+7. **Wire Up Router in app.py**
+   - Add delegation router registration
 
-1. Create `src/hopper/instance/coordination.py`:
-   - Instance coordination protocol
-   - State synchronization
-   - Conflict resolution
-   - Transaction coordination
-
-2. Implement coordination patterns:
-   - Request-response
-   - Publish-subscribe
-   - Event streaming
-
-3. Add coordination for:
-   - Task state consistency
-   - Instance status sync
-   - Configuration updates
-
-**Checkpoint:** Commit coordination system
-
-### Task 5: API and Integration
-
-1. Add delegation endpoints:
-   - `POST /api/v1/tasks/{id}/delegate` - Delegate task
-   - `POST /api/v1/tasks/{id}/complete` - Mark complete
-   - `GET /api/v1/tasks/{id}/delegation-chain` - View delegation path
-
-2. Update task endpoints to support delegation
-3. Add WebSocket support for real-time updates
-4. Integrate with instance lifecycle
-
-**Checkpoint:** Commit API integration
-
-### Task 6: Testing and Documentation
-
-1. Create test suite:
-   - `tests/instance/test_delegation.py`
-   - `tests/instance/test_completion.py`
-   - `tests/instance/test_coordination.py`
-   - `tests/integration/test_multi_instance_flow.py`
-
-2. Create `docs/delegation-protocol.md`:
-   - Delegation overview
-   - Message types
-   - Routing logic
-   - Completion flow
-   - Examples
-
-**Checkpoint:** Commit tests and docs
+8. **Write Tests**
+   - Unit tests for each module in `tests/delegation/`
+   - Integration tests for delegation flows
 
 ## Deliverables
 
-- [ ] Delegation protocol implementation
-- [ ] Multi-instance routing logic
-- [ ] Completion notification system
-- [ ] Coordination protocol
-- [ ] Delegation API endpoints
-- [ ] Comprehensive tests including e2e flows
-- [ ] Documentation
+- [ ] `src/hopper/delegation/` package with all modules
+- [ ] `src/hopper/api/routes/delegations.py` - Delegation API endpoints
+- [ ] Updated `src/hopper/api/app.py` - Router wired up
+- [ ] `tests/delegation/test_delegator.py` - Delegator tests
+- [ ] `tests/delegation/test_completion.py` - Completion bubbling tests
+- [ ] `tests/delegation/test_router.py` - Router tests
+- [ ] Integration tests for delegation flows
 
 ## Success Criteria
 
-- ✅ Tasks flow down hierarchy (Global → Project → Orchestration)
-- ✅ Completion bubbles up (Orchestration → Project → Global)
-- ✅ Delegation decisions are logged
-- ✅ Failed delegations have fallback
-- ✅ State stays consistent across instances
-- ✅ Real-time status updates work
-- ✅ All tests pass
+- [ ] Tasks can be delegated from Global → Project → Orchestration
+- [ ] Completion bubbles up the chain automatically
+- [ ] Rejected delegations are handled gracefully (task stays at source)
+- [ ] Delegation chain is fully traceable for any task
+- [ ] Policies control delegation behavior per scope
+- [ ] 90%+ test coverage on new code
 
-## References
+## Context
 
-- Implementation Plan: Phase 2, Week 3
-- Specification: Delegation protocol section
+### Delegation Flow
+
+```
+1. Task created at Global Instance
+2. Delegator.delegate_task() called
+3. InstanceRouter.find_target_instance() determines Project
+4. TaskDelegation record created (status=pending)
+5. If auto-accept policy, delegation accepted immediately
+6. Task's instance_id updated to target
+7. Repeat for Project → Orchestration
+
+On completion:
+1. Task marked complete at Orchestration
+2. CompletionBubbler.bubble_completion() called
+3. Delegation record marked complete with result
+4. Parent delegation's task status updated
+5. Repeat up to Global
+```
+
+### Routing Intelligence Integration
+
+The existing routing engine (`src/hopper/intelligence/rules/engine.py`) provides:
+- Tag-based routing
+- Content analysis
+- Priority handling
+
+The InstanceRouter should use this intelligence to determine which Project instance should receive a task from Global.
+
+### Policies Example
+
+```python
+GLOBAL_POLICY = DelegationPolicy(
+    auto_accept=False,  # Projects must accept
+    routing_strategy="tag_match",
+    fallback_instance=None,  # Error if no match
+)
+
+PROJECT_POLICY = DelegationPolicy(
+    auto_accept=True,  # Orchestrations auto-accept
+    routing_strategy="load_balance",
+    fallback_instance="default-orchestration",
+)
+```
+
+### Key Integration Points
+
+- **Task Model**: Already has `instance_id` FK
+- **TaskDelegation Model**: Created by task-delegation worker
+- **HopperInstance Model**: Has hierarchy methods
+- **Routing Engine**: Provides intelligence for routing decisions
 
 ## Notes
 
-- Delegation must be reliable (retry logic)
-- Completion notification critical for workflow
-- Consider message queue for async communication
-- Transaction coordination prevents inconsistency
-- Test extensively with concurrent delegations
+- Use async/await throughout - all database operations are async
+- Handle edge cases: circular delegation, deleted instances, error recovery
+- Consider using database transactions for multi-step operations
+- Log all delegation events for debugging
+- The completion bubbler should be idempotent (safe to call multiple times)

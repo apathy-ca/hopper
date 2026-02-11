@@ -405,6 +405,129 @@ def search_tasks(
         raise click.Abort()
 
 
+@task.command(name="delegate")
+@click.argument("task_id")
+@click.option("--to", "target_instance", required=True, help="Target instance ID")
+@click.option(
+    "--type",
+    "delegation_type",
+    type=click.Choice(["route", "decompose", "escalate", "reassign"]),
+    default="route",
+    help="Delegation type",
+)
+@click.option("--notes", help="Delegation notes")
+@click.pass_obj
+def delegate_task(
+    ctx: Context,
+    task_id: str,
+    target_instance: str,
+    delegation_type: str,
+    notes: str | None,
+) -> None:
+    """Delegate a task to another instance.
+
+    Examples:
+        hopper task delegate TASK-001 --to project-123
+        hopper task delegate TASK-001 --to orch-456 --type route
+        hopper task delegate TASK-001 --to project-789 --notes "Complex task"
+    """
+    delegation_data = {
+        "task_id": task_id,
+        "target_instance_id": target_instance,
+        "delegation_type": delegation_type,
+    }
+
+    if notes:
+        delegation_data["notes"] = notes
+
+    try:
+        with HopperClient(ctx.config) as client:
+            result = client.delegate_task(task_id, delegation_data)
+
+        if ctx.json_output:
+            print_json(result)
+        else:
+            print_success(f"Delegated task {task_id} to {target_instance}")
+            console.print(f"[dim]Delegation ID: {result.get('id', '')}[/dim]")
+
+    except APIError as e:
+        print_error(f"Failed to delegate task: {e.message}")
+        raise click.Abort()
+
+
+@task.command(name="delegations")
+@click.argument("task_id")
+@click.pass_obj
+def show_delegations(ctx: Context, task_id: str) -> None:
+    """Show the delegation chain for a task.
+
+    Examples:
+        hopper task delegations TASK-001
+    """
+    try:
+        with HopperClient(ctx.config) as client:
+            result = client.get_task_delegations(task_id)
+
+        if ctx.json_output:
+            print_json(result)
+        else:
+            delegations = result.get("delegations", [])
+
+            if not delegations:
+                print_info(f"Task {task_id} has no delegations")
+                return
+
+            console.print(f"\n[bold cyan]Delegation Chain for {task_id}[/bold cyan]\n")
+
+            # Show current location
+            current = result.get("current_instance_id")
+            origin = result.get("origin_instance_id")
+
+            if origin:
+                console.print(f"[bold]Origin:[/bold] {origin}")
+            if current:
+                console.print(f"[bold]Current:[/bold] {current}")
+
+            console.print()
+
+            # Show delegation history
+            from rich import box
+            from rich.table import Table
+
+            table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("From", style="dim")
+            table.add_column("To")
+            table.add_column("Type")
+            table.add_column("Status", justify="center")
+            table.add_column("When", style="dim")
+
+            from hopper.cli.output import format_datetime, get_status_style
+
+            for i, delegation in enumerate(delegations, 1):
+                source = delegation.get("source_instance_id", "—")[:12] if delegation.get("source_instance_id") else "—"
+                target = delegation.get("target_instance_id", "—")[:12] if delegation.get("target_instance_id") else "—"
+                dtype = delegation.get("delegation_type", "route")
+                status = delegation.get("status", "pending")
+                when = format_datetime(delegation.get("delegated_at"))
+
+                table.add_row(
+                    str(i),
+                    source,
+                    target,
+                    dtype,
+                    f"[{get_status_style(status)}]{status}[/]",
+                    when,
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]Total delegations: {len(delegations)}[/dim]\n")
+
+    except APIError as e:
+        print_error(f"Failed to get delegations: {e.message}")
+        raise click.Abort()
+
+
 # Shortcuts
 @click.command(name="add")
 @click.argument("title", required=False)
