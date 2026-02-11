@@ -4,7 +4,8 @@
 import click
 from rich.prompt import Confirm, Prompt
 
-from hopper.cli.client import APIError, HopperClient
+from hopper.cli.client import APIError
+from hopper.cli.local_client import LocalClientError
 from hopper.cli.main import Context
 from hopper.cli.output import (
     console,
@@ -15,6 +16,10 @@ from hopper.cli.output import (
     print_task_detail,
     print_task_table,
 )
+
+
+# Combined error types for handling both client types
+ClientError = (APIError, LocalClientError)
 
 
 @click.group(name="task")
@@ -96,9 +101,9 @@ def add_task(
     if project:
         task_data["project_id"] = project
 
-    # Create task via API
+    # Create task
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.create_task(task_data)
 
         if ctx.json_output:
@@ -107,7 +112,7 @@ def add_task(
             print_success(f"Created task: {result.get('id', '')}")
             print_task_detail(result)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to create task: {e.message}")
         raise click.Abort()
 
@@ -161,7 +166,7 @@ def list_tasks(
 
     # Fetch tasks
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             tasks = client.list_tasks(**params)
 
         if ctx.json_output:
@@ -171,7 +176,7 @@ def list_tasks(
             if tasks:
                 print_info(f"Showing {len(tasks)} task(s)")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to list tasks: {e.message}")
         raise click.Abort()
 
@@ -186,7 +191,7 @@ def get_task(ctx: Context, task_id: str) -> None:
         hopper task get abc12345
     """
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             task = client.get_task(task_id)
 
         if ctx.json_output:
@@ -194,7 +199,7 @@ def get_task(ctx: Context, task_id: str) -> None:
         else:
             print_task_detail(task)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to get task: {e.message}")
         raise click.Abort()
 
@@ -231,7 +236,7 @@ def update_task(
     # Interactive mode
     if interactive:
         try:
-            with HopperClient(ctx.config) as client:
+            with ctx.get_client() as client:
                 current = client.get_task(task_id)
 
             print_task_detail(current)
@@ -245,7 +250,7 @@ def update_task(
                 default=current.get("priority", "medium"),
             )
 
-        except APIError as e:
+        except ClientError as e:
             print_error(f"Failed to get task: {e.message}")
             raise click.Abort()
 
@@ -270,7 +275,7 @@ def update_task(
 
     # Update task
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.update_task(task_id, update_data)
 
         if ctx.json_output:
@@ -279,7 +284,7 @@ def update_task(
             print_success(f"Updated task: {task_id}")
             print_task_detail(result)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to update task: {e.message}")
         raise click.Abort()
 
@@ -306,7 +311,7 @@ def change_status(ctx: Context, task_id: str, new_status: str, force: bool) -> N
 
     # Update status
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.update_task(task_id, {"status": new_status})
 
         if ctx.json_output:
@@ -314,7 +319,7 @@ def change_status(ctx: Context, task_id: str, new_status: str, force: bool) -> N
         else:
             print_success(f"Changed status to: {new_status}")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to change status: {e.message}")
         raise click.Abort()
 
@@ -333,10 +338,10 @@ def delete_task(ctx: Context, task_id: str, force: bool) -> None:
     # Get task info for confirmation
     if not force:
         try:
-            with HopperClient(ctx.config) as client:
+            with ctx.get_client() as client:
                 task = client.get_task(task_id)
             console.print(f"\n[bold]Task to delete:[/bold] {task.get('title', '')}\n")
-        except APIError:
+        except ClientError:
             pass
 
         if not Confirm.ask("[bold red]Delete this task?[/bold red]", default=False):
@@ -345,12 +350,12 @@ def delete_task(ctx: Context, task_id: str, force: bool) -> None:
 
     # Delete task
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             client.delete_task(task_id)
 
         print_success(f"Deleted task: {task_id}")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to delete task: {e.message}")
         raise click.Abort()
 
@@ -388,7 +393,7 @@ def search_tasks(
         params["project"] = project
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             results = client.search_tasks(query, **params)
 
         if ctx.json_output:
@@ -400,7 +405,7 @@ def search_tasks(
             else:
                 print_info(f"No tasks found matching '{query}'")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Search failed: {e.message}")
         raise click.Abort()
 
@@ -441,7 +446,7 @@ def delegate_task(
         delegation_data["notes"] = notes
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.delegate_task(task_id, delegation_data)
 
         if ctx.json_output:
@@ -450,7 +455,7 @@ def delegate_task(
             print_success(f"Delegated task {task_id} to {target_instance}")
             console.print(f"[dim]Delegation ID: {result.get('id', '')}[/dim]")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to delegate task: {e.message}")
         raise click.Abort()
 
@@ -465,7 +470,7 @@ def show_delegations(ctx: Context, task_id: str) -> None:
         hopper task delegations TASK-001
     """
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.get_task_delegations(task_id)
 
         if ctx.json_output:
@@ -523,7 +528,7 @@ def show_delegations(ctx: Context, task_id: str) -> None:
             console.print(table)
             console.print(f"\n[dim]Total delegations: {len(delegations)}[/dim]\n")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to get delegations: {e.message}")
         raise click.Abort()
 

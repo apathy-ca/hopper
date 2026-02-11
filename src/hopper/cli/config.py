@@ -15,6 +15,19 @@ class APIConfig(BaseModel):
     timeout: int = Field(default=30, description="Request timeout in seconds")
 
 
+class LocalConfig(BaseModel):
+    """Local storage configuration."""
+
+    path: Path = Field(
+        default_factory=lambda: Path.home() / ".hopper",
+        description="Path to local storage directory",
+    )
+    auto_detect_embedded: bool = Field(
+        default=True,
+        description="Auto-detect embedded .hopper in current directory",
+    )
+
+
 class AuthConfig(BaseModel):
     """Authentication configuration."""
 
@@ -25,8 +38,10 @@ class AuthConfig(BaseModel):
 class ProfileConfig(BaseModel):
     """Configuration profile."""
 
+    mode: str = Field(default="server", description="Operation mode: local or server")
     api: APIConfig = Field(default_factory=APIConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    local: LocalConfig = Field(default_factory=LocalConfig)
 
 
 class Config(BaseSettings):
@@ -63,6 +78,7 @@ class Config(BaseSettings):
             "active_profile": self.active_profile,
             "profiles": {
                 name: {
+                    "mode": profile.mode,
                     "api": {
                         "endpoint": profile.api.endpoint,
                         "timeout": profile.api.timeout,
@@ -70,6 +86,10 @@ class Config(BaseSettings):
                     "auth": {
                         "token": profile.auth.token,
                         "api_key": profile.auth.api_key,
+                    },
+                    "local": {
+                        "path": str(profile.local.path),
+                        "auto_detect_embedded": profile.local.auto_detect_embedded,
                     },
                 }
                 for name, profile in self.profiles.items()
@@ -90,9 +110,15 @@ class Config(BaseSettings):
 
         profiles = {}
         for name, profile_data in data.get("profiles", {}).items():
+            local_data = profile_data.get("local", {})
+            if "path" in local_data:
+                local_data["path"] = Path(local_data["path"])
+
             profiles[name] = ProfileConfig(
+                mode=profile_data.get("mode", "server"),
                 api=APIConfig(**profile_data.get("api", {})),
                 auth=AuthConfig(**profile_data.get("auth", {})),
+                local=LocalConfig(**local_data) if local_data else LocalConfig(),
             )
 
         return cls(
@@ -128,3 +154,86 @@ def get_config_dir() -> Path:
     config_dir = Path.home() / ".hopper"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
+
+
+def detect_embedded_hopper() -> Path | None:
+    """Detect embedded .hopper directory in current or parent directories.
+
+    Returns:
+        Path to embedded .hopper directory if found, None otherwise.
+    """
+    current = Path.cwd()
+
+    # Walk up to find .hopper directory (up to 10 levels)
+    for _ in range(10):
+        embedded = current / ".hopper"
+        if embedded.is_dir():
+            # Check if it has a config.yaml (indicates it's an initialized hopper)
+            if (embedded / "config.yaml").exists() or (embedded / "tasks").is_dir():
+                return embedded
+        if current.parent == current:
+            break
+        current = current.parent
+
+    return None
+
+
+def get_storage_path(config: "Config", force_local: bool = False) -> Path | None:
+    """Determine the storage path based on configuration and detection.
+
+    Args:
+        config: CLI configuration
+        force_local: Force local mode regardless of config
+
+    Returns:
+        Path to storage directory, or None for server mode.
+    """
+    profile = config.current_profile
+
+    # Force local mode
+    if force_local:
+        # Try embedded first
+        if profile.local.auto_detect_embedded:
+            embedded = detect_embedded_hopper()
+            if embedded:
+                return embedded
+        return profile.local.path
+
+    # Server mode
+    if profile.mode == "server":
+        return None
+
+    # Local mode - check for embedded first
+    if profile.local.auto_detect_embedded:
+        embedded = detect_embedded_hopper()
+        if embedded:
+            return embedded
+
+    return profile.local.path
+
+
+def is_local_mode(config: "Config", force_local: bool = False) -> bool:
+    """Check if operating in local mode.
+
+    Args:
+        config: CLI configuration
+        force_local: Force local mode
+
+    Returns:
+        True if local mode, False for server mode.
+    """
+    if force_local:
+        return True
+
+    profile = config.current_profile
+
+    # Explicit local mode
+    if profile.mode == "local":
+        return True
+
+    # Auto-detect embedded
+    if profile.local.auto_detect_embedded:
+        if detect_embedded_hopper() is not None:
+            return True
+
+    return False

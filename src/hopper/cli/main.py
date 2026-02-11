@@ -5,7 +5,7 @@ import click
 from rich.console import Console
 
 from hopper import __version__
-from hopper.cli.config import Config, load_config
+from hopper.cli.config import Config, load_config, is_local_mode, get_storage_path
 
 console = Console()
 
@@ -13,11 +13,39 @@ console = Console()
 class Context:
     """CLI context object to pass configuration between commands."""
 
-    def __init__(self, config: Config, verbose: bool = False, json_output: bool = False):
+    def __init__(
+        self,
+        config: Config,
+        verbose: bool = False,
+        json_output: bool = False,
+        local: bool = False,
+    ):
         self.config = config
         self.verbose = verbose
         self.json_output = json_output
+        self._force_local = local
         self.console = console
+
+    @property
+    def is_local(self) -> bool:
+        """Check if operating in local mode."""
+        return is_local_mode(self.config, self._force_local)
+
+    def get_client(self):
+        """Get the appropriate client for the current mode.
+
+        Returns:
+            LocalClient for local mode, HopperClient for server mode.
+        """
+        if self.is_local:
+            from hopper.cli.local_client import LocalClient
+
+            storage_path = get_storage_path(self.config, self._force_local)
+            return LocalClient(storage_path)
+        else:
+            from hopper.cli.client import HopperClient
+
+            return HopperClient(self.config)
 
 
 @click.group()
@@ -40,8 +68,14 @@ class Context:
     is_flag=True,
     help="Output in JSON format",
 )
+@click.option(
+    "--local",
+    "-l",
+    is_flag=True,
+    help="Use local storage mode (auto-detects embedded .hopper or uses ~/.hopper)",
+)
 @click.pass_context
-def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool) -> None:
+def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool, local: bool) -> None:
     """Hopper - Universal task queue for human-AI collaborative workflows.
 
     Hopper provides a powerful CLI for managing tasks, projects, and instances
@@ -50,6 +84,7 @@ def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool
     Examples:
         hopper task add "Fix login bug"
         hopper task list --status open
+        hopper --local task add "Local task"
         hopper project create my-project
         hopper instance tree
     """
@@ -57,11 +92,16 @@ def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool
     cfg = load_config(config)
 
     # Create context object
-    ctx.obj = Context(config=cfg, verbose=verbose, json_output=json_output)
+    ctx.obj = Context(config=cfg, verbose=verbose, json_output=json_output, local=local)
 
     if verbose:
         console.print(f"[dim]Hopper v{__version__}[/dim]")
         console.print(f"[dim]Config: {cfg.config_path}[/dim]")
+        if ctx.obj.is_local:
+            storage_path = get_storage_path(cfg, local)
+            console.print(f"[dim]Mode: local ({storage_path})[/dim]")
+        else:
+            console.print(f"[dim]Mode: server ({cfg.current_profile.api.endpoint})[/dim]")
 
 
 # Import command groups

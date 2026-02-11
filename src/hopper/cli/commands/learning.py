@@ -5,7 +5,8 @@ from rich import box
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from hopper.cli.client import APIError, HopperClient
+from hopper.cli.client import APIError
+from hopper.cli.local_client import LocalClientError
 from hopper.cli.main import Context
 from hopper.cli.output import (
     console,
@@ -15,6 +16,10 @@ from hopper.cli.output import (
     print_json,
     print_success,
 )
+
+
+# Combined error types for handling both client types
+ClientError = (APIError, LocalClientError)
 
 
 @click.group(name="learning")
@@ -120,7 +125,7 @@ def submit_feedback(
         feedback_data["required_rework"] = rework
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.submit_feedback(task_id, feedback_data)
 
         if ctx.json_output:
@@ -129,7 +134,7 @@ def submit_feedback(
             status = "positive" if was_good_match else "negative"
             print_success(f"Submitted {status} feedback for task {task_id}")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to submit feedback: {e.message}")
         raise click.Abort()
 
@@ -144,7 +149,7 @@ def get_feedback(ctx: Context, task_id: str) -> None:
         hopper learning feedback get TASK-001
     """
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.get_task_feedback(task_id)
 
         if ctx.json_output:
@@ -152,7 +157,7 @@ def get_feedback(ctx: Context, task_id: str) -> None:
         else:
             _print_feedback_detail(result)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to get feedback: {e.message}")
         raise click.Abort()
 
@@ -182,13 +187,14 @@ def list_feedback(
         params["good_matches_only"] = False
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.list_feedback(**params)
 
         if ctx.json_output:
             print_json(result)
         else:
-            items = result.get("items", [])
+            # Handle both server (items) and local (feedback) response formats
+            items = result.get("items", result.get("feedback", []))
             if not items:
                 print_info("No feedback records found")
                 return
@@ -196,7 +202,7 @@ def list_feedback(
             _print_feedback_table(items)
             print_info(f"Showing {len(items)} of {result.get('total', len(items))} feedback records")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to list feedback: {e.message}")
         raise click.Abort()
 
@@ -212,7 +218,7 @@ def routing_accuracy(ctx: Context, days: int) -> None:
         hopper learning feedback accuracy --days 7
     """
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.get_routing_accuracy(days=days)
 
         if ctx.json_output:
@@ -220,7 +226,7 @@ def routing_accuracy(ctx: Context, days: int) -> None:
         else:
             _print_accuracy_stats(result, days)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to get accuracy stats: {e.message}")
         raise click.Abort()
 
@@ -293,7 +299,7 @@ def create_pattern(
         pattern_data["priority_criteria"] = priority_match
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.create_pattern(pattern_data)
 
         if ctx.json_output:
@@ -301,7 +307,7 @@ def create_pattern(
         else:
             print_success(f"Created pattern: {result.get('name', '')} (ID: {result.get('id', '')})")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to create pattern: {e.message}")
         raise click.Abort()
 
@@ -330,13 +336,14 @@ def list_patterns(
         params["instance_id"] = instance
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.list_patterns(**params)
 
         if ctx.json_output:
             print_json(result)
         else:
-            items = result.get("items", [])
+            # Handle both server (items) and local (patterns) response formats
+            items = result.get("items", result.get("patterns", []))
             if not items:
                 print_info("No patterns found")
                 return
@@ -344,7 +351,7 @@ def list_patterns(
             _print_pattern_table(items)
             print_info(f"Showing {len(items)} of {result.get('total', len(items))} patterns")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to list patterns: {e.message}")
         raise click.Abort()
 
@@ -359,7 +366,7 @@ def get_pattern(ctx: Context, pattern_id: str) -> None:
         hopper learning pattern get pat-abc123
     """
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.get_pattern(pattern_id)
 
         if ctx.json_output:
@@ -367,7 +374,7 @@ def get_pattern(ctx: Context, pattern_id: str) -> None:
         else:
             _print_pattern_detail(result)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to get pattern: {e.message}")
         raise click.Abort()
 
@@ -410,7 +417,7 @@ def update_pattern(
         raise click.Abort()
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.update_pattern(pattern_id, update_data)
 
         if ctx.json_output:
@@ -418,7 +425,7 @@ def update_pattern(
         else:
             print_success(f"Updated pattern: {result.get('name', '')}")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to update pattern: {e.message}")
         raise click.Abort()
 
@@ -440,12 +447,12 @@ def delete_pattern(ctx: Context, pattern_id: str, force: bool) -> None:
             return
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             client.delete_pattern(pattern_id)
 
         print_success(f"Deleted pattern: {pattern_id}")
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to delete pattern: {e.message}")
         raise click.Abort()
 
@@ -467,7 +474,7 @@ def learning_stats(ctx: Context) -> None:
         hopper learning stats
     """
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.get_learning_statistics()
 
         if ctx.json_output:
@@ -475,7 +482,7 @@ def learning_stats(ctx: Context) -> None:
         else:
             _print_learning_stats(result)
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to get statistics: {e.message}")
         raise click.Abort()
 
@@ -500,7 +507,7 @@ def consolidate(ctx: Context, days: int, force: bool) -> None:
             return
 
     try:
-        with HopperClient(ctx.config) as client:
+        with ctx.get_client() as client:
             result = client.run_consolidation(days=days)
 
         if ctx.json_output:
@@ -512,7 +519,7 @@ def consolidate(ctx: Context, days: int, force: bool) -> None:
             console.print(f"  Ran at: {result.get('ran_at', 'unknown')}")
             console.print()
 
-    except APIError as e:
+    except ClientError as e:
         print_error(f"Failed to run consolidation: {e.message}")
         raise click.Abort()
 
