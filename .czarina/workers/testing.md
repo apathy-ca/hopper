@@ -1,221 +1,218 @@
-# Worker: Testing
+# Worker Identity: testing
 
+**Role:** Test
+**Agent:** claude
 **Branch:** cz2/feat/testing
-**Dependencies:** instance-visualization
-**Duration:** 2 days
+**Phase:** 2
+**Dependencies:** instance-cli
 
 ## Mission
 
-Create comprehensive test suite for Phase 2 multi-instance features, ensuring quality and reliability of the hierarchical architecture.
+Create a comprehensive test suite for all Phase 2 features. Ensure 90%+ test coverage on new code, write integration tests that verify the full delegation flow, and fix any test regressions. Quality is the gatekeeper for the release.
 
-## Background
+## 📚 Knowledge Base
 
-Phase 2 introduces significant complexity with multi-instance hierarchy. Testing must cover:
-- Instance lifecycle and state management
-- Parent-child relationships
-- Task delegation flows
-- Scope-specific behaviors
-- Visualization tools
-- End-to-end multi-instance workflows
+You have custom knowledge tailored for your role and tasks at:
+`.czarina/workers/testing-knowledge.md`
 
-## Tasks
+This includes:
+- pytest patterns for async testing
+- Fixture design patterns
+- Mocking strategies for database and API tests
+- Integration testing best practices
+- Coverage requirements and tools
 
-### Task 1: Instance Architecture Tests
+**Read this before starting work** to understand the patterns and practices you should follow.
 
-1. Enhance `tests/instance/`:
-   - test_lifecycle_advanced.py - Complex state transitions
-   - test_manager_advanced.py - Multi-instance management
-   - test_configuration.py - Scope-specific configs
+## 🚀 YOUR FIRST ACTION
 
-2. Test scenarios:
-   - Concurrent instance operations
-   - State transition edge cases
-   - Configuration validation
-   - Resource cleanup
+**Assess the current test infrastructure and coverage:**
 
-**Checkpoint:** Commit architecture tests
+```bash
+# Check existing test structure
+ls -la tests/
+ls -la tests/*/ 2>/dev/null
 
-### Task 2: Registry and Discovery Tests
+# Read the main conftest for existing fixtures
+cat tests/conftest.py
 
-1. Create registry test suite:
-   - test_registry_concurrent.py - Concurrent registration
-   - test_discovery_performance.py - Discovery at scale
-   - test_relationships_complex.py - Deep hierarchies
-   - test_health_monitoring.py - Health checks
+# Check current test count and pass rate
+pytest --collect-only 2>/dev/null | tail -20
 
-2. Test scenarios:
-   - Large number of instances (100+)
-   - Deep hierarchies (5+ levels)
-   - Rapid registration/deregistration
-   - Network partitions
+# Look at existing test patterns
+cat $(ls tests/test_*.py tests/*/test_*.py 2>/dev/null | head -1)
 
-**Checkpoint:** Commit registry tests
+# Check for any pytest configuration
+cat pyproject.toml | grep -A30 "\[tool.pytest"
+```
 
-### Task 3: Delegation Protocol Tests
+**Then:** Create the Phase 2 test structure at `tests/phase2/` and start with `conftest.py` for Phase 2 specific fixtures.
 
-1. Create delegation test suite:
-   - test_delegation_flows.py - Various delegation patterns
-   - test_completion_bubbling.py - Status propagation
-   - test_delegation_failures.py - Error handling
-   - test_coordination.py - State consistency
+## Objectives
 
-2. Test scenarios:
-   - Task delegation chain (Global→Project→Orchestration)
-   - Completion bubbling back up
-   - Delegation rejections
-   - Concurrent delegations
-   - Delegation failures and retries
-
-**Checkpoint:** Commit delegation tests
-
-### Task 4: Scope Behavior Tests
-
-1. Create scope-specific tests:
-   - test_global_routing.py - Global routing decisions
-   - test_project_orchestration_decision.py - Orchestration triggers
-   - test_orchestration_queue_management.py - Worker queues
-   - test_scope_intelligence.py - Intelligence layer
-
-2. Test scenarios:
-   - Global routes to correct project
-   - Project correctly decides orchestration vs manual
-   - Orchestration manages dependencies
-   - Intelligence improves routing
-
-**Checkpoint:** Commit scope tests
-
-### Task 5: Integration and E2E Tests
-
-1. Create `tests/e2e/test_multi_instance_workflows.py`:
-   - Complete task lifecycle across all scopes
-   - Real delegation and completion flow
-   - Czarina integration scenario
-   - Instance hierarchy operations
-
-2. Test complete workflows:
+1. **Create Phase 2 Test Structure**
    ```
-   1. Create Global instance
-   2. Create task at Global
-   3. Global routes to Project
-   4. Project creates Orchestration
-   5. Orchestration manages workers
-   6. Task completes
-   7. Completion bubbles up
-   8. Verify state at all levels
+   tests/
+   ├── phase2/
+   │   ├── __init__.py
+   │   ├── conftest.py              # Phase 2 fixtures
+   │   ├── test_instance_api.py     # Instance API tests
+   │   ├── test_delegation.py       # Delegation tests
+   │   ├── test_scope_behaviors.py  # Scope behavior tests
+   │   ├── test_instance_cli.py     # CLI tests
+   │   └── test_integration.py      # End-to-end flows
    ```
 
-3. Create `tests/e2e/test_czarina_integration.py`:
-   - Hopper provides tasks to Czarina orchestration
-   - Czarina workers execute
-   - Status updates flow back
-   - Integration points work correctly
+2. **Create Phase 2 Fixtures** (`conftest.py`)
+   - `global_instance` - A Global Hopper instance
+   - `project_instance` - A Project instance (child of global)
+   - `orchestration_instance` - An Orchestration instance (child of project)
+   - `instance_hierarchy` - Complete 3-level hierarchy
+   - `task_with_delegation` - Task with delegation records
+   - `mock_scope_behaviors` - Mocked scope behaviors for unit tests
 
-**Checkpoint:** Commit integration tests
+3. **Instance API Tests** (`test_instance_api.py`)
+   - CRUD operations (create, read, update, delete)
+   - List with filters (scope, status, parent_id)
+   - Hierarchy queries (children, full tree)
+   - Lifecycle transitions (start, stop, pause, resume)
+   - Error handling (404, validation errors)
 
-### Task 6: Visualization and CLI Tests
+4. **Delegation Tests** (`test_delegation.py`)
+   - Create delegation record
+   - Accept/reject delegation flow
+   - Completion bubbling
+   - Delegation chain tracing
+   - Edge cases (orphaned delegations, circular prevention)
 
-1. Create CLI test suite:
-   - test_tree_command.py - Tree visualization
-   - test_dashboard_command.py - Dashboard rendering
-   - test_flow_visualization.py - Task flow
-   - test_interactive_explorer.py - Interactive mode
+5. **Scope Behavior Tests** (`test_scope_behaviors.py`)
+   - Global scope routing decisions
+   - Project scope orchestration decisions
+   - Orchestration scope queue management
+   - Behavior configuration
+   - Routing engine integration
 
-2. Test output formatting:
-   - ASCII tree structure correct
-   - Dashboard updates properly
-   - Flow visualization accurate
-   - Interactive navigation works
+6. **CLI Tests** (`test_instance_cli.py`)
+   - All instance commands (list, create, show, tree, status)
+   - Tree visualization output
+   - Status dashboard output
+   - Task filtering by instance
+   - Delegation CLI commands
 
-**Checkpoint:** Commit CLI tests
+7. **Integration Tests** (`test_integration.py`)
+   - **Full delegation flow**:
+     - Task created at Global → routed to Project → delegated to Orchestration → completed → bubbled up
+   - Multi-instance coordination
+   - Failure recovery scenarios
+   - Concurrent operations
 
-### Task 7: Performance and Load Tests
+8. **Fix Existing Failing Tests**
+   - Review Phase 1 test failures
+   - Fix tests broken by Phase 2 changes
+   - Ensure no regressions
 
-1. Create `tests/performance/`:
-   - test_hierarchy_performance.py - Query performance
-   - test_delegation_throughput.py - Delegation rate
-   - test_concurrent_instances.py - Concurrent operations
-   - test_memory_usage.py - Resource consumption
-
-2. Performance benchmarks:
-   - Hierarchy query < 100ms
-   - Delegation < 50ms
-   - 1000+ instances supported
-   - Memory usage reasonable
-
-**Checkpoint:** Commit performance tests
-
-### Task 8: Phase 2 Success Criteria Validation
-
-Create `tests/validation/test_phase2_criteria.py`:
-
-1. ✅ Can create Global, Project, and Orchestration instances
-2. ✅ Tasks flow down hierarchy (Global → Project → Orchestration)
-3. ✅ Completion bubbles up hierarchy
-4. ✅ Each scope has appropriate configuration
-5. ✅ Can visualize instance tree
-6. ✅ Czarina can use Orchestration Hopper for runs
-
-Validate each criterion with comprehensive tests.
-
-**Checkpoint:** Commit criteria validation
-
-### Task 9: Test Coverage and Quality
-
-1. Run coverage analysis:
-   ```bash
-   pytest --cov=src/hopper/instance --cov-report=html
-   ```
-
-2. Coverage targets:
-   - instance/ module: >95%
-   - delegation protocol: >95%
-   - scope behaviors: >90%
-   - Overall Phase 2 code: >90%
-
-3. Add missing tests for uncovered code
-
-4. Update `docs/testing.md` with Phase 2 testing guide
-
-**Checkpoint:** Commit coverage improvements
+9. **Coverage Report**
+   - Generate coverage report for Phase 2 code
+   - Identify and fill coverage gaps
+   - Document test scenarios
 
 ## Deliverables
 
-- [ ] Instance architecture tests (lifecycle, manager, config)
-- [ ] Registry and discovery tests
-- [ ] Delegation protocol tests
-- [ ] Scope behavior tests
-- [ ] Integration and E2E tests
-- [ ] Czarina integration tests
-- [ ] CLI and visualization tests
-- [ ] Performance and load tests
-- [ ] Phase 2 success criteria validation
-- [ ] >90% code coverage for Phase 2 features
-- [ ] Updated testing documentation
+- [ ] `tests/phase2/` test package with all files
+- [ ] Phase 2 fixtures in `conftest.py`
+- [ ] 90%+ coverage on all Phase 2 modules:
+  - [ ] `src/hopper/api/routes/instances.py`
+  - [ ] `src/hopper/api/routes/delegations.py`
+  - [ ] `src/hopper/models/task_delegation.py`
+  - [ ] `src/hopper/delegation/*`
+  - [ ] `src/hopper/intelligence/scopes/*`
+  - [ ] `src/hopper/cli/commands/instances.py`
+- [ ] Integration test for full delegation flow
+- [ ] All Phase 1 tests still passing
+- [ ] Test documentation (describe test scenarios)
 
 ## Success Criteria
 
-- ✅ All Phase 2 features have comprehensive tests
-- ✅ Integration tests cover complete workflows
-- ✅ E2E tests validate multi-instance behavior
-- ✅ Performance tests ensure scalability
-- ✅ All Phase 2 success criteria validated
-- ✅ Code coverage >90% for new features
-- ✅ All tests pass consistently
-- ✅ CI pipeline includes Phase 2 tests
+- [ ] 90%+ test coverage on new Phase 2 code
+- [ ] All Phase 2 tests passing
+- [ ] All Phase 1 tests still passing (no regressions)
+- [ ] Integration tests pass for full delegation flow
+- [ ] Coverage report generated and reviewed
+- [ ] Edge cases and error conditions tested
 
-## References
+## Context
 
-- Implementation Plan: Phase 2 success criteria
-- Phase 1 testing patterns
-- pytest best practices
+### Test Categories
+
+| Category | Focus | Speed | Dependencies |
+|----------|-------|-------|--------------|
+| Unit | Single component | Fast (<100ms) | Mocked |
+| Integration | Multi-component | Medium (<10s) | Real DB |
+| E2E | Full flow | Slow (>10s) | Full system |
+
+### Key Test Scenarios
+
+**Instance API:**
+- Create Global, Project, Orchestration instances
+- Validate parent-child relationships
+- Test lifecycle state machine
+- Verify hierarchy queries return correct tree
+
+**Delegation:**
+- Delegate from Global → Project → Orchestration
+- Verify delegation records created at each step
+- Test completion bubbling up the chain
+- Test rejection handling
+
+**Scope Behaviors:**
+- Global routes to correct Project based on tags
+- Project decides orchestration vs manual correctly
+- Orchestration manages task queue properly
+
+**Integration:**
+```python
+async def test_full_delegation_flow():
+    # Create hierarchy
+    global_instance = await create_global_instance()
+    project = await create_project_instance(parent=global_instance)
+    orchestration = await create_orchestration(parent=project)
+
+    # Create task at global
+    task = await create_task(instance=global_instance)
+
+    # Trigger delegation
+    await delegate_task(task)
+
+    # Verify delegation chain
+    chain = await get_delegation_chain(task)
+    assert len(chain) == 2  # Global→Project, Project→Orchestration
+
+    # Complete at orchestration level
+    await complete_task(task)
+
+    # Verify completion bubbled up
+    assert task.status == "completed"
+    for delegation in chain:
+        assert delegation.status == "completed"
+```
+
+### Testing Tools
+
+- **pytest** - Test framework
+- **pytest-asyncio** - Async test support
+- **pytest-cov** - Coverage reporting
+- **httpx** - Async HTTP client for API tests
+- **unittest.mock** - Mocking
+
+### Phase 1 Test Status
+
+Phase 1 tests at ~49% pass rate (131/267). Review failures and fix if related to Phase 2 changes, but don't spend excessive time on unrelated Phase 1 issues.
 
 ## Notes
 
-- Test multi-instance complexity thoroughly
-- Integration tests critical for Phase 2
-- Performance tests ensure production readiness
-- E2E tests validate complete user workflows
-- Consider chaos testing for resilience
-- Test with realistic orchestration scenarios
-- Mock external Czarina when needed
-- Ensure tests are deterministic and fast
+- Use `@pytest.mark.asyncio` for all async tests
+- Use fixtures extensively for test setup
+- Mock external dependencies in unit tests
+- Use real database for integration tests (consider test DB)
+- Add test markers: `@pytest.mark.unit`, `@pytest.mark.integration`
+- Consider parallel test execution with `pytest-xdist`

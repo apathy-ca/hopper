@@ -227,3 +227,77 @@ class HopperClient:
     def get_instance_status(self, instance_id: str) -> dict[str, Any]:
         """Get instance status."""
         return self.get(f"/api/v1/instances/{instance_id}/status")
+
+    # Delegation API methods
+    def delegate_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Delegate a task to another instance."""
+        return self.post(f"/api/v1/tasks/{task_id}/delegate", json=data)
+
+    def get_task_delegations(self, task_id: str) -> dict[str, Any]:
+        """Get delegation chain for a task."""
+        return self.get(f"/api/v1/tasks/{task_id}/delegations")
+
+    def accept_delegation(self, delegation_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Accept a delegation."""
+        return self.post(f"/api/v1/delegations/{delegation_id}/accept", json=data or {})
+
+    def reject_delegation(self, delegation_id: str, reason: str) -> dict[str, Any]:
+        """Reject a delegation."""
+        return self.post(f"/api/v1/delegations/{delegation_id}/reject", json={"reason": reason})
+
+    def complete_delegation(self, delegation_id: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Complete a delegation."""
+        return self.post(f"/api/v1/delegations/{delegation_id}/complete", json={"result": result})
+
+    def get_instance_delegations(self, instance_id: str, **params: Any) -> list[dict[str, Any]]:
+        """Get delegations for an instance."""
+        return self.get(f"/api/v1/instances/{instance_id}/delegations", params=params)
+
+    # Learning API methods
+    def submit_feedback(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Submit feedback for a task's routing decision."""
+        return self.post(f"/api/v1/tasks/{task_id}/feedback", json=data)
+
+    def get_task_feedback(self, task_id: str) -> dict[str, Any]:
+        """Get feedback for a specific task."""
+        return self.get(f"/api/v1/tasks/{task_id}/feedback")
+
+    def list_feedback(self, **params: Any) -> dict[str, Any]:
+        """List feedback records."""
+        return self.get("/api/v1/feedback", params=params)
+
+    def get_routing_accuracy(self, days: int = 30) -> dict[str, Any]:
+        """Get routing accuracy statistics."""
+        return self.get("/api/v1/feedback/accuracy", params={"days": days})
+
+    def create_pattern(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Create a routing pattern."""
+        return self.post("/api/v1/patterns", json=data)
+
+    def list_patterns(self, **params: Any) -> dict[str, Any]:
+        """List routing patterns."""
+        return self.get("/api/v1/patterns", params=params)
+
+    def get_pattern(self, pattern_id: str) -> dict[str, Any]:
+        """Get pattern by ID."""
+        return self.get(f"/api/v1/patterns/{pattern_id}")
+
+    def update_pattern(self, pattern_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Update pattern."""
+        return self.patch(f"/api/v1/patterns/{pattern_id}", json=data)
+
+    def delete_pattern(self, pattern_id: str) -> None:
+        """Delete pattern."""
+        return self.delete(f"/api/v1/patterns/{pattern_id}")
+
+    def match_patterns(self, **params: Any) -> list[dict[str, Any]]:
+        """Find patterns matching criteria."""
+        return self.post("/api/v1/patterns/match", params=params)
+
+    def get_learning_statistics(self) -> dict[str, Any]:
+        """Get overall learning statistics."""
+        return self.get("/api/v1/learning/statistics")
+
+    def run_consolidation(self, days: int = 7) -> dict[str, Any]:
+        """Run pattern consolidation."""
+        return self.post("/api/v1/learning/consolidate", params={"days": days})

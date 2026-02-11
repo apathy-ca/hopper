@@ -1,72 +1,100 @@
 {
   "project": {
-    "name": "hopper",
-    "slug": "hopper-v2_0_0",
+    "name": "Hopper Phase 2",
+    "slug": "hopper-phase2",
+    "repository": "/home/exedev/hopper",
+    "orchestration_dir": ".czarina",
     "version": "2.0.0",
     "phase": 2,
-    "omnibus_branch": "cz2/release/v2.0.0-phase2",
-    "repository": "/home/jhenry/Source/hopper",
-    "orchestration_dir": ".czarina"
+    "omnibus_branch": "cz2/release/v2.0.0",
+    "description": "Multi-instance support with hierarchical task delegation and scope-specific behaviors"
   },
-  "orchestration": {
-    "mode": "local",
-    "auto_push_branches": false
+  "agent_rules": {
+    "enabled": true,
+    "library_path": "/home/exedev/czarina/czarina-core/patterns/agent-knowledge",
+    "mode": "auto",
+    "condensed": true
   },
   "workers": [
     {
-      "id": "instance-architecture",
+      "id": "instance-api",
       "agent": "claude",
-      "branch": "cz2/feat/instance-architecture",
-      "description": "Implement HopperInstance class with scope support and lifecycle management",
-      "dependencies": []
+      "role": "code",
+      "branch": "cz2/feat/instance-api",
+      "description": "Implement instance API endpoints for CRUD, hierarchy, and lifecycle management",
+      "phase": 2,
+      "dependencies": [],
+      "token_budget": 300000
     },
     {
-      "id": "instance-registry",
+      "id": "task-delegation",
       "agent": "claude",
-      "branch": "cz2/feat/instance-registry",
-      "description": "Create instance registry, discovery, and parent-child relationships",
-      "dependencies": ["instance-architecture"]
+      "role": "code",
+      "branch": "cz2/feat/task-delegation",
+      "description": "Create TaskDelegation model, repository, and Pydantic schemas",
+      "phase": 2,
+      "dependencies": ["instance-api"],
+      "token_budget": 250000
     },
     {
       "id": "delegation-protocol",
       "agent": "claude",
+      "role": "code",
       "branch": "cz2/feat/delegation-protocol",
-      "description": "Build task delegation and completion notification between instances",
-      "dependencies": ["instance-registry"]
+      "description": "Implement delegation logic, routing, and completion bubbling",
+      "phase": 2,
+      "dependencies": ["task-delegation"],
+      "token_budget": 350000
     },
     {
       "id": "scope-behaviors",
       "agent": "claude",
+      "role": "code",
       "branch": "cz2/feat/scope-behaviors",
-      "description": "Implement Global, Project, and Orchestration specific routing logic",
-      "dependencies": ["delegation-protocol"]
+      "description": "Implement scope-specific routing and behavior logic for Global, Project, and Orchestration scopes",
+      "phase": 2,
+      "dependencies": ["delegation-protocol"],
+      "token_budget": 300000
     },
     {
-      "id": "instance-visualization",
+      "id": "instance-cli",
       "agent": "claude",
-      "branch": "cz2/feat/instance-visualization",
-      "description": "Build CLI commands and tools for viewing instance hierarchy",
-      "dependencies": ["scope-behaviors"]
+      "role": "code",
+      "branch": "cz2/feat/instance-cli",
+      "description": "Build CLI commands for instance management and tree visualization",
+      "phase": 2,
+      "dependencies": ["scope-behaviors"],
+      "token_budget": 280000
     },
     {
       "id": "testing",
       "agent": "claude",
+      "role": "test",
       "branch": "cz2/feat/testing",
-      "description": "Create comprehensive test suite for Phase 2 multi-instance features",
-      "dependencies": ["instance-visualization"]
+      "description": "Comprehensive test suite for all Phase 2 features including integration tests",
+      "phase": 2,
+      "dependencies": ["instance-cli"],
+      "token_budget": 400000
     },
     {
       "id": "integration",
       "agent": "claude",
-      "branch": "cz2/feat/integration",
-      "description": "Integration testing and Phase 2 completion",
       "role": "integration",
+      "branch": "cz2/release/v2.0.0",
+      "description": "Merge all Phase 2 workers, resolve conflicts, validate release, update documentation",
+      "phase": 2,
       "dependencies": ["testing"],
-      "merges": ["instance-architecture", "instance-registry", "delegation-protocol", "scope-behaviors", "instance-visualization", "testing"]
+      "token_budget": 300000
     }
   ],
+  "orchestration": {
+    "mode": "sequential_dependencies",
+    "allow_parallel_when_possible": true,
+    "timeout_hours": 72
+  },
   "daemon": {
     "enabled": true,
-    "auto_approve": ["read", "write", "commit"]
-  }
+    "auto_approve": ["read", "write", "edit", "commit"]
+  },
+  "phase_completion_mode": "strict"
 }

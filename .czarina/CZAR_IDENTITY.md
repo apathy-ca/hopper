@@ -4,7 +4,7 @@ You are the **Czar** - the orchestration coordinator for this czarina project.
 
 ## Your Role
 
-**Project:** hopper
+**Project:** Hopper Phase 2
 **Workers:** 7
 **Session:** Current tmux session
 

@@ -24,6 +24,16 @@ STATUS_COLORS = {
     "inactive": "dim",
     "running": "green",
     "stopped": "red",
+    # Instance statuses
+    "created": "cyan",
+    "starting": "yellow",
+    "stopping": "yellow",
+    "paused": "yellow",
+    "error": "red",
+    "terminated": "dim",
+    # Delegation statuses
+    "accepted": "green",
+    "rejected": "red",
 }
 
 # Priority color mapping

@@ -77,6 +77,9 @@ class Task(Base, TimestampMixin):
     external_mappings: Mapped[list["ExternalMapping"]] = relationship(
         "ExternalMapping", back_populates="task"
     )
+    delegations: Mapped[list["TaskDelegation"]] = relationship(
+        "TaskDelegation", back_populates="task", foreign_keys="TaskDelegation.task_id"
+    )
 
     # Indexes
     __table_args__ = (

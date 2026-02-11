@@ -1,221 +1,234 @@
-# Worker: Integration
+# Worker Identity: integration
 
-**Branch:** cz2/feat/integration
+**Role:** Integration
+**Agent:** claude
+**Branch:** cz2/release/v2.0.0
+**Phase:** 2
 **Dependencies:** testing
-**Duration:** 2-3 days
 
 ## Mission
 
-Merge all Phase 2 worker branches, resolve conflicts, ensure everything works together, validate Phase 2 success criteria, and prepare the Phase 2 release.
+Merge all Phase 2 worker branches into the release branch, resolve any conflicts, ensure all tests pass, update documentation, and prepare the v2.0.0 release. You are the final gatekeeper ensuring Phase 2 is ready for production.
 
-## Background
+## 📚 Knowledge Base
 
-This integration worker merges:
-- instance-architecture
-- instance-registry
-- delegation-protocol
-- scope-behaviors
-- instance-visualization
-- testing
+You have custom knowledge tailored for your role and tasks at:
+`.czarina/workers/integration-knowledge.md`
 
-And ensures Phase 2 multi-instance support is production-ready.
+This includes:
+- Git merge strategies and conflict resolution
+- Documentation update patterns
+- Release preparation checklist
+- Integration testing verification
 
-## Tasks
+**Read this before starting work** to understand the patterns and practices you should follow.
 
-### Task 1: Review All Worker Branches
+## 🚀 YOUR FIRST ACTION
 
-1. Check status of Phase 2 worker branches:
-   ```bash
-   git branch --list 'cz2/feat/*'
-   ```
+**Survey all worker branches and their status:**
 
-2. Review each worker's deliverables:
-   - instance-architecture: Enhanced model, lifecycle
-   - instance-registry: Registry, discovery, health
-   - delegation-protocol: Delegation, completion, coordination
-   - scope-behaviors: Global, Project, Orchestration logic
-   - instance-visualization: CLI tools, dashboards
-   - testing: Comprehensive test suite
+```bash
+# List all Phase 2 feature branches
+git branch -a | grep "cz2/feat/"
 
-3. Create integration checklist and plan merge order
+# Check each branch's commit count from master
+for branch in instance-api task-delegation delegation-protocol scope-behaviors instance-cli testing; do
+  echo "=== cz2/feat/$branch ==="
+  git log master..origin/cz2/feat/$branch --oneline 2>/dev/null | head -5 || echo "Branch not found or no commits"
+done
 
-**Checkpoint:** Document integration plan
+# Check for potential merge conflicts
+git log --all --decorate --oneline --graph | head -50
 
-### Task 2: Merge Worker Branches in Dependency Order
+# Verify current branch
+git branch --show-current
+```
 
-1. Merge in order:
-   ```
-   1. instance-architecture (foundation)
-   2. instance-registry (depends on architecture)
-   3. delegation-protocol (depends on registry)
-   4. scope-behaviors (depends on delegation)
-   5. instance-visualization (depends on behaviors)
-   6. testing (depends on all)
-   ```
+**Then:** Create a merge plan document and start merging branches in dependency order.
 
-2. For each merge:
-   - Run tests before merge
-   - Merge with `git merge --no-ff cz2/feat/<worker-id>`
-   - Resolve conflicts carefully
-   - Test after merge
-   - Fix integration issues
+## Objectives
 
-3. Document conflict resolutions
+1. **Create Integration Branch**
+   - Ensure you're on `cz2/release/v2.0.0` branch
+   - If branch doesn't exist, create from master
 
-**Checkpoint:** All workers merged
+2. **Merge Worker Branches in Order**
+   Order matters due to dependencies:
+   1. `cz2/feat/instance-api` (no dependencies)
+   2. `cz2/feat/task-delegation` (depends on instance-api)
+   3. `cz2/feat/delegation-protocol` (depends on task-delegation)
+   4. `cz2/feat/scope-behaviors` (depends on delegation-protocol)
+   5. `cz2/feat/instance-cli` (depends on scope-behaviors)
+   6. `cz2/feat/testing` (depends on instance-cli)
 
-### Task 3: Integration Testing and Bug Fixes
+3. **Resolve Merge Conflicts**
+   - Document all conflicts and resolutions
+   - Ensure no functionality is lost
+   - Test after each merge
 
-1. Run full test suite:
-   ```bash
-   pytest tests/ -v --cov=src/hopper
-   ```
+4. **Run Full Test Suite**
+   - Run all tests after final merge
+   - Fix any failing tests
+   - Ensure no Phase 1 regressions
 
-2. Verify all Phase 2 success criteria:
-   - ✅ Can create Global, Project, and Orchestration instances
-   - ✅ Tasks flow down hierarchy
-   - ✅ Completion bubbles up hierarchy
-   - ✅ Each scope has appropriate configuration
-   - ✅ Can visualize instance tree
-   - ✅ Czarina can use Orchestration Hopper
+5. **Run Alembic Migrations**
+   - Test migration on fresh database
+   - Test migration on existing database
+   - Document migration steps
 
-3. Test multi-instance workflows end-to-end
-4. Fix integration bugs
-5. Performance testing
-6. Load testing
+6. **Update Documentation**
+   - Update `README.md` with Phase 2 features
+   - Update `docs/ARCHITECTURE.md` with multi-instance details
+   - Create `docs/multi-instance-guide.md` - User guide
+   - Update API documentation (if exists)
 
-**Checkpoint:** All tests passing, bugs fixed
+7. **Validate Phase 2 Success Criteria**
+   All must pass:
+   - [ ] Can create Global, Project, Orchestration instances via API
+   - [ ] Can create instances via CLI
+   - [ ] Tasks can be delegated from Global → Project → Orchestration
+   - [ ] Completion bubbles up from Orchestration → Project → Global
+   - [ ] Delegation chain is fully traceable
+   - [ ] CLI shows instance hierarchy tree
+   - [ ] CLI shows instance status dashboard
+   - [ ] 90%+ test coverage on new code
+   - [ ] All tests passing
 
-### Task 4: Code Quality and Consistency
+8. **Create Release Notes**
+   - Summarize all Phase 2 features
+   - List breaking changes (if any)
+   - Document migration steps
+   - Credit workers
 
-1. Run quality checks:
-   ```bash
-   black src/ tests/
-   ruff check src/ tests/
-   mypy src/
-   ```
+9. **Tag Release**
+   - Create git tag: `v2.0.0-phase2`
+   - Push tag to remote
 
-2. Fix issues and ensure consistency
-3. Add missing docstrings
-4. Update type hints
-
-**Checkpoint:** Code quality passing
-
-### Task 5: Documentation Integration
-
-1. Create comprehensive Phase 2 documentation:
-   - Update README with Phase 2 features
-   - Create ARCHITECTURE_PHASE2.md
-   - Document multi-instance hierarchy
-   - Add configuration examples
-   - Update API reference
-
-2. Create `docs/multi-instance-guide.md`:
-   - Overview of multi-instance system
-   - How to use each scope
-   - Delegation workflows
-   - Configuration guide
-   - Troubleshooting
-
-3. Update CHANGELOG for Phase 2
-
-**Checkpoint:** Documentation complete
-
-### Task 6: Czarina Integration Validation
-
-1. Test Hopper with real Czarina orchestration:
-   - Create Orchestration Hopper
-   - Feed tasks to Czarina workers
-   - Validate coordination
-   - Test status updates
-
-2. Document Czarina-Hopper integration:
-   - How to set up
-   - Configuration
-   - Workflows
-   - Examples
-
-**Checkpoint:** Czarina integration validated
-
-### Task 7: Release Preparation
-
-1. Update version numbers:
-   - pyproject.toml: version = "2.0.0"
-   - __init__.py: __version__ = "2.0.0"
-
-2. Create release notes `RELEASE_NOTES_PHASE2.md`:
-   - Phase 2 overview
-   - New features
-   - Breaking changes
-   - Migration guide from Phase 1
-   - Known issues
-
-3. Tag release:
-   ```bash
-   git tag -a v2.0.0-phase2 -m "Phase 2 Complete: Multi-Instance Support"
-   ```
-
-**Checkpoint:** Release ready
-
-### Task 8: Final Validation and Handoff
-
-1. Complete validation:
-   - Fresh installation test
-   - All features work
-   - Documentation accurate
-   - No critical bugs
-
-2. Create `INTEGRATION_SUMMARY_PHASE2.md`:
-   - What was integrated
-   - Conflicts resolved
-   - Integration challenges
-   - Test results
-   - Code coverage
-   - Performance metrics
-   - Recommendations for Phase 3
-
-3. Prepare for Phase 3 (Memory & Learning)
-
-**Checkpoint:** Integration complete
+10. **Final PR to Master**
+    - Create PR from `cz2/release/v2.0.0` to `master`
+    - Include release notes in PR description
 
 ## Deliverables
 
-- [ ] All Phase 2 workers merged
-- [ ] All conflicts resolved
-- [ ] Full test suite passing
-- [ ] Code quality checks passing
-- [ ] Comprehensive Phase 2 documentation
-- [ ] Czarina integration validated
-- [ ] CHANGELOG and release notes
-- [ ] Version tagged (v2.0.0-phase2)
-- [ ] Integration summary
-- [ ] Ready for Phase 3
+- [ ] All worker branches merged to `cz2/release/v2.0.0`
+- [ ] All merge conflicts resolved
+- [ ] All tests passing (run full suite)
+- [ ] Alembic migrations tested
+- [ ] Updated `README.md`
+- [ ] Updated `docs/ARCHITECTURE.md`
+- [ ] Created `docs/multi-instance-guide.md`
+- [ ] Release notes document
+- [ ] Git tag `v2.0.0-phase2`
+- [ ] PR to master ready for Czar review
 
 ## Success Criteria
 
-- ✅ All 6 worker branches merged successfully
-- ✅ Zero merge conflicts remaining
-- ✅ All tests passing (unit, integration, e2e)
-- ✅ Code coverage >90% for Phase 2 features
-- ✅ All Phase 2 success criteria met
-- ✅ Czarina integration works
-- ✅ Multi-instance hierarchy functional
-- ✅ CLI visualization tools work
-- ✅ Documentation complete
-- ✅ Ready for production use
+- [ ] All Phase 2 success criteria validated
+- [ ] No test regressions (Phase 1 tests still pass)
+- [ ] Documentation complete and accurate
+- [ ] Clean merge to release branch
+- [ ] Release tagged and ready
 
-## References
+## Context
 
-- Implementation Plan: Phase 2
-- All worker branches: cz2/feat/*
-- Phase 2 Success Criteria
+### Merge Strategy
+
+Use `--no-ff` (no fast-forward) to preserve branch history:
+
+```bash
+git checkout cz2/release/v2.0.0
+git merge --no-ff cz2/feat/instance-api -m "Merge instance-api into release"
+```
+
+### Conflict Resolution Priority
+
+When resolving conflicts:
+1. Later workers generally have more complete implementations
+2. Test files should include all test cases from both branches
+3. Config changes should be merged carefully
+4. Documentation should include all changes
+
+### Phase 2 Success Criteria Checklist
+
+**Core Functionality:**
+- [ ] Instance CRUD via API works
+- [ ] Instance CRUD via CLI works
+- [ ] Delegation Global → Project → Orchestration works
+- [ ] Completion bubbles up automatically
+- [ ] Delegation chain is traceable
+
+**Scope Behaviors:**
+- [ ] Global routes to projects correctly
+- [ ] Project decides orchestration correctly
+- [ ] Orchestration manages queue correctly
+
+**Visualization:**
+- [ ] CLI tree shows hierarchy
+- [ ] CLI status dashboard works
+- [ ] Task filtering by instance works
+
+**Quality:**
+- [ ] 90%+ coverage on new code
+- [ ] All Phase 1 tests pass
+- [ ] No critical bugs
+
+### Documentation Updates
+
+**README.md additions:**
+- Multi-instance feature overview
+- Quick start for instance management
+- CLI command reference
+
+**ARCHITECTURE.md updates:**
+- Instance hierarchy diagram
+- Delegation flow diagram
+- Scope behavior descriptions
+
+**New: multi-instance-guide.md:**
+- Creating instance hierarchy
+- Delegating tasks
+- Monitoring with CLI
+- Best practices
+
+### Release Notes Template
+
+```markdown
+# Hopper v2.0.0 - Multi-Instance Support
+
+## Overview
+Phase 2 introduces hierarchical multi-instance support...
+
+## New Features
+- Instance hierarchy (Global → Project → Orchestration)
+- Task delegation between instances
+- Completion bubbling
+- Scope-specific behaviors
+- CLI instance management
+
+## Breaking Changes
+- None
+
+## Migration
+1. Run `alembic upgrade head`
+2. Create Global instance (optional)
+
+## Contributors
+- instance-api worker
+- task-delegation worker
+- delegation-protocol worker
+- scope-behaviors worker
+- instance-cli worker
+- testing worker
+- integration worker
+
+## Full Changelog
+[Link to commits]
+```
 
 ## Notes
 
-- Integration is critical - take time for quality
-- Test multi-instance scenarios thoroughly
-- Czarina integration is key use case
-- Document integration issues for learning
-- Prepare handoff notes for Phase 3
-- Consider creating regression tests
-- Performance metrics important for production
+- Test after EACH merge, not just at the end
+- Keep a log of all conflict resolutions
+- If a worker branch has issues, coordinate with Czar
+- Don't force push to release branch
+- Document any deviations from the plan

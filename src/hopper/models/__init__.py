@@ -10,6 +10,8 @@ from .enums import (
     ExecutorType,
     ExternalPlatform,
     HopperScope,
+    InstanceStatus,
+    InstanceType,
     TaskPriority,
     TaskSource,
     TaskStatus,
@@ -20,6 +22,7 @@ from .hopper_instance import HopperInstance
 from .project import Project
 from .routing_decision import RoutingDecision
 from .task import Task
+from .task_delegation import DelegationStatus, DelegationType, TaskDelegation
 from .task_feedback import TaskFeedback
 
 __all__ = [
@@ -31,10 +34,15 @@ __all__ = [
     "TaskFeedback",
     "ExternalMapping",
     "HopperInstance",
+    "TaskDelegation",
+    "DelegationType",
+    "DelegationStatus",
     # Enums
     "TaskStatus",
     "TaskPriority",
     "HopperScope",
+    "InstanceStatus",
+    "InstanceType",
     "DecisionStrategy",
     "ExecutorType",
     "VelocityRequirement",
