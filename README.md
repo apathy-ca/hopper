@@ -18,8 +18,18 @@ Hopper is a universal, multi-instance, hierarchical task queue designed for huma
 - **Scope Behaviors**: Each scope level has specialized routing logic
 - **Delegation Tracking**: Full traceability of task movement between instances
 
+### Memory & Learning (Phase 3)
+- **3-Tier Memory System**: Working → Episodic → Consolidated memory
+- **Pattern Learning**: Automatically learn routing patterns from feedback
+- **Feedback Collection**: Track routing accuracy and learn from corrections
+- **Memory Search**: Find similar past decisions and patterns
+
+### Local Storage Mode
+- **Markdown Backend**: Human-readable, git-friendly task storage
+- **Offline Operation**: Work without a server using local files
+- **Embedded Mode**: Auto-detect `.hopper/` directory in projects
+
 ### Planned Features
-- **3-Tier Memory System**: Working → Episodic → Consolidated memory (Phase 3)
 - **LLM Routing**: AI-powered routing decisions (Phase 4)
 - **Platform Integration**: Bidirectional sync with GitHub/GitLab (Phase 5)
 - **Federation Support**: Multi-Hopper coordination (Phase 6)
@@ -77,6 +87,10 @@ hopper task add "Implement user authentication"
 hopper task list
 hopper task list --status open --priority high
 
+# Local mode (no server required)
+hopper --local task add "Fix bug in login"
+hopper --local task list
+
 # Instance management (Phase 2)
 hopper instance list
 hopper instance tree                    # Show hierarchy
@@ -86,6 +100,11 @@ hopper instance start <instance-id>
 # Task delegation (Phase 2)
 hopper task delegate <task-id> --to <instance-id>
 hopper task delegations <task-id>       # Show delegation chain
+
+# Learning & feedback (Phase 3)
+hopper learning stats                   # View learning statistics
+hopper learning feedback submit <task-id> --good
+hopper learning pattern list            # View routing patterns
 ```
 
 #### API Server
@@ -121,7 +140,8 @@ hopper/
 │   │   └── routes/          # API endpoints
 │   │       ├── tasks.py
 │   │       ├── instances.py    # Instance CRUD (Phase 2)
-│   │       └── delegations.py  # Delegation API (Phase 2)
+│   │       ├── delegations.py  # Delegation API (Phase 2)
+│   │       └── learning.py     # Learning API (Phase 3)
 │   ├── delegation/          # Delegation protocol (Phase 2)
 │   │   ├── delegator.py     # Task delegation logic
 │   │   ├── router.py        # Instance routing
@@ -129,12 +149,21 @@ hopper/
 │   ├── intelligence/        # Routing strategies
 │   │   ├── rules/           # Rules-based routing
 │   │   └── scopes/          # Scope behaviors (Phase 2)
+│   ├── memory/              # Memory systems (Phase 3)
+│   │   ├── working/         # Working memory (session context)
+│   │   ├── episodic/        # Episode memory (decision history)
+│   │   ├── consolidated/    # Consolidated memory (patterns)
+│   │   ├── feedback/        # Feedback analytics
+│   │   ├── learning/        # Learning engine
+│   │   └── search/          # Memory search
+│   ├── storage/             # Local storage backend
+│   │   ├── markdown.py      # Markdown file storage
+│   │   ├── tasks.py         # Task store
+│   │   └── memory.py        # Episode/pattern/feedback stores
 │   ├── mcp/                 # MCP server implementation
 │   ├── cli/                 # Command-line interface
-│   ├── memory/              # Memory systems
 │   └── config/              # Configuration management
-├── tests/                   # Test suite
-│   └── phase2/              # Phase 2 tests
+├── tests/                   # Test suite (428 tests)
 ├── docs/                    # Documentation
 ├── plans/                   # Implementation plans
 └── pyproject.toml           # Project configuration
@@ -175,8 +204,12 @@ pytest --cov=hopper --cov-report=html
 
 - [Specification](docs/Hopper.Specification.md)
 - [Multi-Instance Guide](docs/multi-instance-guide.md) - Hierarchical instance architecture
+- [Local Mode Guide](docs/local-mode-guide.md) - Offline operation with markdown storage
+- [CLI Guide](docs/cli-guide.md) - Command-line interface reference
+- [Routing Guide](docs/routing-guide.md) - Task routing strategies
 - [Implementation Plan](plans/Hopper-Implementation-Plan.md)
-- [Phase 2 Plan](plans/Phase-2-Multi-Instance-Plan.md) - Multi-instance implementation details
+- [Phase 2 Plan](plans/Phase-2-Multi-Instance-Plan.md) - Multi-instance implementation
+- [Phase 3 Plan](plans/Phase-3-Memory-Learning-Plan.md) - Memory & learning system
 - [API Documentation](http://localhost:8000/docs) (when running)
 
 ## Contributing
@@ -219,14 +252,16 @@ See [Multi-Instance Guide](docs/multi-instance-guide.md) for details.
 
 ## Status
 
-**Current Phase**: Phase 2 - Multi-Instance Support (Complete)
-**Version**: 2.0.0
+**Current Phase**: Phase 3 - Memory & Learning (Complete)
+**Version**: 3.0.0
 
 | Phase | Status | Description |
 |-------|--------|-------------|
 | Phase 1 | Complete | Core Foundation |
 | Phase 2 | Complete | Multi-Instance Support |
-| Phase 3 | Planned | Memory & Learning |
+| Phase 3 | Complete | Memory & Learning |
 | Phase 4 | Planned | Intelligence Layer (LLM) |
 | Phase 5 | Planned | Platform Integration |
 | Phase 6 | Planned | Federation |
+
+**Test Coverage**: 428 tests, 59% coverage
