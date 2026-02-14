@@ -8,13 +8,53 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from click.testing import CliRunner
 
-from hopper.cli.config import APIConfig, AuthConfig, Config, ProfileConfig
+from hopper.cli.config import APIConfig, AuthConfig, Config, LocalConfig, ProfileConfig
 
 
 @pytest.fixture
 def runner() -> CliRunner:
     """Create a CLI test runner."""
     return CliRunner()
+
+
+@pytest.fixture
+def local_storage_path() -> Generator[Path, None, None]:
+    """Create a temporary directory for local storage tests."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+@pytest.fixture
+def local_config(local_storage_path: Path) -> Config:
+    """Create a configuration for local mode testing."""
+    config_path = local_storage_path / "config.yaml"
+
+    return Config(
+        active_profile="local",
+        profiles={
+            "local": ProfileConfig(
+                mode="local",
+                api=APIConfig(
+                    endpoint="http://localhost:8000",
+                    timeout=30,
+                ),
+                auth=AuthConfig(),
+                local=LocalConfig(
+                    path=local_storage_path,
+                    auto_detect_embedded=False,
+                ),
+            )
+        },
+        config_path=config_path,
+    )
+
+
+@pytest.fixture
+def local_context(local_config: Config) -> "Context":
+    """Create a CLI context for local mode testing."""
+    from hopper.cli.main import Context
+
+    return Context(config=local_config, verbose=False, json_output=True, local=True)
 
 
 @pytest.fixture

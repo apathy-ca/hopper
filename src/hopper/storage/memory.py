@@ -5,10 +5,15 @@ Memory storage implementations for episodes, patterns, and feedback.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+
+def _utc_now() -> datetime:
+    """Get current UTC time (timezone-aware)."""
+    return datetime.now(timezone.utc)
 
 from .markdown import MarkdownDocument, MarkdownStorage
 
@@ -146,7 +151,7 @@ class EpisodeMarkdownStore:
         factors: dict[str, Any] | None = None,
     ) -> LocalEpisode:
         """Record a routing episode."""
-        now = datetime.utcnow()
+        now = _utc_now()
         episode = LocalEpisode(
             id=f"ep-{uuid4().hex[:8]}",
             task_id=task_id,
@@ -169,7 +174,7 @@ class EpisodeMarkdownStore:
         """Get episode for a task (searches recent days)."""
         # Search last 30 days
         for days_ago in range(30):
-            date = datetime.utcnow() - timedelta(days=days_ago)
+            date = _utc_now() - timedelta(days=days_ago)
             _, episodes = self._load_day(date)
             for ep in episodes:
                 if ep.task_id == task_id:
@@ -185,14 +190,14 @@ class EpisodeMarkdownStore:
         """Mark episode outcome."""
         # Find and update the episode
         for days_ago in range(30):
-            date = datetime.utcnow() - timedelta(days=days_ago)
+            date = _utc_now() - timedelta(days=days_ago)
             meta, episodes = self._load_day(date)
 
             for i, ep in enumerate(episodes):
                 if ep.task_id == task_id:
                     ep.outcome_success = success
                     ep.outcome_duration = duration
-                    ep.completed_at = datetime.utcnow()
+                    ep.completed_at = _utc_now()
                     episodes[i] = ep
                     self._save_day(date, meta, episodes)
                     return ep
@@ -204,7 +209,7 @@ class EpisodeMarkdownStore:
         all_episodes = []
 
         for days_ago in range(days):
-            date = datetime.utcnow() - timedelta(days=days_ago)
+            date = _utc_now() - timedelta(days=days_ago)
             _, episodes = self._load_day(date)
             all_episodes.extend(episodes)
 
@@ -286,7 +291,7 @@ class LocalPattern:
             text_criteria=text_criteria or {},
             priority_criteria=priority_criteria,
             confidence=confidence,
-            created_at=datetime.utcnow(),
+            created_at=_utc_now(),
         )
 
     @property
@@ -490,7 +495,7 @@ class PatternMarkdownStore:
         else:
             pattern.failure_count += 1
 
-        pattern.last_used_at = datetime.utcnow()
+        pattern.last_used_at = _utc_now()
 
         # Adjust confidence based on outcome
         if pattern.usage_count >= 5:
@@ -518,7 +523,7 @@ class PatternMarkdownStore:
             text_criteria=text_criteria or {},
             priority_criteria=priority_criteria,
             confidence=confidence,
-            created_at=datetime.utcnow(),
+            created_at=_utc_now(),
         )
         self.save(pattern)
         return pattern
@@ -535,6 +540,7 @@ class LocalFeedback:
 
     task_id: str
     was_good_match: bool
+    id: str | None = None  # defaults to fb-{task_id}
     routing_feedback: str | None = None
     should_have_routed_to: str | None = None
     quality_score: float | None = None
@@ -542,6 +548,11 @@ class LocalFeedback:
     required_rework: bool | None = None
     notes: str | None = None
     created_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        """Set default id if not provided."""
+        if self.id is None:
+            self.id = f"fb-{self.task_id}"
 
     def to_frontmatter(self) -> dict[str, Any]:
         """Convert to frontmatter dict."""
@@ -616,7 +627,7 @@ class FeedbackMarkdownStore:
             complexity_rating=complexity_rating,
             required_rework=required_rework,
             notes=notes,
-            created_at=datetime.utcnow(),
+            created_at=_utc_now(),
         )
 
         # Build content
@@ -669,7 +680,7 @@ class FeedbackMarkdownStore:
 
     def get_accuracy_stats(self, days: int = 30) -> dict[str, Any]:
         """Get routing accuracy statistics."""
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = _utc_now() - timedelta(days=days)
         feedbacks = self.list(limit=1000)
 
         # Filter to recent

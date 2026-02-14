@@ -6,11 +6,17 @@ authentication, and server metadata.
 """
 
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MCPServerConfig(BaseSettings):
     """Configuration for the Hopper MCP server."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="HOPPER_",
+        case_sensitive=False,
+        env_file=".env",
+    )
 
     # Server metadata
     server_name: str = "hopper"
@@ -37,11 +43,6 @@ class MCPServerConfig(BaseSettings):
     # Logging
     log_level: str = "INFO"
     enable_debug: bool = False
-
-    class Config:
-        env_prefix = "HOPPER_"
-        case_sensitive = False
-        env_file = ".env"
 
 
 def get_mcp_config() -> MCPServerConfig:

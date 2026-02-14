@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class APIConfig(BaseModel):
@@ -47,6 +47,11 @@ class ProfileConfig(BaseModel):
 class Config(BaseSettings):
     """Main Hopper CLI configuration."""
 
+    model_config = SettingsConfigDict(
+        env_prefix="HOPPER_",
+        env_nested_delimiter="__",
+    )
+
     # Current active profile
     active_profile: str = Field(default="default", description="Active configuration profile")
 
@@ -60,10 +65,6 @@ class Config(BaseSettings):
         default_factory=lambda: Path.home() / ".hopper" / "config.yaml",
         description="Path to configuration file",
     )
-
-    class Config:
-        env_prefix = "HOPPER_"
-        env_nested_delimiter = "__"
 
     @property
     def current_profile(self) -> ProfileConfig:

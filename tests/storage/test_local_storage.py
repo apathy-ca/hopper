@@ -414,3 +414,193 @@ class TestFeedbackMarkdownStore:
         assert stats["total_feedback"] == 3
         assert stats["good_matches"] == 2
         assert stats["bad_matches"] == 1
+
+
+class TestEdgeCases:
+    """Test edge cases and error handling."""
+
+    def test_get_nonexistent_task(self, task_store):
+        """Test getting a task that doesn't exist returns None."""
+        result = task_store.get("nonexistent-task-id")
+        assert result is None
+
+    def test_get_nonexistent_episode(self, episode_store):
+        """Test getting episode for nonexistent task returns None."""
+        result = episode_store.get_for_task("nonexistent-task-id")
+        assert result is None
+
+    def test_get_nonexistent_pattern(self, pattern_store):
+        """Test getting nonexistent pattern returns None."""
+        result = pattern_store.get("nonexistent-pattern-id")
+        assert result is None
+
+    def test_get_nonexistent_feedback(self, feedback_store):
+        """Test getting feedback for nonexistent task returns None."""
+        result = feedback_store.get("nonexistent-task-id")
+        assert result is None
+
+    def test_task_with_special_characters(self, task_store):
+        """Test task with special characters in title and description."""
+        task = LocalTask.create(
+            title="Fix bug: 'TypeError' in module \"utils\"",
+            description="Code has <script> tags & special chars: é, ñ, 中文",
+            tags=["bug", "unicode"],
+        )
+        task_store.save(task)
+
+        loaded = task_store.get(task.id)
+        assert loaded is not None
+        assert "TypeError" in loaded.title
+        assert "中文" in loaded.description
+
+    def test_task_with_empty_tags(self, task_store):
+        """Test task with empty tags list."""
+        task = LocalTask.create(title="No Tags", tags=[])
+        task_store.save(task)
+
+        loaded = task_store.get(task.id)
+        assert loaded is not None
+        assert loaded.tags == []
+
+    def test_task_with_none_description(self, task_store):
+        """Test task with None description."""
+        task = LocalTask.create(title="No Description")
+        task.description = None
+        task_store.save(task)
+
+        loaded = task_store.get(task.id)
+        assert loaded is not None
+        # Description should be None or empty
+        assert loaded.description is None or loaded.description == ""
+
+    def test_search_with_special_regex_chars(self, task_store):
+        """Test search with special regex characters."""
+        task = LocalTask.create(title="Fix regex [a-z]+ issue")
+        task_store.save(task)
+
+        # Search should handle special chars gracefully
+        results = task_store.search("[a-z]")
+        assert len(results) == 1
+
+    def test_search_empty_query(self, task_store):
+        """Test search with empty query."""
+        task_store.save(LocalTask.create(title="Test Task"))
+
+        results = task_store.search("")
+        # Empty search should return all tasks or none
+        assert isinstance(results, list)
+
+    def test_list_with_limit(self, task_store):
+        """Test listing tasks with limit."""
+        for i in range(10):
+            task_store.save(LocalTask.create(title=f"Task {i}"))
+
+        limited = task_store.list(limit=5)
+        assert len(limited) == 5
+
+    def test_list_empty_store(self, task_store):
+        """Test listing when no tasks exist."""
+        tasks = task_store.list()
+        assert tasks == []
+
+    def test_episode_with_zero_confidence(self, episode_store):
+        """Test episode with zero confidence."""
+        episode = episode_store.record(
+            task_id="task-zero",
+            chosen_instance="local",
+            confidence=0.0,
+        )
+        assert episode.confidence == 0.0
+
+    def test_episode_with_max_confidence(self, episode_store):
+        """Test episode with maximum confidence."""
+        episode = episode_store.record(
+            task_id="task-max",
+            chosen_instance="local",
+            confidence=1.0,
+        )
+        assert episode.confidence == 1.0
+
+    def test_pattern_with_empty_criteria(self, pattern_store):
+        """Test pattern with no criteria."""
+        pattern = LocalPattern.create(
+            name="Empty Criteria",
+            target_instance="local",
+            tag_criteria=None,
+            text_criteria=None,
+        )
+        pattern_store.save(pattern)
+
+        loaded = pattern_store.get(pattern.id)
+        assert loaded is not None
+        # Storage converts None to empty dict
+        assert loaded.tag_criteria is None or loaded.tag_criteria == {}
+
+    def test_feedback_with_all_fields(self, feedback_store):
+        """Test feedback with all optional fields populated."""
+        feedback = feedback_store.save(
+            task_id="task-full",
+            was_good_match=True,
+            routing_feedback="Great routing decision",
+            should_have_routed_to=None,
+            quality_score=5.0,
+            complexity_rating=3,
+            required_rework=False,
+            notes="Additional notes here",
+        )
+
+        loaded = feedback_store.get("task-full")
+        assert loaded is not None
+        assert loaded.quality_score == 5.0
+        assert loaded.complexity_rating == 3
+        assert loaded.required_rework is False
+        assert loaded.notes == "Additional notes here"
+
+    def test_feedback_overwrite(self, feedback_store):
+        """Test that saving feedback overwrites existing."""
+        feedback_store.save(task_id="task-overwrite", was_good_match=True)
+        feedback_store.save(task_id="task-overwrite", was_good_match=False)
+
+        loaded = feedback_store.get("task-overwrite")
+        assert loaded is not None
+        assert loaded.was_good_match is False
+
+    def test_mark_outcome_nonexistent_episode(self, episode_store):
+        """Test marking outcome for nonexistent episode."""
+        result = episode_store.mark_outcome("nonexistent", success=True)
+        assert result is None
+
+    def test_update_status_nonexistent_task(self, task_store):
+        """Test updating status of nonexistent task."""
+        result = task_store.update_status("nonexistent", "completed")
+        assert result is None
+
+    def test_add_tags_nonexistent_task(self, task_store):
+        """Test adding tags to nonexistent task."""
+        result = task_store.add_tags("nonexistent", ["tag"])
+        assert result is None
+
+    def test_remove_tags_nonexistent_task(self, task_store):
+        """Test removing tags from nonexistent task."""
+        result = task_store.remove_tags("nonexistent", ["tag"])
+        assert result is None
+
+
+class TestLocalFeedbackId:
+    """Test LocalFeedback id generation."""
+
+    def test_feedback_has_id(self, feedback_store):
+        """Test that feedback has an id field."""
+        feedback = feedback_store.save(task_id="task-id-test", was_good_match=True)
+        assert feedback.id is not None
+        assert feedback.id == "fb-task-id-test"
+
+    def test_feedback_id_auto_generated(self):
+        """Test that LocalFeedback auto-generates id from task_id."""
+        feedback = LocalFeedback(task_id="my-task", was_good_match=True)
+        assert feedback.id == "fb-my-task"
+
+    def test_feedback_id_can_be_set(self):
+        """Test that LocalFeedback id can be explicitly set."""
+        feedback = LocalFeedback(task_id="my-task", was_good_match=True, id="custom-id")
+        assert feedback.id == "custom-id"

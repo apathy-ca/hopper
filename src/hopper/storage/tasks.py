@@ -5,10 +5,15 @@ Task storage implementations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+
+def _utc_now() -> datetime:
+    """Get current UTC time (timezone-aware)."""
+    return datetime.now(timezone.utc)
 
 from .base import TaskStore
 from .markdown import MarkdownDocument, MarkdownStorage
@@ -50,8 +55,8 @@ class LocalTask:
             tags=tags or [],
             project=project,
             status=status,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=_utc_now(),
+            updated_at=_utc_now(),
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -112,7 +117,7 @@ class TaskMarkdownStore:
 
     def save(self, task: LocalTask) -> None:
         """Save task to markdown file."""
-        task.updated_at = datetime.utcnow()
+        task.updated_at = _utc_now()
 
         doc = MarkdownDocument(
             frontmatter=task.to_frontmatter(),

@@ -7,11 +7,16 @@ Human-readable, git-friendly storage using markdown with YAML frontmatter.
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+def _utc_now() -> datetime:
+    """Get current UTC time (timezone-aware)."""
+    return datetime.now(timezone.utc)
 
 from .base import StorageBackend, StorageConfig
 
@@ -205,7 +210,7 @@ class MarkdownStorage(StorageBackend):
             return
 
         index_file = self.index_path / "tasks.json"
-        self._index["generated_at"] = datetime.utcnow().isoformat()
+        self._index["generated_at"] = _utc_now().isoformat()
         index_file.write_text(
             json.dumps(self._index, indent=2, default=str),
             encoding="utf-8",
@@ -219,7 +224,7 @@ class MarkdownStorage(StorageBackend):
             "by_status": {},
             "by_tag": {},
             "by_project": {},
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": _utc_now().isoformat(),
         }
 
         for task_file in self.list_files(self.tasks_path):
