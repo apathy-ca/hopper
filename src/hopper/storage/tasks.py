@@ -35,6 +35,13 @@ class LocalTask:
     depends_on: list[str] = field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # External platform integration
+    external_id: str | None = None
+    external_url: str | None = None
+    external_platform: str | None = None
+    context: str | None = None
+    requester: str | None = None
+    owner: str | None = None
 
     @classmethod
     def create(
@@ -45,6 +52,14 @@ class LocalTask:
         tags: list[str] | None = None,
         project: str | None = None,
         status: str = "pending",
+        source: str = "cli",
+        external_id: str | None = None,
+        external_url: str | None = None,
+        external_platform: str | None = None,
+        context: str | None = None,
+        requester: str | None = None,
+        owner: str | None = None,
+        **kwargs: Any,  # Accept and ignore unknown fields
     ) -> "LocalTask":
         """Create a new task with generated ID."""
         return cls(
@@ -55,13 +70,20 @@ class LocalTask:
             tags=tags or [],
             project=project,
             status=status,
+            source=source,
+            external_id=external_id,
+            external_url=external_url,
+            external_platform=external_platform,
+            context=context,
+            requester=requester,
+            owner=owner,
             created_at=_utc_now(),
             updated_at=_utc_now(),
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
         """Convert to frontmatter dict."""
-        return {
+        data = {
             "id": self.id,
             "title": self.title,
             "status": self.status,
@@ -74,6 +96,20 @@ class LocalTask:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+        # Add external fields if present
+        if self.external_id:
+            data["external_id"] = self.external_id
+        if self.external_url:
+            data["external_url"] = self.external_url
+        if self.external_platform:
+            data["external_platform"] = self.external_platform
+        if self.context:
+            data["context"] = self.context
+        if self.requester:
+            data["requester"] = self.requester
+        if self.owner:
+            data["owner"] = self.owner
+        return data
 
     @classmethod
     def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> "LocalTask":
@@ -94,6 +130,12 @@ class LocalTask:
             depends_on=fm.get("depends_on", []),
             created_at=datetime.fromisoformat(created) if isinstance(created, str) else created,
             updated_at=datetime.fromisoformat(updated) if isinstance(updated, str) else updated,
+            external_id=fm.get("external_id"),
+            external_url=fm.get("external_url"),
+            external_platform=fm.get("external_platform"),
+            context=fm.get("context"),
+            requester=fm.get("requester"),
+            owner=fm.get("owner"),
         )
 
 

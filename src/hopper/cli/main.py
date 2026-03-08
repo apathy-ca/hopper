@@ -106,6 +106,7 @@ def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool
 
 # Import command groups
 from hopper.cli.commands.config import auth, config_group, init
+from hopper.cli.commands.github import github
 from hopper.cli.commands.instance import instance
 from hopper.cli.commands.learning import learning
 from hopper.cli.commands.project import project
@@ -117,6 +118,7 @@ cli.add_command(task)
 cli.add_command(project)
 cli.add_command(instance)
 cli.add_command(learning)
+cli.add_command(github)
 cli.add_command(config_group, name="config")
 cli.add_command(init)
 cli.add_command(auth)

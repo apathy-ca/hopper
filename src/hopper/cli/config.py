@@ -35,6 +35,13 @@ class AuthConfig(BaseModel):
     api_key: str | None = Field(default=None, description="API key")
 
 
+class GitHubConfig(BaseModel):
+    """GitHub integration configuration."""
+
+    token: str | None = Field(default=None, description="GitHub personal access token")
+    default_owner: str | None = Field(default=None, description="Default repository owner")
+
+
 class ProfileConfig(BaseModel):
     """Configuration profile."""
 
@@ -42,6 +49,7 @@ class ProfileConfig(BaseModel):
     api: APIConfig = Field(default_factory=APIConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     local: LocalConfig = Field(default_factory=LocalConfig)
+    github: GitHubConfig = Field(default_factory=GitHubConfig)
 
 
 class Config(BaseSettings):
@@ -92,6 +100,10 @@ class Config(BaseSettings):
                         "path": str(profile.local.path),
                         "auto_detect_embedded": profile.local.auto_detect_embedded,
                     },
+                    "github": {
+                        "token": profile.github.token,
+                        "default_owner": profile.github.default_owner,
+                    },
                 }
                 for name, profile in self.profiles.items()
             },
@@ -120,6 +132,7 @@ class Config(BaseSettings):
                 api=APIConfig(**profile_data.get("api", {})),
                 auth=AuthConfig(**profile_data.get("auth", {})),
                 local=LocalConfig(**local_data) if local_data else LocalConfig(),
+                github=GitHubConfig(**profile_data.get("github", {})),
             )
 
         return cls(

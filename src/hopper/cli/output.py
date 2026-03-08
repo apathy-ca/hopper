@@ -10,6 +10,7 @@ from rich.table import Table
 from rich.tree import Tree
 
 console = Console()
+error_console = Console(stderr=True)
 
 
 # Status color mapping
@@ -325,7 +326,7 @@ def print_error(message: str) -> None:
     Args:
         message: Error message
     """
-    console.print(f"[bold red]✗[/bold red] {message}", err=True)
+    error_console.print(f"[bold red]✗[/bold red] {message}")
 
 
 def print_warning(message: str) -> None:
