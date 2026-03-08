@@ -129,5 +129,10 @@ cli.add_command(add_shortcut)
 cli.add_command(ls_shortcut)
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for the CLI."""
     cli()
+
+
+if __name__ == "__main__":
+    main()
