@@ -4,20 +4,30 @@
 
 Hopper gives AI agents long-term memory. Track tasks, store notes, record feedback, and maintain context across sessions.
 
-## Quick Install
+## Install
 
 ```bash
-# Clone and install
-git clone https://github.com/apathy-ca/hopper.git
-cd hopper
-pip install -e .
+curl -fsSL https://raw.githubusercontent.com/apathy-ca/hopper/master/install.sh | bash
+```
 
-# Initialize in your project
+Then initialize in your project:
+
+```bash
 cd /path/to/your/project
 hopper init
 ```
 
 That's it. You now have a `.hopper/` directory for persistent storage.
+
+<details>
+<summary>Manual install</summary>
+
+```bash
+git clone https://github.com/apathy-ca/hopper.git
+cd hopper
+pip install -e .
+```
+</details>
 
 ## For AI Agents (Claude Code)
 
