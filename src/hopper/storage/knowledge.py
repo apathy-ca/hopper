@@ -124,6 +124,29 @@ hopper task update <id> --status in_progress
 Tasks are stored in `.hopper/tasks/` as markdown files with YAML frontmatter.
 Git-friendly and human-readable.
 
+## Adding Hopper to a Project
+
+```bash
+cd /path/to/project
+hopper init
+```
+
+This creates `.hopper/` with:
+- `tasks/` - Your tasks and learnings (markdown, commit these)
+- `knowledge/` - Agent knowledge synced from GitHub
+- `memory/` - Patterns and episodes
+- `.index/` - Cache (gitignored, regenerated)
+
+Knowledge is auto-synced from https://github.com/apathy-ca/agent-knowledge based on detected project type.
+
+## Knowledge Commands
+
+```bash
+hopper knowledge list      # Show available knowledge
+hopper knowledge sync      # Re-sync from GitHub
+hopper knowledge show      # Display this file
+```
+
 ## MCP Server
 
 Hopper can run as an MCP server for direct tool integration:

@@ -56,13 +56,46 @@ Before ending a session, record state:
 
 Tasks are stored locally in `.hopper/` as markdown files. They persist across sessions and can be version controlled.
 
+## Adding Hopper to a Project
+
+```bash
+cd /path/to/project
+hopper init
+```
+
+This creates:
+```
+.hopper/
+├── config.yaml      # Instance config
+├── tasks/           # Tasks and learnings (markdown)
+├── knowledge/       # Agent knowledge (synced from GitHub)
+│   ├── hopper-usage.md        # Built-in usage guide
+│   └── agent-knowledge/       # Synced patterns & standards
+├── memory/          # Patterns and episodes
+├── feedback/        # Routing feedback
+└── .index/          # Cache (gitignored, regenerated)
+```
+
+**What gets committed:** Everything except `.hopper/.index/` (auto-added to .gitignore).
+
+**Knowledge sync:** On init, Hopper clones relevant sections from [agent-knowledge](https://github.com/apathy-ca/agent-knowledge) based on detected project type (Python, MCP, Czarina, etc.).
+
+## Knowledge Commands
+
+```bash
+hopper knowledge list      # Show available knowledge
+hopper knowledge sync      # Re-sync from GitHub
+hopper knowledge show      # Display hopper-usage.md
+hopper knowledge refresh   # Update built-in docs
+```
+
 ## Full CLI
 
 For advanced usage:
 ```bash
 hopper task list
 hopper task add "Task" --priority high
-hopper learning suggest  # AI-powered suggestions
+hopper knowledge sync --full  # Sync entire agent-knowledge repo
 hopper github import owner/repo --all  # Sync GitHub issues
 ```
 
