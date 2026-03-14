@@ -106,12 +106,88 @@ class LocalClient:
         tasks = self.task_store.list(**filters)
         return [self._task_to_dict(t) for t in tasks]
 
+    def create_task_with_brief(self, data: dict[str, Any], brief: str) -> dict[str, Any]:
+        """Create a task whose body is a full markdown brief.
+
+        Identical to create_task but stores the brief as the task description
+        (which maps to the markdown body in local storage). Use this when the
+        worker's full instruction document needs to live in hopper rather than
+        just a one-liner description.
+
+        Args:
+            data: Task metadata (title, priority, tags, etc.)
+            brief: Full markdown content to store as the task body
+
+        Returns:
+            Created task as dict
+        """
+        task = LocalTask.create(
+            title=data.get("title", "Untitled"),
+            description=brief,
+            priority=data.get("priority", "medium"),
+            tags=data.get("tags", []),
+            project=data.get("project_id"),
+            status=data.get("status", "open"),
+        )
+        self.task_store.save(task)
+        return self._task_to_dict(task)
+
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Get task by ID."""
         task = self.task_store.get(task_id)
         if task is None:
             raise LocalClientError(f"Task not found: {task_id}")
         return self._task_to_dict(task)
+
+    def get_task_with_lessons(
+        self, task_id: str, project_slug: str | None = None
+    ) -> dict[str, Any]:
+        """Get a task with relevant lessons appended to its description.
+
+        Queries the lesson store for lessons matching the task's project and
+        tags, and appends a '## Relevant Lessons' section to the description
+        if any high-confidence lessons are found.
+
+        Args:
+            task_id: Task ID to retrieve
+            project_slug: Project slug to filter lessons by (uses task tags if not provided)
+
+        Returns:
+            Task dict with description augmented by relevant lessons
+        """
+        task = self.task_store.get(task_id)
+        if task is None:
+            raise LocalClientError(f"Task not found: {task_id}")
+
+        result = self._task_to_dict(task)
+
+        # Query lesson store for relevant lessons (lesson_store wired up by lessons plan)
+        lesson_store = getattr(self, "lesson_store", None)
+        lessons: list[dict[str, Any]] = []
+
+        if lesson_store is not None:
+            lessons = lesson_store.list(project_slug=project_slug, confidence="high")
+
+            # Fallback: match by role tag domain if no project_slug provided
+            if not lessons and not project_slug and task.tags:
+                domain_tags = [t for t in task.tags if t.startswith("role-")]
+                if domain_tags:
+                    domain = domain_tags[0].removeprefix("role-")
+                    lessons = lesson_store.list(domain=domain, confidence="high")
+
+        if lessons:
+            lesson_section = "\n\n---\n## Relevant Lessons\n\n"
+            lesson_section += "_These lessons were filed by previous workers on this project._\n\n"
+            for lesson in lessons:
+                lesson_section += f"### {lesson.get('title', 'Lesson')}"
+                if lesson.get("domain"):
+                    lesson_section += f" `{lesson['domain']}`"
+                lesson_section += "\n"
+                if lesson.get("body"):
+                    lesson_section += lesson["body"] + "\n\n"
+            result["description"] = (result.get("description") or "") + lesson_section
+
+        return result
 
     def update_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update task."""
@@ -323,8 +399,7 @@ class LocalClient:
             priority=params.get("priority"),
         )
         return [
-            {**self._pattern_to_dict(pattern), "match_score": score}
-            for pattern, score in matches
+            {**self._pattern_to_dict(pattern), "match_score": score} for pattern, score in matches
         ]
 
     def _pattern_to_dict(self, pattern: LocalPattern) -> dict[str, Any]:
@@ -388,12 +463,14 @@ class LocalClient:
 
     def list_instances(self, **params: Any) -> list[dict[str, Any]]:
         """List instances (returns local instance only)."""
-        return [{
-            "id": "local",
-            "name": "Local Hopper",
-            "scope": "personal",
-            "status": "running",
-        }]
+        return [
+            {
+                "id": "local",
+                "name": "Local Hopper",
+                "scope": "personal",
+                "status": "running",
+            }
+        ]
 
     def delegate_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
         """Delegate task (not supported in local mode)."""

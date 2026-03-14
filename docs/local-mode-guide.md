@@ -221,3 +221,98 @@ The `.index/` directory is automatically gitignored. Task and pattern files are 
 - Meaningful filenames (task IDs)
 
 Add `.hopper` to your project's `.gitignore` if you don't want to track tasks in version control, or commit it to share project-specific patterns and configurations.
+
+---
+
+## Czarina Integration
+
+[Czarina](https://github.com/apathy-ca/czarina) uses Hopper local mode as its
+persistent instruction store and lesson system for multi-agent orchestrations.
+
+### How Czarina uses local mode
+
+Czarina always passes `--local`. It uses project-embedded `.hopper/` when
+available (auto-detected), falling back to `~/.hopper/` globally.
+
+**Full brief storage:**
+
+Czarina stores each worker's complete task brief as the Hopper task body using
+the `--brief-file` flag:
+
+```bash
+hopper --local task add "[backend] Build the REST API" \
+  --brief-file .czarina/workers/backend.md \
+  --tag czarina --tag my-project --tag worker-backend --tag role-code \
+  --priority high \
+  --non-interactive
+```
+
+**Brief retrieval with lessons:**
+
+Workers retrieve their full brief (with any relevant lessons prepended) using:
+
+```bash
+hopper --local task get task-abc12345 --with-lessons
+```
+
+The `--with-lessons` flag queries the lesson store for high-confidence lessons
+matching the task's project and domain, and appends a `## Relevant Lessons`
+section to the output.
+
+**Lesson filing:**
+
+Workers file lessons on completion:
+
+```bash
+hopper --local lesson add \
+  --task task-abc12345 \
+  --title "SQLAlchemy async sessions are not thread-safe" \
+  --domain python \
+  --confidence high \
+  --non-interactive \
+  --body "..."
+```
+
+**Non-interactive mode:**
+
+Czarina always passes `--non-interactive` to suppress prompts for scripted use.
+All required fields are passed as flags.
+
+### Czarina tag conventions
+
+| Tag | Meaning |
+|-----|---------|
+| `czarina` | All Czarina-managed tasks |
+| `<project-slug>` | Project identifier (e.g., `my-api`) |
+| `worker-<id>` | Worker identifier (e.g., `worker-backend`) |
+| `role-<role>` | Worker role (e.g., `role-code`, `role-qa`) |
+| `phase-<n>` | Phase number (on project task) |
+
+These tags allow querying at any granularity:
+
+```bash
+hopper --local task list --tag czarina               # All Czarina tasks
+hopper --local task list --tag my-api                # All tasks for a project
+hopper --local task list --tag worker-backend        # One worker's tasks
+hopper --local lesson list --project my-api          # All lessons for a project
+```
+
+### Task ID persistence
+
+Czarina persists all Hopper task IDs in `.czarina/hopper-tasks.json`:
+
+```json
+{
+  "project_task_id": "task-abc12345",
+  "workers": {
+    "backend": "task-def67890",
+    "qa": "task-ghi11121"
+  }
+}
+```
+
+This allows `czarina status` and `czarina closeout` to look up task IDs without
+querying Hopper by tag.
+
+See [Czarina docs/HOPPER.md](https://github.com/apathy-ca/czarina/docs/HOPPER.md)
+for the complete integration guide.

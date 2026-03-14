@@ -190,6 +190,46 @@ For Claude Desktop integration:
 }
 ```
 
+### Czarina Integration
+
+Hopper is the persistent instruction store and lesson system for
+[Czarina](https://github.com/apathy-ca/czarina), a multi-agent orchestration
+framework. When a Czarina orchestration launches:
+
+- Each worker's full task brief is stored as a Hopper task body
+- Workers retrieve their brief with `hopper --local task get <id> --with-lessons`
+- Workers recover from session crashes with two commands — no orchestrator needed
+- Lessons filed by workers are automatically injected into subsequent workers' briefs
+
+Czarina uses local mode only (`--local` flag). No server required.
+
+**Czarina-specific CLI additions:**
+
+```bash
+# Store a full markdown brief as a task body
+hopper --local task add "[worker-id] Title" \
+  --brief-file .czarina/workers/backend.md \
+  --tag czarina --tag my-project --tag worker-backend \
+  --non-interactive
+
+# Retrieve brief with relevant lessons prepended
+hopper --local task get task-abc12345 --with-lessons
+
+# File a lesson for future workers
+hopper --local lesson add \
+  --task task-abc12345 \
+  --title "What I learned" \
+  --domain python \
+  --confidence high \
+  --non-interactive \
+  --body "..."
+```
+
+See the [Czarina repository](https://github.com/apathy-ca/czarina) for the full
+integration guide.
+
+---
+
 ## Development
 
 ```bash

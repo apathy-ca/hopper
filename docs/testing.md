@@ -12,6 +12,39 @@ Comprehensive testing documentation for the Hopper task routing system.
 6. [Test Fixtures and Factories](#test-fixtures-and-factories)
 7. [Coverage Requirements](#coverage-requirements)
 8. [CI/CD Integration](#cicd-integration)
+9. [Czarina Integration Tests](#czarina-integration-tests)
+
+## Czarina Integration Tests
+
+The [Czarina](https://github.com/apathy-ca/czarina) multi-agent orchestration
+framework uses Hopper as its persistent instruction store. Czarina maintains its
+own integration test suite that exercises the Hopper local-mode CLI as used by
+Czarina's orchestration engine.
+
+**Location:** `czarina-core/tests/test-hopper-instruction-store.sh`
+(in the Czarina repository)
+
+**Run:**
+```bash
+# From the czarina repo root
+bash czarina-core/tests/test-hopper-instruction-store.sh
+```
+
+**Coverage:** 52 assertions testing:
+- `hopper --local task add --brief-file` (full brief storage)
+- `hopper --local task get --with-lessons` (brief + lesson retrieval)
+- `hopper --local task add --non-interactive` (scripted task creation)
+- `hopper --local task status --force` (status transitions without prompts)
+- Tag filtering, JSON output, and task ID round-trips
+
+These tests exercise the Hopper CLI's local mode from a real integration
+perspective, complementing Hopper's own unit and integration test suite.
+
+**Features exercised by Czarina that Hopper unit tests may not cover:**
+- Storing multi-kilobyte markdown files as task bodies via `--brief-file`
+- The `--with-lessons` flag response when no lesson store is configured
+- The `--non-interactive` flag suppressing all prompts in scripted use
+- Tag-based task discovery patterns used for session recovery
 
 ## Overview
 
