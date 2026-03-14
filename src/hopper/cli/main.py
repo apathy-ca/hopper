@@ -111,6 +111,7 @@ from hopper.cli.commands.config import auth, config_group, init
 from hopper.cli.commands.context import context
 from hopper.cli.commands.github import github
 from hopper.cli.commands.instance import instance
+from hopper.cli.commands.knowledge import knowledge
 from hopper.cli.commands.learning import learning
 from hopper.cli.commands.project import project
 from hopper.cli.commands.server import server
@@ -121,6 +122,7 @@ cli.add_command(task)
 cli.add_command(project)
 cli.add_command(instance)
 cli.add_command(learning)
+cli.add_command(knowledge)
 cli.add_command(context)
 cli.add_command(github)
 cli.add_command(config_group, name="config")

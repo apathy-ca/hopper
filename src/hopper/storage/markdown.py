@@ -92,6 +92,7 @@ class MarkdownStorage(StorageBackend):
         self.episodes_path = self.base_path / "memory" / "episodes"
         self.patterns_path = self.base_path / "memory" / "patterns"
         self.feedback_path = self.base_path / "feedback"
+        self.knowledge_path = self.base_path / "knowledge"
         self.index_path = self.base_path / ".index"
 
         # Index cache
@@ -105,6 +106,7 @@ class MarkdownStorage(StorageBackend):
             self.episodes_path,
             self.patterns_path,
             self.feedback_path,
+            self.knowledge_path,
             self.index_path,
         ]:
             path.mkdir(parents=True, exist_ok=True)

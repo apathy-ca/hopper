@@ -1,6 +1,8 @@
 """Configuration and authentication commands."""
 
 
+from pathlib import Path
+
 import click
 from rich import box
 from rich.prompt import Confirm, Prompt
@@ -19,31 +21,157 @@ from hopper.cli.output import (
 )
 
 
+# Default agent-knowledge source
+DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
+
+
 @click.command(name="init")
-@click.option("--profile", default="default", help="Profile name to initialize")
-@click.option("--endpoint", help="API endpoint URL")
+@click.option("--embedded", "-e", is_flag=True, help="Initialize embedded .hopper in current directory")
+@click.option("--knowledge-source", "-k", help="Path to agent-knowledge repo")
+@click.option("--no-knowledge", is_flag=True, help="Skip agent-knowledge sync (only hopper-usage.md)")
+@click.option("--auto-detect", is_flag=True, default=True, help="Auto-detect project type for relevant knowledge")
+@click.option("--profile", default="default", help="Profile name (for server mode)")
+@click.option("--endpoint", help="API endpoint URL (for server mode)")
+@click.option("--server", "-s", is_flag=True, help="Initialize for server mode instead of local")
 @click.option("--non-interactive", is_flag=True, help="Non-interactive mode")
 @click.pass_obj
 def init(
+    ctx: Context,
+    embedded: bool,
+    knowledge_source: str | None,
+    no_knowledge: bool,
+    auto_detect: bool,
+    profile: str,
+    endpoint: str | None,
+    server: bool,
+    non_interactive: bool,
+) -> None:
+    """Initialize Hopper for a project or globally.
+
+    By default, creates an embedded .hopper directory in the current project
+    with hopper-usage.md and relevant agent-knowledge synced from the
+    exe.dev standard location.
+
+    Examples:
+        hopper init                     # Initialize in current directory (default)
+        hopper init --no-knowledge      # Skip agent-knowledge, just hopper-usage.md
+        hopper init -k /path/to/knowledge  # Use custom knowledge source
+        hopper init --server            # Initialize server mode config
+        hopper init --server --endpoint https://api.hopper.io
+    """
+    # Server mode initialization (original behavior)
+    if server:
+        _init_server_mode(ctx, profile, endpoint, non_interactive)
+        return
+
+    # Local/embedded mode initialization (new default)
+    _init_local_mode(
+        ctx,
+        embedded=True,  # Always embedded for local init
+        knowledge_source=knowledge_source,
+        no_knowledge=no_knowledge,
+        auto_detect=auto_detect,
+        non_interactive=non_interactive,
+    )
+
+
+def _init_local_mode(
+    ctx: Context,
+    embedded: bool,
+    knowledge_source: str | None,
+    no_knowledge: bool,
+    auto_detect: bool,
+    non_interactive: bool,
+) -> None:
+    """Initialize local/embedded Hopper storage with knowledge."""
+    from hopper.storage import StorageConfig, MarkdownStorage
+    from hopper.storage.knowledge import initialize_knowledge, DEFAULT_KNOWLEDGE_SOURCE
+
+    # Determine storage path
+    if embedded:
+        storage_path = Path.cwd() / ".hopper"
+    else:
+        storage_path = Path.home() / ".hopper"
+
+    console.print("\n[bold cyan]Initializing Hopper[/bold cyan]\n")
+    console.print(f"[bold]Location:[/bold] {storage_path}")
+
+    # Check if already initialized
+    if storage_path.exists() and (storage_path / "tasks").exists():
+        if not non_interactive:
+            if not Confirm.ask("Hopper already initialized here. Reinitialize?", default=False):
+                print_info("Aborted")
+                return
+        console.print("[dim]Reinitializing...[/dim]")
+
+    # Initialize storage structure
+    config = StorageConfig.local(storage_path)
+    storage = MarkdownStorage(config)
+    storage.initialize()
+
+    print_success("Storage initialized")
+    console.print(f"  [dim]tasks/[/dim]")
+    console.print(f"  [dim]memory/[/dim]")
+    console.print(f"  [dim]knowledge/[/dim]")
+
+    # Initialize knowledge
+    knowledge_path = storage_path / "knowledge"
+    source = knowledge_source or DEFAULT_KNOWLEDGE_SOURCE
+
+    console.print(f"\n[bold]Knowledge source:[/bold] {source}")
+
+    result = initialize_knowledge(
+        knowledge_path=knowledge_path,
+        source=source,
+        auto_detect=auto_detect,
+        project_path=Path.cwd(),
+        skip_agent_knowledge=no_knowledge,
+    )
+
+    # Report results
+    if result.get("hopper_usage"):
+        print_success("Created hopper-usage.md (built-in)")
+
+    ak_result = result.get("agent_knowledge")
+    if ak_result:
+        if ak_result.get("synced"):
+            synced = ak_result["synced"]
+            if synced == ["(full repo)"]:
+                print_success("Synced full agent-knowledge repo")
+            else:
+                print_success(f"Synced {len(synced)} knowledge sections:")
+                for s in synced:
+                    console.print(f"  [dim]{s}[/dim]")
+        if ak_result.get("errors"):
+            for err in ak_result["errors"]:
+                print_warning(f"Error: {err}")
+    elif no_knowledge:
+        print_info("Skipped agent-knowledge (--no-knowledge)")
+
+    # Add to .gitignore if not present
+    gitignore = Path.cwd() / ".gitignore"
+    if gitignore.exists():
+        content = gitignore.read_text()
+        if ".hopper/.index" not in content:
+            with open(gitignore, "a") as f:
+                f.write("\n# Hopper index (regenerated)\n.hopper/.index/\n")
+            print_info("Added .hopper/.index to .gitignore")
+
+    console.print("\n[bold green]Hopper initialized![/bold green]")
+    console.print("[dim]Try: hopper task add 'My first task'[/dim]\n")
+
+
+def _init_server_mode(
     ctx: Context,
     profile: str,
     endpoint: str | None,
     non_interactive: bool,
 ) -> None:
-    """Initialize Hopper configuration.
-
-    This creates the configuration directory and sets up the initial
-    configuration file.
-
-    Examples:
-        hopper init
-        hopper init --endpoint http://localhost:8000
-        hopper init --profile production --endpoint https://api.hopper.io
-    """
+    """Initialize server mode configuration (original behavior)."""
     config_dir = get_config_dir()
     config_path = config_dir / "config.yaml"
 
-    console.print("\n[bold cyan]Initializing Hopper CLI[/bold cyan]\n")
+    console.print("\n[bold cyan]Initializing Hopper CLI (Server Mode)[/bold cyan]\n")
 
     # Interactive prompts
     if not non_interactive:
@@ -77,6 +205,7 @@ def init(
         active_profile=profile,
         profiles={
             profile: ProfileConfig(
+                mode="server",
                 api=APIConfig(endpoint=endpoint or "http://localhost:8000"),
                 auth=AuthConfig(token=token, api_key=api_key),
             )

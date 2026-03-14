@@ -42,6 +42,23 @@ class GitHubConfig(BaseModel):
     default_owner: str | None = Field(default=None, description="Default repository owner")
 
 
+class KnowledgeConfig(BaseModel):
+    """Knowledge sync configuration."""
+
+    source: str = Field(
+        default="https://github.com/apathy-ca/agent-knowledge.git",
+        description="Git URL or local path to agent-knowledge repo",
+    )
+    auto_detect: bool = Field(
+        default=True,
+        description="Auto-detect project type for relevant knowledge only",
+    )
+    enabled: bool = Field(
+        default=True,
+        description="Enable agent-knowledge sync on init",
+    )
+
+
 class ProfileConfig(BaseModel):
     """Configuration profile."""
 
@@ -50,6 +67,7 @@ class ProfileConfig(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     local: LocalConfig = Field(default_factory=LocalConfig)
     github: GitHubConfig = Field(default_factory=GitHubConfig)
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
 
 class Config(BaseSettings):
@@ -104,6 +122,11 @@ class Config(BaseSettings):
                         "token": profile.github.token,
                         "default_owner": profile.github.default_owner,
                     },
+                    "knowledge": {
+                        "source": profile.knowledge.source,
+                        "auto_detect": profile.knowledge.auto_detect,
+                        "enabled": profile.knowledge.enabled,
+                    },
                 }
                 for name, profile in self.profiles.items()
             },
@@ -133,6 +156,7 @@ class Config(BaseSettings):
                 auth=AuthConfig(**profile_data.get("auth", {})),
                 local=LocalConfig(**local_data) if local_data else LocalConfig(),
                 github=GitHubConfig(**profile_data.get("github", {})),
+                knowledge=KnowledgeConfig(**profile_data.get("knowledge", {})),
             )
 
         return cls(

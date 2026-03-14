@@ -15,6 +15,13 @@ from .memory import (
     PatternMarkdownStore,
     FeedbackMarkdownStore,
 )
+from .knowledge import (
+    initialize_knowledge,
+    write_hopper_usage,
+    sync_agent_knowledge,
+    detect_project_type,
+    DEFAULT_KNOWLEDGE_SOURCE,
+)
 
 __all__ = [
     # Base
@@ -32,4 +39,10 @@ __all__ = [
     "EpisodeMarkdownStore",
     "PatternMarkdownStore",
     "FeedbackMarkdownStore",
+    # Knowledge
+    "initialize_knowledge",
+    "write_hopper_usage",
+    "sync_agent_knowledge",
+    "detect_project_type",
+    "DEFAULT_KNOWLEDGE_SOURCE",
 ]
