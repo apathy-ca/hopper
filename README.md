@@ -48,19 +48,19 @@ See [CLAUDE.md](CLAUDE.md) for full agent instructions.
 
 ```bash
 # Add tasks/notes
-hopper --local task add "Remember this for later"
-hopper --local task add "Fix bug" --priority high --tag backend
+hopper task add "Remember this for later"
+hopper task add "Fix bug" --priority high --tag backend
 
 # List and filter
-hopper --local task list
-hopper --local task list --status open --priority high
+hopper task list
+hopper task list --status open --priority high
 
 # Update status
-hopper --local task status <task-id> done
-hopper --local task status <task-id> claimed
+hopper task status <task-id> done
+hopper task status <task-id> claimed
 
 # View details
-hopper --local task get <task-id>
+hopper task get <task-id>
 ```
 
 ### GitHub Integration
@@ -70,11 +70,11 @@ hopper --local task get <task-id>
 hopper github auth --token <your-github-token>
 
 # Import issues as tasks
-hopper --local github import owner/repo --all
-hopper --local github import owner/repo --issue 42
+hopper github import owner/repo --all
+hopper github import owner/repo --issue 42
 
 # Export task as issue
-hopper --local github export <task-id> --repo owner/repo
+hopper github export <task-id> --repo owner/repo
 ```
 
 ## Configuration
@@ -130,7 +130,7 @@ profiles:
 
 3. **Start using:**
    ```bash
-   hopper --local task add "First task"
+   hopper task add "First task"
    ```
 
 AI agents working in your project will see CLAUDE.md and know to use `/hopper`.
@@ -197,26 +197,26 @@ Hopper is the persistent instruction store and lesson system for
 framework. When a Czarina orchestration launches:
 
 - Each worker's full task brief is stored as a Hopper task body
-- Workers retrieve their brief with `hopper --local task get <id> --with-lessons`
+- Workers retrieve their brief with `hopper task get <id> --with-lessons`
 - Workers recover from session crashes with two commands — no orchestrator needed
 - Lessons filed by workers are automatically injected into subsequent workers' briefs
 
-Czarina uses local mode only (`--local` flag). No server required.
+Czarina uses local mode (the default). No server required.
 
 **Czarina-specific CLI additions:**
 
 ```bash
 # Store a full markdown brief as a task body
-hopper --local task add "[worker-id] Title" \
+hopper task add "[worker-id] Title" \
   --brief-file .czarina/workers/backend.md \
   --tag czarina --tag my-project --tag worker-backend \
   --non-interactive
 
 # Retrieve brief with relevant lessons prepended
-hopper --local task get task-abc12345 --with-lessons
+hopper task get task-abc12345 --with-lessons
 
 # File a lesson for future workers
-hopper --local lesson add \
+hopper lesson add \
   --task task-abc12345 \
   --title "What I learned" \
   --domain python \

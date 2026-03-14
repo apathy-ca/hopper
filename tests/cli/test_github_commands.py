@@ -32,7 +32,7 @@ def mock_config():
 @pytest.fixture
 def mock_context(mock_config):
     """Create a mock CLI context."""
-    ctx = Context(config=mock_config, verbose=False, json_output=False, local=True)
+    ctx = Context(config=mock_config, verbose=False, json_output=False, server=False)
     return ctx
 
 
@@ -182,7 +182,7 @@ class TestGitHubImport:
         mock_sync.import_issue.return_value = "task-123"
         mock_sync_class.return_value = mock_sync
 
-        result = runner.invoke(cli, ["--local", "github", "import", "owner/repo", "--issue", "42"])
+        result = runner.invoke(cli, ["github", "import", "owner/repo", "--issue", "42"])
 
         assert result.exit_code == 0
         assert "task-123" in result.output or "42" in result.output
@@ -210,7 +210,7 @@ class TestGitHubImport:
         )
         mock_sync_class.return_value = mock_sync
 
-        result = runner.invoke(cli, ["--local", "github", "import", "owner/repo", "--all"])
+        result = runner.invoke(cli, ["github", "import", "owner/repo", "--all"])
 
         assert result.exit_code == 0
         assert "2" in result.output  # 2 imported
@@ -220,7 +220,7 @@ class TestGitHubImport:
         """Test import requires --issue or --all."""
         mock_load_config.return_value = mock_config
 
-        result = runner.invoke(cli, ["--local", "github", "import", "owner/repo"])
+        result = runner.invoke(cli, ["github", "import", "owner/repo"])
 
         assert result.exit_code == 1
         assert "--issue" in result.output or "--all" in result.output
@@ -253,7 +253,7 @@ class TestGitHubExport:
         mock_sync_class.return_value = mock_sync
 
         result = runner.invoke(
-            cli, ["--local", "github", "export", "task-123", "--repo", "owner/repo"]
+            cli, ["github", "export", "task-123", "--repo", "owner/repo"]
         )
 
         assert result.exit_code == 0
@@ -284,7 +284,7 @@ class TestGitHubExport:
         mock_sync_class.return_value = mock_sync
 
         result = runner.invoke(
-            cli, ["--local", "github", "export", "nonexistent", "--repo", "owner/repo"]
+            cli, ["github", "export", "nonexistent", "--repo", "owner/repo"]
         )
 
         assert result.exit_code == 1

@@ -6,8 +6,8 @@ Hopper supports a fully local mode that stores all data as human-readable markdo
 
 ```bash
 # Use local mode explicitly
-hopper --local task add "Fix the login bug"
-hopper --local task list
+hopper task add "Fix the login bug"
+hopper task list
 
 # Or set your profile to local mode
 hopper config set mode local
@@ -43,7 +43,7 @@ For project-specific task management, create a `.hopper` directory in your proje
 
 ```bash
 mkdir .hopper
-hopper --local init  # Initialize the directory structure
+hopper init  # Initialize the directory structure
 ```
 
 Hopper auto-detects embedded storage when you run commands from within the project.
@@ -134,20 +134,20 @@ All standard Hopper commands work in local mode:
 
 ```bash
 # Task management
-hopper --local task add "New task" -p high -t bug
-hopper --local task list --status pending
-hopper --local task get task-abc123
-hopper --local task update task-abc123 --add-tag urgent
-hopper --local task status task-abc123 completed
-hopper --local task delete task-abc123
+hopper task add "New task" -p high -t bug
+hopper task list --status pending
+hopper task get task-abc123
+hopper task update task-abc123 --add-tag urgent
+hopper task status task-abc123 completed
+hopper task delete task-abc123
 
 # Search
-hopper --local task search "login"
+hopper task search "login"
 
 # Learning system
-hopper --local learning feedback submit task-abc123 --good
-hopper --local learning pattern list
-hopper --local learning stats
+hopper learning feedback submit task-abc123 --good
+hopper learning pattern list
+hopper learning stats
 ```
 
 ## Configuration
@@ -178,7 +178,7 @@ When `auto_detect_embedded` is true (default), Hopper searches for a `.hopper` d
 See which storage is being used:
 
 ```bash
-hopper --local -v task list
+hopper -v task list
 # Output:
 # Hopper v0.1.0
 # Config: /home/user/.hopper/config.yaml
@@ -231,7 +231,7 @@ persistent instruction store and lesson system for multi-agent orchestrations.
 
 ### How Czarina uses local mode
 
-Czarina always passes `--local`. It uses project-embedded `.hopper/` when
+Czarina uses local mode (the default). It uses project-embedded `.hopper/` when
 available (auto-detected), falling back to `~/.hopper/` globally.
 
 **Full brief storage:**
@@ -240,7 +240,7 @@ Czarina stores each worker's complete task brief as the Hopper task body using
 the `--brief-file` flag:
 
 ```bash
-hopper --local task add "[backend] Build the REST API" \
+hopper task add "[backend] Build the REST API" \
   --brief-file .czarina/workers/backend.md \
   --tag czarina --tag my-project --tag worker-backend --tag role-code \
   --priority high \
@@ -252,7 +252,7 @@ hopper --local task add "[backend] Build the REST API" \
 Workers retrieve their full brief (with any relevant lessons prepended) using:
 
 ```bash
-hopper --local task get task-abc12345 --with-lessons
+hopper task get task-abc12345 --with-lessons
 ```
 
 The `--with-lessons` flag queries the lesson store for high-confidence lessons
@@ -264,7 +264,7 @@ section to the output.
 Workers file lessons on completion:
 
 ```bash
-hopper --local lesson add \
+hopper lesson add \
   --task task-abc12345 \
   --title "SQLAlchemy async sessions are not thread-safe" \
   --domain python \
@@ -291,10 +291,10 @@ All required fields are passed as flags.
 These tags allow querying at any granularity:
 
 ```bash
-hopper --local task list --tag czarina               # All Czarina tasks
-hopper --local task list --tag my-api                # All tasks for a project
-hopper --local task list --tag worker-backend        # One worker's tasks
-hopper --local lesson list --project my-api          # All lessons for a project
+hopper task list --tag czarina               # All Czarina tasks
+hopper task list --tag my-api                # All tasks for a project
+hopper task list --tag worker-backend        # One worker's tasks
+hopper lesson list --project my-api          # All lessons for a project
 ```
 
 ### Task ID persistence

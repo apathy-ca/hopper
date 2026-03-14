@@ -441,7 +441,7 @@ def get_storage() -> StorageBackend:
 # hopper/cli/main.py
 
 @cli.command()
-@click.option("--local", is_flag=True, help="Force local storage mode")
+@click.option("--server", is_flag=True, help="Use server mode instead of local")
 @click.pass_context
 def task_add(ctx, local: bool, ...):
     """Add a task."""

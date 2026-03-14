@@ -53,42 +53,42 @@ When the user invokes `/hopper`, execute the corresponding hopper CLI command in
 
 For `add`:
 ```bash
-hopper --local task add "<title>" [--priority <p>] [--tag <t>]
+hopper task add "<title>" [--priority <p>] [--tag <t>]
 ```
 
 For `list`:
 ```bash
-hopper --local task list [--status <s>] [--priority <p>]
+hopper task list [--status <s>] [--priority <p>]
 ```
 
 For `done`:
 ```bash
-hopper --local task status <task-id> done
+hopper task status <task-id> done
 ```
 
 For `claim`:
 ```bash
-hopper --local task status <task-id> claimed
+hopper task status <task-id> claimed
 ```
 
 For `block`:
 ```bash
-hopper --local task status <task-id> blocked
+hopper task status <task-id> blocked
 ```
 
 For `get`:
 ```bash
-hopper --local task get <task-id>
+hopper task get <task-id>
 ```
 
 For `ls` (shortcut):
 ```bash
-hopper --local ls
+hopper ls
 ```
 
 For `todo`:
 ```bash
-hopper --local task list --status pending
+hopper task list --status pending
 ```
 
 **Output:**

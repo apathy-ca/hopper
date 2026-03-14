@@ -36,7 +36,7 @@ class TestLocalTaskCommands:
 
         # Add a task (--json is a global option, must come before subcommand)
         # Use --tag to skip interactive prompts
-        result = runner.invoke(cli, ["--local", "--json", "task", "add", "Test task", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "task", "add", "Test task", "--tag", "test"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
         # Parse the JSON output (may span multiple lines)
@@ -44,7 +44,7 @@ class TestLocalTaskCommands:
         assert output["title"] == "Test task"
 
         # List tasks
-        result = runner.invoke(cli, ["--local", "--json", "task", "list"])
+        result = runner.invoke(cli, ["--json", "task", "list"])
         assert result.exit_code == 0
 
     def test_task_add_with_options(self, isolated_runner):
@@ -54,7 +54,6 @@ class TestLocalTaskCommands:
         result = runner.invoke(
             cli,
             [
-                "--local",
                 "--json",
                 "task",
                 "add",
@@ -79,13 +78,13 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Add a task first (--tag to skip prompts)
-        result = runner.invoke(cli, ["--local", "--json", "task", "add", "Get test", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "task", "add", "Get test", "--tag", "test"])
         assert result.exit_code == 0, f"Failed: {result.output}"
         output = json.loads(result.output.strip())
         task_id = output["id"]
 
         # Get the task
-        result = runner.invoke(cli, ["--local", "--json", "task", "get", task_id])
+        result = runner.invoke(cli, ["--json", "task", "get", task_id])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
     def test_task_update(self, isolated_runner):
@@ -93,7 +92,7 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Add a task (--tag to skip prompts)
-        result = runner.invoke(cli, ["--local", "--json", "task", "add", "Original title", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "task", "add", "Original title", "--tag", "test"])
         assert result.exit_code == 0, f"Failed to add: {result.output}"
         output = json.loads(result.output.strip())
         task_id = output["id"]
@@ -101,7 +100,7 @@ class TestLocalTaskCommands:
         # Update the task
         result = runner.invoke(
             cli,
-            ["--local", "--json", "task", "update", task_id, "--title", "Updated title"],
+            ["--json", "task", "update", task_id, "--title", "Updated title"],
         )
         assert result.exit_code == 0, f"Failed: {result.output}"
 
@@ -110,7 +109,7 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Add a task (--tag to skip prompts)
-        result = runner.invoke(cli, ["--local", "--json", "task", "add", "Status test", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "task", "add", "Status test", "--tag", "test"])
         assert result.exit_code == 0, f"Failed to add: {result.output}"
         output = json.loads(result.output.strip())
         task_id = output["id"]
@@ -118,7 +117,7 @@ class TestLocalTaskCommands:
         # Change status
         result = runner.invoke(
             cli,
-            ["--local", "--json", "task", "status", task_id, "in_progress", "--force"],
+            ["--json", "task", "status", task_id, "in_progress", "--force"],
         )
         assert result.exit_code == 0, f"Failed: {result.output}"
 
@@ -127,17 +126,17 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Add a task (--tag to skip prompts)
-        result = runner.invoke(cli, ["--local", "--json", "task", "add", "Delete me", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "task", "add", "Delete me", "--tag", "test"])
         assert result.exit_code == 0, f"Failed to add: {result.output}"
         output = json.loads(result.output.strip())
         task_id = output["id"]
 
         # Delete the task
-        result = runner.invoke(cli, ["--local", "task", "delete", task_id, "--force"])
+        result = runner.invoke(cli, ["task", "delete", task_id, "--force"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
         # Verify it's gone
-        result = runner.invoke(cli, ["--local", "--json", "task", "get", task_id])
+        result = runner.invoke(cli, ["--json", "task", "get", task_id])
         assert result.exit_code != 0  # Should fail
 
     def test_task_search(self, isolated_runner):
@@ -145,12 +144,12 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Add tasks (--tag to skip prompts)
-        runner.invoke(cli, ["--local", "task", "add", "Login bug fix", "--tag", "test"])
-        runner.invoke(cli, ["--local", "task", "add", "Add dark mode", "--tag", "test"])
-        runner.invoke(cli, ["--local", "task", "add", "Fix login validation", "--tag", "test"])
+        runner.invoke(cli, ["task", "add", "Login bug fix", "--tag", "test"])
+        runner.invoke(cli, ["task", "add", "Add dark mode", "--tag", "test"])
+        runner.invoke(cli, ["task", "add", "Fix login validation", "--tag", "test"])
 
         # Search
-        result = runner.invoke(cli, ["--local", "--json", "task", "search", "login"])
+        result = runner.invoke(cli, ["--json", "task", "search", "login"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
     def test_add_shortcut(self, isolated_runner):
@@ -158,7 +157,7 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Use --tag to skip prompts
-        result = runner.invoke(cli, ["--local", "--json", "add", "Quick task", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "add", "Quick task", "--tag", "test"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
     def test_ls_shortcut(self, isolated_runner):
@@ -166,10 +165,10 @@ class TestLocalTaskCommands:
         runner, _ = isolated_runner
 
         # Add some tasks first (--tag to skip prompts)
-        runner.invoke(cli, ["--local", "task", "add", "Task 1", "--tag", "test"])
-        runner.invoke(cli, ["--local", "task", "add", "Task 2", "--tag", "test"])
+        runner.invoke(cli, ["task", "add", "Task 1", "--tag", "test"])
+        runner.invoke(cli, ["task", "add", "Task 2", "--tag", "test"])
 
-        result = runner.invoke(cli, ["--local", "--json", "ls"])
+        result = runner.invoke(cli, ["--json", "ls"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
 
@@ -180,7 +179,7 @@ class TestLocalLearningCommands:
         """Test getting learning statistics."""
         runner, _ = isolated_runner
 
-        result = runner.invoke(cli, ["--local", "--json", "learning", "stats"])
+        result = runner.invoke(cli, ["--json", "learning", "stats"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
     def test_feedback_submit_and_list(self, isolated_runner):
@@ -188,7 +187,7 @@ class TestLocalLearningCommands:
         runner, _ = isolated_runner
 
         # Add a task first (--tag to skip prompts)
-        result = runner.invoke(cli, ["--local", "--json", "task", "add", "Feedback test", "--tag", "test"])
+        result = runner.invoke(cli, ["--json", "task", "add", "Feedback test", "--tag", "test"])
         assert result.exit_code == 0, f"Failed to add: {result.output}"
         output = json.loads(result.output.strip())
         task_id = output["id"]
@@ -196,12 +195,12 @@ class TestLocalLearningCommands:
         # Submit feedback
         result = runner.invoke(
             cli,
-            ["--local", "--json", "learning", "feedback", "submit", task_id, "--good"],
+            ["--json", "learning", "feedback", "submit", task_id, "--good"],
         )
         assert result.exit_code == 0, f"Failed: {result.output}"
 
         # List feedback
-        result = runner.invoke(cli, ["--local", "--json", "learning", "feedback", "list"])
+        result = runner.invoke(cli, ["--json", "learning", "feedback", "list"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
     def test_pattern_create_and_list(self, isolated_runner):
@@ -212,7 +211,6 @@ class TestLocalLearningCommands:
         result = runner.invoke(
             cli,
             [
-                "--local",
                 "--json",
                 "learning",
                 "pattern",
@@ -228,14 +226,14 @@ class TestLocalLearningCommands:
         assert result.exit_code == 0, f"Failed: {result.output}"
 
         # List patterns
-        result = runner.invoke(cli, ["--local", "--json", "learning", "pattern", "list"])
+        result = runner.invoke(cli, ["--json", "learning", "pattern", "list"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
     def test_routing_accuracy(self, isolated_runner):
         """Test getting routing accuracy."""
         runner, _ = isolated_runner
 
-        result = runner.invoke(cli, ["--local", "--json", "learning", "feedback", "accuracy"])
+        result = runner.invoke(cli, ["--json", "learning", "feedback", "accuracy"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
 
@@ -246,7 +244,7 @@ class TestVerboseMode:
         """Test that verbose mode shows the storage mode."""
         runner, hopper_dir = isolated_runner
 
-        result = runner.invoke(cli, ["--local", "-v", "task", "list"])
+        result = runner.invoke(cli, ["-v", "task", "list"])
         assert result.exit_code == 0, f"Failed: {result.output}"
         assert "local" in result.output.lower()
 
@@ -259,7 +257,7 @@ class TestEmbeddedDetection:
         runner, hopper_dir = isolated_runner
 
         # Initialize storage by adding a task (--tag to skip prompts)
-        result = runner.invoke(cli, ["--local", "task", "add", "Embedded task", "--tag", "test"])
+        result = runner.invoke(cli, ["task", "add", "Embedded task", "--tag", "test"])
         assert result.exit_code == 0, f"Failed: {result.output}"
 
         # Verify the task file was created in the embedded directory

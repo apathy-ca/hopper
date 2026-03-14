@@ -45,7 +45,7 @@ class GitHubConfig(BaseModel):
 class ProfileConfig(BaseModel):
     """Configuration profile."""
 
-    mode: str = Field(default="server", description="Operation mode: local or server")
+    mode: str = Field(default="local", description="Operation mode: local or server")
     api: APIConfig = Field(default_factory=APIConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     local: LocalConfig = Field(default_factory=LocalConfig)
@@ -192,32 +192,27 @@ def detect_embedded_hopper() -> Path | None:
     return None
 
 
-def get_storage_path(config: "Config", force_local: bool = False) -> Path | None:
+def get_storage_path(config: "Config", force_server: bool = False) -> Path | None:
     """Determine the storage path based on configuration and detection.
 
     Args:
         config: CLI configuration
-        force_local: Force local mode regardless of config
+        force_server: Force server mode regardless of config
 
     Returns:
         Path to storage directory, or None for server mode.
     """
     profile = config.current_profile
 
-    # Force local mode
-    if force_local:
-        # Try embedded first
-        if profile.local.auto_detect_embedded:
-            embedded = detect_embedded_hopper()
-            if embedded:
-                return embedded
-        return profile.local.path
+    # Force server mode
+    if force_server:
+        return None
 
-    # Server mode
+    # Explicit server mode in config
     if profile.mode == "server":
         return None
 
-    # Local mode - check for embedded first
+    # Local mode (default) - check for embedded first
     if profile.local.auto_detect_embedded:
         embedded = detect_embedded_hopper()
         if embedded:
@@ -226,28 +221,25 @@ def get_storage_path(config: "Config", force_local: bool = False) -> Path | None
     return profile.local.path
 
 
-def is_local_mode(config: "Config", force_local: bool = False) -> bool:
-    """Check if operating in local mode.
+def is_local_mode(config: "Config") -> bool:
+    """Check if operating in local mode (default).
 
     Args:
         config: CLI configuration
-        force_local: Force local mode
 
     Returns:
         True if local mode, False for server mode.
     """
-    if force_local:
-        return True
-
     profile = config.current_profile
 
-    # Explicit local mode
-    if profile.mode == "local":
-        return True
+    # Explicit server mode
+    if profile.mode == "server":
+        return False
 
-    # Auto-detect embedded
+    # Local mode is default - check for embedded first
     if profile.local.auto_detect_embedded:
         if detect_embedded_hopper() is not None:
             return True
 
-    return False
+    # Default to local
+    return True

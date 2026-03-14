@@ -60,10 +60,10 @@ Tasks are stored locally in `.hopper/` as markdown files. They persist across se
 
 For advanced usage:
 ```bash
-hopper --local task list
-hopper --local task add "Task" --priority high
-hopper --local learning suggest  # AI-powered suggestions
-hopper --local github import owner/repo --all  # Sync GitHub issues
+hopper task list
+hopper task add "Task" --priority high
+hopper learning suggest  # AI-powered suggestions
+hopper github import owner/repo --all  # Sync GitHub issues
 ```
 
 ---

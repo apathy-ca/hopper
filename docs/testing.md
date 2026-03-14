@@ -31,10 +31,10 @@ bash czarina-core/tests/test-hopper-instruction-store.sh
 ```
 
 **Coverage:** 52 assertions testing:
-- `hopper --local task add --brief-file` (full brief storage)
-- `hopper --local task get --with-lessons` (brief + lesson retrieval)
-- `hopper --local task add --non-interactive` (scripted task creation)
-- `hopper --local task status --force` (status transitions without prompts)
+- `hopper task add --brief-file` (full brief storage)
+- `hopper task get --with-lessons` (brief + lesson retrieval)
+- `hopper task add --non-interactive` (scripted task creation)
+- `hopper task status --force` (status transitions without prompts)
 - Tag filtering, JSON output, and task ID round-trips
 
 These tests exercise the Hopper CLI's local mode from a real integration
