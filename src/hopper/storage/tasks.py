@@ -63,7 +63,7 @@ class LocalTask:
     ) -> "LocalTask":
         """Create a new task with generated ID."""
         return cls(
-            id=f"task-{uuid4().hex[:8]}",
+            id=f"t{uuid4().hex[:8]}",
             title=title,
             description=description,
             priority=priority,
