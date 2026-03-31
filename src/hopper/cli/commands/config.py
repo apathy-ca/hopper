@@ -1,6 +1,5 @@
 """Configuration and authentication commands."""
 
-
 from pathlib import Path
 
 import click
@@ -26,10 +25,19 @@ DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
 
 
 @click.command(name="init")
-@click.option("--embedded", "-e", is_flag=True, help="Initialize embedded .hopper in current directory")
+@click.option(
+    "--embedded", "-e", is_flag=True, help="Initialize embedded .hopper in current directory"
+)
 @click.option("--knowledge-source", "-k", help="Path to agent-knowledge repo")
-@click.option("--no-knowledge", is_flag=True, help="Skip agent-knowledge sync (only hopper-usage.md)")
-@click.option("--auto-detect", is_flag=True, default=True, help="Auto-detect project type for relevant knowledge")
+@click.option(
+    "--no-knowledge", is_flag=True, help="Skip agent-knowledge sync (only hopper-usage.md)"
+)
+@click.option(
+    "--auto-detect",
+    is_flag=True,
+    default=True,
+    help="Auto-detect project type for relevant knowledge",
+)
 @click.option("--profile", default="default", help="Profile name (for server mode)")
 @click.option("--endpoint", help="API endpoint URL (for server mode)")
 @click.option("--server", "-s", is_flag=True, help="Initialize for server mode instead of local")
@@ -85,7 +93,11 @@ def _init_local_mode(
 ) -> None:
     """Initialize local/embedded Hopper storage with knowledge."""
     from hopper.storage import StorageConfig, MarkdownStorage
-    from hopper.storage.knowledge import initialize_knowledge, DEFAULT_KNOWLEDGE_SOURCE
+    from hopper.storage.knowledge import (
+        initialize_knowledge,
+        write_agent_files,
+        DEFAULT_KNOWLEDGE_SOURCE,
+    )
 
     # Determine storage path
     if embedded:
@@ -156,6 +168,16 @@ def _init_local_mode(
             with open(gitignore, "a") as f:
                 f.write("\n# Hopper index (regenerated)\n.hopper/.index/\n")
             print_info("Added .hopper/.index to .gitignore")
+
+    # Write AGENTS.md and CLAUDE.md so AI agents discover Hopper automatically
+    agent_file_results = write_agent_files(Path.cwd())
+    for filename, info in agent_file_results.items():
+        action = info["action"]
+        if action == "created":
+            print_success(f"Created {filename}")
+        elif action == "appended":
+            print_success(f"Added Hopper section to {filename}")
+        # "skipped" means it was already there — no output needed
 
     console.print("\n[bold green]Hopper initialized![/bold green]")
     console.print("[dim]Try: hopper task add 'My first task'[/dim]\n")

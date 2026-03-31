@@ -18,7 +18,7 @@ DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
 KNOWLEDGE_CACHE_DIR = Path.home() / ".cache" / "hopper" / "knowledge"
 
 # Built-in hopper usage documentation
-HOPPER_USAGE_CONTENT = '''---
+HOPPER_USAGE_CONTENT = """---
 title: Hopper Usage Guide
 type: built-in
 scope: tool-usage
@@ -155,7 +155,41 @@ Hopper can run as an MCP server for direct tool integration:
 hopper mcp serve              # Start MCP server
 hopper mcp config --stdout    # Show MCP config for claude_desktop_config.json
 ```
-'''
+"""
+
+
+AGENTS_MD_SECTION = """## Hopper - Persistent Memory
+
+This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent memory across AI agent sessions.
+
+**Storage:** `.hopper/` in this directory (tasks, knowledge, memory).
+
+### Quick commands
+
+```bash
+hopper task add "Note or task"   # Store something
+hopper task list                 # See open tasks
+hopper context                   # Recent learnings + open tasks
+```
+
+### What to store
+
+- Architecture decisions and rationale
+- User preferences discovered during the session
+- Project patterns (`Pattern: all API routes use /api/v1 prefix`)
+- Feedback on what worked / didn\'t
+- Session handoff notes before ending a conversation
+
+### Knowledge base
+
+Agent knowledge is available in `.hopper/knowledge/` — coding standards, design
+patterns, agent roles, and workflows relevant to this project type.
+
+```bash
+hopper knowledge list   # See what\'s available
+hopper knowledge show   # View hopper usage guide
+```
+"""
 
 
 def _is_git_url(source: str) -> bool:
@@ -352,10 +386,12 @@ def detect_project_type(project_path: Path) -> list[str]:
 
     # Python projects
     if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
-        patterns.extend([
-            "core-rules/python-standards",
-            "core-rules/testing",
-        ])
+        patterns.extend(
+            [
+                "core-rules/python-standards",
+                "core-rules/testing",
+            ]
+        )
 
     # TypeScript/JavaScript projects
     if (project_path / "package.json").exists():
@@ -419,6 +455,39 @@ def _has_mcp_config(project_path: Path) -> bool:
     return False
 
 
+def write_agent_files(project_path: Path) -> dict[str, Any]:
+    """Write AGENTS.md and CLAUDE.md into the project root.
+
+    If either file already exists, appends a Hopper section (idempotent —
+    won't add the section twice). If neither exists, creates both.
+
+    Args:
+        project_path: Project root directory (where .hopper lives).
+
+    Returns:
+        Dict with keys "agents_md" and "claude_md", each containing
+        "action": one of "created", "appended", "skipped".
+    """
+    section_marker = "## Hopper - Persistent Memory"
+    result: dict[str, Any] = {}
+
+    for filename in ("AGENTS.md", "CLAUDE.md"):
+        target = project_path / filename
+        if target.exists():
+            content = target.read_text()
+            if section_marker in content:
+                result[filename] = {"action": "skipped", "reason": "section already present"}
+            else:
+                with open(target, "a") as f:
+                    f.write(f"\n---\n\n{AGENTS_MD_SECTION}")
+                result[filename] = {"action": "appended"}
+        else:
+            target.write_text(f"# {project_path.name}\n\n{AGENTS_MD_SECTION}")
+            result[filename] = {"action": "created"}
+
+    return result
+
+
 def initialize_knowledge(
     knowledge_path: Path,
     source: str | Path | None = None,
@@ -455,9 +524,7 @@ def initialize_knowledge(
         proj_path = project_path or knowledge_path.parent.parent
         patterns = detect_project_type(proj_path)
         if patterns:
-            result["agent_knowledge"] = sync_agent_knowledge(
-                knowledge_path, source, patterns
-            )
+            result["agent_knowledge"] = sync_agent_knowledge(knowledge_path, source, patterns)
     else:
         # Full sync
         result["agent_knowledge"] = sync_agent_knowledge(knowledge_path, source)
