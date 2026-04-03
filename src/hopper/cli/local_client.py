@@ -132,6 +132,25 @@ class LocalClient:
         tasks = self.task_store.list(**filters)
         result = [self._task_to_dict(t) for t in tasks]
 
+        # Mark stale tasks inline
+        from hopper.storage.tasks import _utc_now
+        from datetime import timedelta
+        now = _utc_now()
+        stale_cutoff = now - timedelta(minutes=30)
+        for t in result:
+            if t.get("status") == "in_progress" and t.get("assigned_to"):
+                expected = t.get("expected_heartbeat")
+                heartbeat = t.get("last_heartbeat")
+                if expected:
+                    from datetime import datetime as dt
+                    exp_dt = dt.fromisoformat(expected) if isinstance(expected, str) else expected
+                    t["stale"] = now > exp_dt if exp_dt else False
+                elif heartbeat:
+                    hb_dt = dt.fromisoformat(heartbeat) if isinstance(heartbeat, str) else heartbeat
+                    t["stale"] = hb_dt < stale_cutoff if hb_dt else True
+                else:
+                    t["stale"] = True
+
         # Compute rollup for parent tasks
         child_map: dict[str, list[dict[str, Any]]] = {}
         for t in result:

@@ -158,12 +158,15 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
         if len(title) > 50 and compact:
             title = title[:47] + "..."
 
-        # Show rollup in status for parents with children
+        # Build status display
         children_info = task.get("children")
+        is_stale = task.get("stale", False)
         if children_info:
             done = children_info["done"]
             total = children_info["total"]
             status_display = f"[{get_status_style(status)}]{status}[/] [{done}/{total}]"
+        elif is_stale:
+            status_display = f"[bold red]{status} STALE[/]"
         else:
             status_display = f"[{get_status_style(status)}]{status}[/]"
 
