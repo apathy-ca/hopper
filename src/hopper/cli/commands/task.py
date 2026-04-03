@@ -59,6 +59,9 @@ def task() -> None:
 @click.option(
     "--non-interactive", is_flag=True, help="Skip all interactive prompts (for scripted use)"
 )
+@click.option(
+    "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:main', 'opencode:acm', 'human:james')"
+)
 @click.pass_obj
 def add_task(
     ctx: Context,
@@ -70,6 +73,7 @@ def add_task(
     project: str | None,
     status: str,
     non_interactive: bool,
+    assign: str | None,
 ) -> None:
     """Create a new task.
 
@@ -122,6 +126,9 @@ def add_task(
 
     if project:
         task_data["project_id"] = project
+
+    if assign:
+        task_data["assigned_to"] = assign
 
     # Create task — use brief path when a full brief is provided
     try:
@@ -257,6 +264,8 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
 )
 @click.option("--add-tag", multiple=True, help="Add tags")
 @click.option("--remove-tag", multiple=True, help="Remove tags")
+@click.option("--assign", "-a", help="Assign to an agent or user")
+@click.option("--unassign", is_flag=True, help="Clear assignment")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
 @click.pass_obj
 def update_task(
@@ -267,6 +276,8 @@ def update_task(
     priority: str | None,
     add_tag: tuple[str, ...],
     remove_tag: tuple[str, ...],
+    assign: str | None,
+    unassign: bool,
     interactive: bool,
 ) -> None:
     """Update a task.
@@ -313,6 +324,12 @@ def update_task(
         update_data["add_tags"] = list(add_tag)
         update_data["remove_tags"] = list(remove_tag)
 
+    # Handle assignment
+    if assign:
+        update_data["assigned_to"] = assign
+    elif unassign:
+        update_data["assigned_to"] = None
+
     if not update_data:
         print_error("No updates specified")
         raise click.Abort()
@@ -339,12 +356,14 @@ def update_task(
     "new_status", type=click.Choice(["open", "in_progress", "blocked", "completed", "cancelled"])
 )
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+@click.option("--assign", "-a", help="Assign to an agent or user while changing status")
 @click.pass_obj
-def change_status(ctx: Context, task_id: str, new_status: str, force: bool) -> None:
+def change_status(ctx: Context, task_id: str, new_status: str, force: bool, assign: str | None) -> None:
     """Change task status.
 
     Examples:
         hopper task status abc12345 in_progress
+        hopper task status abc12345 in_progress --assign claude:acm-rewrite
         hopper task status abc12345 completed
     """
     # Confirmation
@@ -353,15 +372,22 @@ def change_status(ctx: Context, task_id: str, new_status: str, force: bool) -> N
             print_info("Cancelled")
             return
 
-    # Update status
+    # Update status (and optionally assignment)
+    update_data: dict[str, object] = {"status": new_status}
+    if assign:
+        update_data["assigned_to"] = assign
+
     try:
         with ctx.get_client() as client:
-            result = client.update_task(task_id, {"status": new_status})
+            result = client.update_task(task_id, update_data)
 
         if ctx.json_output:
             print_json(result)
         else:
-            print_success(f"Changed status to: {new_status}")
+            msg = f"Changed status to: {new_status}"
+            if assign:
+                msg += f" (assigned to {assign})"
+            print_success(msg)
 
     except ClientError as e:
         print_error(f"Failed to change status: {e.message}")
@@ -582,6 +608,119 @@ def show_delegations(ctx: Context, task_id: str) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get delegations: {e.message}")
+        raise click.Abort()
+
+
+def _parse_duration(value: str) -> int:
+    """Parse a human-friendly duration string into minutes.
+
+    Accepts: 30m, 2h, 1h30m, 90, 4h, etc.
+    Plain numbers are treated as minutes.
+    """
+    import re
+    value = value.strip().lower()
+
+    # Plain number = minutes
+    if value.isdigit():
+        return int(value)
+
+    total = 0
+    # Match hours and/or minutes
+    match = re.match(r"(?:(\d+)h)?(?:(\d+)m?)?$", value)
+    if match:
+        hours = int(match.group(1) or 0)
+        mins = int(match.group(2) or 0)
+        total = hours * 60 + mins
+
+    if total <= 0:
+        raise click.BadParameter(f"Cannot parse duration: '{value}' (try '30m', '2h', '1h30m')")
+    return total
+
+
+@task.command(name="heartbeat")
+@click.argument("task_id")
+@click.option(
+    "--expect", "-e",
+    help="When to expect the next heartbeat (e.g. '30m', '2h', '1h30m'). "
+    "Use when starting a long-running process so stale detection won't fire early."
+)
+@click.pass_obj
+def task_heartbeat(ctx: Context, task_id: str, expect: str | None) -> None:
+    """Signal that an agent is still working on a task.
+
+    Updates the last_heartbeat timestamp to now. Agents should call this
+    periodically (e.g. every 10-15 minutes) to indicate they're alive.
+
+    Use --expect before long-running work (GPU jobs, data generation) to tell
+    the stale detector not to flag you prematurely.
+
+    Examples:
+        hopper task heartbeat abc12345
+        hopper task heartbeat abc12345 --expect 2h
+        hopper task heartbeat abc12345 -e 30m
+    """
+    expect_minutes = _parse_duration(expect) if expect else None
+
+    try:
+        with ctx.get_client() as client:
+            if not hasattr(client, "heartbeat_task"):
+                print_error("Heartbeat requires local mode")
+                raise click.Abort()
+            result = client.heartbeat_task(task_id, expect_minutes=expect_minutes)
+
+        if ctx.json_output:
+            print_json(result)
+        else:
+            assigned = result.get("assigned_to", "unknown")
+            msg = f"Heartbeat updated for {task_id} (assigned to {assigned})"
+            if expect_minutes:
+                msg += f" — next expected in {expect}"
+            print_success(msg)
+
+    except ClientError as e:
+        print_error(f"Failed to update heartbeat: {e.message}")
+        raise click.Abort()
+
+
+@task.command(name="stale")
+@click.option(
+    "--minutes", "-m", type=int, default=30,
+    help="Minutes without heartbeat to consider stale (default: 30)"
+)
+@click.option("--compact", is_flag=True, help="Compact layout")
+@click.pass_obj
+def stale_tasks(ctx: Context, minutes: int, compact: bool) -> None:
+    """Find in-progress tasks whose agent has gone silent.
+
+    Lists assigned, in_progress tasks where the last heartbeat is older
+    than the threshold. These tasks likely belong to agents that crashed
+    or ended without cleaning up.
+
+    Examples:
+        hopper task stale
+        hopper task stale --minutes 60
+    """
+    try:
+        with ctx.get_client() as client:
+            if not hasattr(client, "list_stale_tasks"):
+                print_error("Stale detection requires local mode")
+                raise click.Abort()
+            tasks = client.list_stale_tasks(minutes=minutes)
+
+        if ctx.json_output:
+            print_json(tasks)
+        else:
+            if tasks:
+                print_task_table(tasks, compact=compact)
+                print_info(
+                    f"Found {len(tasks)} stale task(s) "
+                    f"(no heartbeat in {minutes}+ minutes)"
+                )
+            else:
+                print_info(f"No stale tasks (threshold: {minutes} minutes)")
+
+    except ClientError as e:
+        print_error(f"Failed to check stale tasks: {e.message}")
         raise click.Abort()
 
 

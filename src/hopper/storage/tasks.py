@@ -42,6 +42,10 @@ class LocalTask:
     context: str | None = None
     requester: str | None = None
     owner: str | None = None
+    # Agent/user identity tracking
+    assigned_to: str | None = None
+    last_heartbeat: datetime | None = None
+    expected_heartbeat: datetime | None = None
 
     @classmethod
     def create(
@@ -59,9 +63,12 @@ class LocalTask:
         context: str | None = None,
         requester: str | None = None,
         owner: str | None = None,
+        assigned_to: str | None = None,
+        expected_heartbeat: datetime | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> "LocalTask":
         """Create a new task with generated ID."""
+        now = _utc_now()
         return cls(
             id=f"t{uuid4().hex[:8]}",
             title=title,
@@ -77,8 +84,11 @@ class LocalTask:
             context=context,
             requester=requester,
             owner=owner,
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
+            assigned_to=assigned_to,
+            last_heartbeat=now if assigned_to else None,
+            expected_heartbeat=expected_heartbeat,
+            created_at=now,
+            updated_at=now,
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -109,6 +119,12 @@ class LocalTask:
             data["requester"] = self.requester
         if self.owner:
             data["owner"] = self.owner
+        if self.assigned_to:
+            data["assigned_to"] = self.assigned_to
+        if self.last_heartbeat:
+            data["last_heartbeat"] = self.last_heartbeat.isoformat()
+        if self.expected_heartbeat:
+            data["expected_heartbeat"] = self.expected_heartbeat.isoformat()
         return data
 
     @classmethod
@@ -136,6 +152,17 @@ class LocalTask:
             context=fm.get("context"),
             requester=fm.get("requester"),
             owner=fm.get("owner"),
+            assigned_to=fm.get("assigned_to"),
+            last_heartbeat=(
+                datetime.fromisoformat(fm["last_heartbeat"])
+                if isinstance(fm.get("last_heartbeat"), str)
+                else fm.get("last_heartbeat")
+            ),
+            expected_heartbeat=(
+                datetime.fromisoformat(fm["expected_heartbeat"])
+                if isinstance(fm.get("expected_heartbeat"), str)
+                else fm.get("expected_heartbeat")
+            ),
         )
 
 

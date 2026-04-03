@@ -79,6 +79,7 @@ class LocalClient:
             tags=data.get("tags", []),
             project=data.get("project_id"),
             status=data.get("status", "pending"),
+            assigned_to=data.get("assigned_to"),
         )
         self.task_store.save(task)
         return self._task_to_dict(task)
@@ -217,6 +218,15 @@ class LocalClient:
         if "tags" in data:
             task.tags = data["tags"]
 
+        # Handle assignment
+        if "assigned_to" in data:
+            task.assigned_to = data["assigned_to"]
+            if task.assigned_to:
+                from hopper.storage.tasks import _utc_now
+                task.last_heartbeat = _utc_now()
+            else:
+                task.last_heartbeat = None
+
         self.task_store.save(task)
         return self._task_to_dict(task)
 
@@ -240,6 +250,65 @@ class LocalClient:
         tasks = self.task_store.search(query, **filters)
         return [self._task_to_dict(t) for t in tasks]
 
+    def heartbeat_task(self, task_id: str, expect_minutes: int | None = None) -> dict[str, Any]:
+        """Update the heartbeat timestamp for a task.
+
+        Called by agents to signal they are still alive and working on a task.
+
+        Args:
+            task_id: Task to heartbeat
+            expect_minutes: If set, the next heartbeat is expected in this many
+                minutes. Use for long-running processes (GPU jobs, data generation)
+                so the stale detector doesn't flag the task prematurely.
+        """
+        task = self.task_store.get(task_id)
+        if task is None:
+            raise LocalClientError(f"Task not found: {task_id}")
+
+        from hopper.storage.tasks import _utc_now
+        from datetime import timedelta
+        now = _utc_now()
+        task.last_heartbeat = now
+        if expect_minutes:
+            task.expected_heartbeat = now + timedelta(minutes=expect_minutes)
+        else:
+            task.expected_heartbeat = None
+        self.task_store.save(task)
+        return self._task_to_dict(task)
+
+    def list_stale_tasks(self, minutes: int = 30) -> list[dict[str, Any]]:
+        """List in_progress tasks whose agent has gone silent.
+
+        A task is stale when:
+        - It has an assigned agent, AND
+        - If expected_heartbeat is set: now > expected_heartbeat
+        - If no expected_heartbeat: last_heartbeat is older than `minutes` threshold
+
+        This means an agent that says "back in 4 hours" won't be flagged at 30 min.
+
+        Args:
+            minutes: Default minutes without heartbeat to consider stale
+                (only used when no expected_heartbeat is set).
+        """
+        from hopper.storage.tasks import _utc_now
+        from datetime import timedelta
+
+        now = _utc_now()
+        default_cutoff = now - timedelta(minutes=minutes)
+        in_progress = self.task_store.list(status="in_progress")
+        stale = []
+        for task in in_progress:
+            if not task.assigned_to:
+                continue
+            if task.expected_heartbeat:
+                # Agent said when to expect them — use that
+                if now > task.expected_heartbeat:
+                    stale.append(task)
+            elif task.last_heartbeat is None or task.last_heartbeat < default_cutoff:
+                # No expectation set — use default threshold
+                stale.append(task)
+        return [self._task_to_dict(t) for t in stale]
+
     def _task_to_dict(self, task: LocalTask) -> dict[str, Any]:
         """Convert LocalTask to API-compatible dict."""
         return {
@@ -253,6 +322,9 @@ class LocalClient:
             "instance": task.instance,
             "source": task.source,
             "depends_on": task.depends_on,
+            "assigned_to": task.assigned_to,
+            "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,
+            "expected_heartbeat": task.expected_heartbeat.isoformat() if task.expected_heartbeat else None,
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
         }

@@ -138,7 +138,7 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
     table.add_column("Priority", justify="center")
 
     if not compact:
-        table.add_column("Project", style="dim")
+        table.add_column("Assigned", style="dim")
         table.add_column("Tags", style="dim")
         table.add_column("Created", style="dim", justify="right")
 
@@ -161,10 +161,10 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
         ]
 
         if not compact:
-            project = task.get("project", {}).get("name", "—")
+            assigned = task.get("assigned_to") or "—"
             tags = ", ".join(task.get("tags", [])) or "—"
             created = format_datetime(task.get("created_at"))
-            row.extend([project, tags, created])
+            row.extend([assigned, tags, created])
 
         table.add_row(*row)
 
@@ -188,6 +188,15 @@ def print_task_detail(task: dict[str, Any]) -> None:
         f"Status: [{get_status_style(status)}]{status}[/]  "
         f"Priority: [{get_priority_style(priority)}]{priority}[/]"
     )
+
+    # Assignment
+    if assigned_to := task.get("assigned_to"):
+        parts = [f"Assigned: [bold]{assigned_to}[/bold]"]
+        if heartbeat := task.get("last_heartbeat"):
+            parts.append(f"last heartbeat: {format_datetime(heartbeat)}")
+        if expected := task.get("expected_heartbeat"):
+            parts.append(f"next expected: {format_datetime(expected)}")
+        console.print(parts[0] + (" (" + ", ".join(parts[1:]) + ")" if len(parts) > 1 else ""))
 
     # Description
     if description := task.get("description"):
