@@ -162,8 +162,8 @@ def add_task(
 @click.option(
     "--sort-by",
     type=click.Choice(["created", "updated", "priority", "status"]),
-    default="created",
-    help="Sort field",
+    default="status",
+    help="Sort field (default: status then priority)",
 )
 @click.option("--limit", type=int, default=50, help="Maximum number of tasks to show")
 @click.option("--compact", is_flag=True, help="Use compact table layout")
@@ -748,4 +748,4 @@ def add_shortcut(ctx: click.Context, title: str | None, **kwargs: any) -> None:
 @click.pass_context
 def ls_shortcut(ctx: click.Context, **kwargs: any) -> None:
     """Quick list tasks (shortcut for 'hopper task list')."""
-    ctx.invoke(list_tasks, sort_by="created", limit=50, **kwargs)
+    ctx.invoke(list_tasks, sort_by="status", limit=50, **kwargs)

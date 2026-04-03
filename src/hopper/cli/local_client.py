@@ -84,6 +84,22 @@ class LocalClient:
         self.task_store.save(task)
         return self._task_to_dict(task)
 
+    # Sort ranks: lower number = higher in the list
+    _STATUS_RANK = {
+        "in_progress": 0,
+        "blocked": 1,
+        "open": 2,
+        "completed": 3,
+        "done": 3,
+        "cancelled": 4,
+    }
+    _PRIORITY_RANK = {
+        "urgent": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+    }
+
     def list_tasks(self, **params: Any) -> list[dict[str, Any]]:
         """List tasks with optional filters."""
         filters = {}
@@ -105,7 +121,16 @@ class LocalClient:
             filters["limit"] = params["limit"]
 
         tasks = self.task_store.list(**filters)
-        return [self._task_to_dict(t) for t in tasks]
+        result = [self._task_to_dict(t) for t in tasks]
+
+        # Default sort: status rank, then priority rank, then updated_at desc
+        sort_by = params.get("sort_by", "status")
+        if sort_by == "status":
+            result.sort(key=lambda t: (
+                self._STATUS_RANK.get(t.get("status", ""), 99),
+                self._PRIORITY_RANK.get(t.get("priority", ""), 99),
+            ))
+        return result
 
     def create_task_with_brief(self, data: dict[str, Any], brief: str) -> dict[str, Any]:
         """Create a task whose body is a full markdown brief.
