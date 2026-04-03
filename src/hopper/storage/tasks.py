@@ -177,9 +177,37 @@ class TaskMarkdownStore:
         """Get path for a task file."""
         return self.storage.tasks_path / f"{task_id}.md"
 
+    def resolve_id(self, task_id: str) -> str | None:
+        """Resolve a possibly-truncated task ID to a full ID.
+
+        Tries exact match first, then prefix match. Returns None if no match
+        or if the prefix is ambiguous (matches multiple tasks).
+        """
+        # Exact match
+        if self._task_path(task_id).exists():
+            return task_id
+
+        # Prefix match against index
+        index = self.storage.get_index()
+        all_ids = list(index.get("tasks", {}).keys())
+        matches = [tid for tid in all_ids if tid.startswith(task_id)]
+
+        # Also check filesystem for tasks not yet indexed
+        if not matches:
+            matches = [
+                f.stem for f in self.storage.tasks_path.glob(f"{task_id}*.md")
+            ]
+
+        if len(matches) == 1:
+            return matches[0]
+        return None  # 0 or ambiguous
+
     def get(self, task_id: str) -> LocalTask | None:
-        """Get task by ID."""
-        doc = self.storage.read_document(self._task_path(task_id))
+        """Get task by ID (accepts prefix matches)."""
+        resolved = self.resolve_id(task_id)
+        if resolved is None:
+            return None
+        doc = self.storage.read_document(self._task_path(resolved))
         if doc is None:
             return None
         return LocalTask.from_frontmatter(doc.frontmatter, doc.content)
@@ -198,10 +226,13 @@ class TaskMarkdownStore:
         self.storage.update_index(task.id, doc.frontmatter, file_path)
 
     def delete(self, task_id: str) -> bool:
-        """Delete task. Returns True if deleted."""
-        file_path = self._task_path(task_id)
+        """Delete task (accepts prefix matches). Returns True if deleted."""
+        resolved = self.resolve_id(task_id)
+        if resolved is None:
+            return False
+        file_path = self._task_path(resolved)
         if self.storage.delete_file(file_path):
-            self.storage._remove_from_index(task_id)
+            self.storage._remove_from_index(resolved)
             self.storage._save_index()
             return True
         return False
