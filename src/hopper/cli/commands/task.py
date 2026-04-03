@@ -60,8 +60,9 @@ def task() -> None:
     "--non-interactive", is_flag=True, help="Skip all interactive prompts (for scripted use)"
 )
 @click.option(
-    "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:main', 'opencode:acm', 'human:james')"
+    "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:acm-rewrite', 'human:james')"
 )
+@click.option("--parent", help="Parent task ID (creates a child task)")
 @click.pass_obj
 def add_task(
     ctx: Context,
@@ -74,6 +75,7 @@ def add_task(
     status: str,
     non_interactive: bool,
     assign: str | None,
+    parent: str | None,
 ) -> None:
     """Create a new task.
 
@@ -129,6 +131,8 @@ def add_task(
 
     if assign:
         task_data["assigned_to"] = assign
+    if parent:
+        task_data["parent_id"] = parent
 
     # Create task — use brief path when a full brief is provided
     try:
@@ -242,6 +246,8 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
         with ctx.get_client() as client:
             if with_lessons and hasattr(client, "get_task_with_lessons"):
                 task = client.get_task_with_lessons(task_id, project_slug=project)  # type: ignore[union-attr]
+            elif hasattr(client, "get_task_with_rollup"):
+                task = client.get_task_with_rollup(task_id)
             else:
                 task = client.get_task(task_id)
 
@@ -266,6 +272,8 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
 @click.option("--remove-tag", multiple=True, help="Remove tags")
 @click.option("--assign", "-a", help="Assign to an agent or user")
 @click.option("--unassign", is_flag=True, help="Clear assignment")
+@click.option("--parent", help="Set parent task ID")
+@click.option("--unparent", is_flag=True, help="Remove from parent")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
 @click.pass_obj
 def update_task(
@@ -278,6 +286,8 @@ def update_task(
     remove_tag: tuple[str, ...],
     assign: str | None,
     unassign: bool,
+    parent: str | None,
+    unparent: bool,
     interactive: bool,
 ) -> None:
     """Update a task.
@@ -329,6 +339,12 @@ def update_task(
         update_data["assigned_to"] = assign
     elif unassign:
         update_data["assigned_to"] = None
+
+    # Handle parent
+    if parent:
+        update_data["parent_id"] = parent
+    elif unparent:
+        update_data["parent_id"] = None
 
     if not update_data:
         print_error("No updates specified")
@@ -635,6 +651,51 @@ def _parse_duration(value: str) -> int:
     if total <= 0:
         raise click.BadParameter(f"Cannot parse duration: '{value}' (try '30m', '2h', '1h30m')")
     return total
+
+
+@task.command(name="children")
+@click.argument("task_id")
+@click.option("--compact", is_flag=True, help="Compact layout")
+@click.pass_obj
+def task_children(ctx: Context, task_id: str, compact: bool) -> None:
+    """List child tasks of a parent task.
+
+    Shows all tasks whose parent_id points to this task, with a
+    status rollup summary.
+
+    Examples:
+        hopper task children abc12345
+    """
+    try:
+        with ctx.get_client() as client:
+            if not hasattr(client, "get_task_with_rollup"):
+                print_error("Children requires local mode")
+                raise click.Abort()
+
+            parent = client.get_task_with_rollup(task_id)
+            children = client.get_task_children(task_id)
+
+        if ctx.json_output:
+            print_json({"parent": parent, "children": children})
+        else:
+            rollup = parent.get("children")
+            console.print(f"\n[bold cyan]Children of {parent['id'][:8]}[/bold cyan]: {parent.get('title', '')}")
+            if rollup:
+                total = rollup["total"]
+                done = rollup["done"]
+                by_status = rollup["by_status"]
+                parts = [f"[bold]{k}[/bold]: {v}" for k, v in sorted(by_status.items())]
+                console.print(f"Progress: {done}/{total} done  ({', '.join(parts)})\n")
+            else:
+                console.print("[dim]No children[/dim]\n")
+
+            if children:
+                print_task_table(children, compact=compact)
+                print_info(f"{len(children)} child task(s)")
+
+    except ClientError as e:
+        print_error(f"Failed to get children: {e.message}")
+        raise click.Abort()
 
 
 @task.command(name="heartbeat")

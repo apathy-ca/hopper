@@ -72,6 +72,14 @@ class LocalClient:
 
     def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new task."""
+        # Resolve parent prefix if provided
+        parent_id = data.get("parent_id")
+        if parent_id:
+            resolved = self.task_store.resolve_id(parent_id)
+            if resolved is None:
+                raise LocalClientError(f"Parent task not found: {parent_id}")
+            parent_id = resolved
+
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
             description=data.get("description"),
@@ -80,6 +88,7 @@ class LocalClient:
             project=data.get("project_id"),
             status=data.get("status", "pending"),
             assigned_to=data.get("assigned_to"),
+            parent_id=parent_id,
         )
         self.task_store.save(task)
         return self._task_to_dict(task)
@@ -123,14 +132,59 @@ class LocalClient:
         tasks = self.task_store.list(**filters)
         result = [self._task_to_dict(t) for t in tasks]
 
-        # Default sort: status rank, then priority rank, then updated_at desc
+        # Compute rollup for parent tasks
+        child_map: dict[str, list[dict[str, Any]]] = {}
+        for t in result:
+            pid = t.get("parent_id")
+            if pid:
+                child_map.setdefault(pid, []).append(t)
+
+        for t in result:
+            tid = t["id"]
+            if tid in child_map:
+                children = child_map[tid]
+                status_counts: dict[str, int] = {}
+                for c in children:
+                    status_counts[c["status"]] = status_counts.get(c["status"], 0) + 1
+                done = status_counts.get("completed", 0) + status_counts.get("done", 0)
+                t["children"] = {
+                    "total": len(children),
+                    "done": done,
+                    "by_status": status_counts,
+                }
+
+        # Default sort: status rank, then priority rank
         sort_by = params.get("sort_by", "status")
         if sort_by == "status":
             result.sort(key=lambda t: (
                 self._STATUS_RANK.get(t.get("status", ""), 99),
                 self._PRIORITY_RANK.get(t.get("priority", ""), 99),
             ))
-        return result
+
+        # Group children directly after their parent
+        ordered: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for t in result:
+            if t["id"] in seen:
+                continue
+            if t.get("parent_id") and t.get("parent_id") not in seen:
+                # Skip children for now — they'll be placed after their parent
+                continue
+            ordered.append(t)
+            seen.add(t["id"])
+            # Insert children immediately after parent
+            if t["id"] in child_map:
+                for child in child_map[t["id"]]:
+                    if child["id"] not in seen:
+                        ordered.append(child)
+                        seen.add(child["id"])
+
+        # Append any orphaned children (parent filtered out or missing)
+        for t in result:
+            if t["id"] not in seen:
+                ordered.append(t)
+
+        return ordered
 
     def create_task_with_brief(self, data: dict[str, Any], brief: str) -> dict[str, Any]:
         """Create a task whose body is a full markdown brief.
@@ -252,6 +306,17 @@ class LocalClient:
             else:
                 task.last_heartbeat = None
 
+        # Handle parent
+        if "parent_id" in data:
+            parent_id = data["parent_id"]
+            if parent_id:
+                resolved = self.task_store.resolve_id(parent_id)
+                if resolved is None:
+                    raise LocalClientError(f"Parent task not found: {parent_id}")
+                task.parent_id = resolved
+            else:
+                task.parent_id = None
+
         self.task_store.save(task)
         return self._task_to_dict(task)
 
@@ -334,6 +399,32 @@ class LocalClient:
                 stale.append(task)
         return [self._task_to_dict(t) for t in stale]
 
+    def get_task_children(self, task_id: str) -> list[dict[str, Any]]:
+        """Get children of a task with rollup summary."""
+        children = self.task_store.get_children(task_id)
+        return [self._task_to_dict(t) for t in children]
+
+    def get_task_with_rollup(self, task_id: str) -> dict[str, Any]:
+        """Get a task with child status rollup."""
+        task = self.task_store.get(task_id)
+        if task is None:
+            raise LocalClientError(f"Task not found: {task_id}")
+
+        result = self._task_to_dict(task)
+        children = self.task_store.get_children(task_id)
+
+        if children:
+            status_counts: dict[str, int] = {}
+            for child in children:
+                status_counts[child.status] = status_counts.get(child.status, 0) + 1
+            done = status_counts.get("completed", 0) + status_counts.get("done", 0)
+            result["children"] = {
+                "total": len(children),
+                "done": done,
+                "by_status": status_counts,
+            }
+        return result
+
     def _task_to_dict(self, task: LocalTask) -> dict[str, Any]:
         """Convert LocalTask to API-compatible dict."""
         return {
@@ -347,6 +438,7 @@ class LocalClient:
             "instance": task.instance,
             "source": task.source,
             "depends_on": task.depends_on,
+            "parent_id": task.parent_id,
             "assigned_to": task.assigned_to,
             "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,
             "expected_heartbeat": task.expected_heartbeat.isoformat() if task.expected_heartbeat else None,

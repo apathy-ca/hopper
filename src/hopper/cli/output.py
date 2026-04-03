@@ -148,15 +148,29 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
         title = task.get("title", "")
         status = task.get("status", "unknown")
         priority = task.get("priority", "medium")
+        is_child = bool(task.get("parent_id"))
+
+        # Indent children
+        if is_child:
+            title = f"  └ {title}"
 
         # Truncate title if too long
         if len(title) > 50 and compact:
             title = title[:47] + "..."
 
+        # Show rollup in status for parents with children
+        children_info = task.get("children")
+        if children_info:
+            done = children_info["done"]
+            total = children_info["total"]
+            status_display = f"[{get_status_style(status)}]{status}[/] [{done}/{total}]"
+        else:
+            status_display = f"[{get_status_style(status)}]{status}[/]"
+
         row = [
             task_id,
             title,
-            f"[{get_status_style(status)}]{status}[/]",
+            status_display,
             f"[{get_priority_style(priority)}]{priority}[/]",
         ]
 
@@ -189,6 +203,10 @@ def print_task_detail(task: dict[str, Any]) -> None:
         f"Priority: [{get_priority_style(priority)}]{priority}[/]"
     )
 
+    # Parent
+    if parent_id := task.get("parent_id"):
+        console.print(f"Parent: [dim]{parent_id[:8]}[/dim]")
+
     # Assignment
     if assigned_to := task.get("assigned_to"):
         parts = [f"Assigned: [bold]{assigned_to}[/bold]"]
@@ -197,6 +215,14 @@ def print_task_detail(task: dict[str, Any]) -> None:
         if expected := task.get("expected_heartbeat"):
             parts.append(f"next expected: {format_datetime(expected)}")
         console.print(parts[0] + (" (" + ", ".join(parts[1:]) + ")" if len(parts) > 1 else ""))
+
+    # Child rollup
+    if children := task.get("children"):
+        total = children["total"]
+        done = children["done"]
+        by_status = children.get("by_status", {})
+        parts = [f"{k}: {v}" for k, v in sorted(by_status.items())]
+        console.print(f"Children: [bold]{done}/{total} done[/bold]  ({', '.join(parts)})")
 
     # Description
     if description := task.get("description"):

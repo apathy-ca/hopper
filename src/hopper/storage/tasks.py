@@ -46,6 +46,8 @@ class LocalTask:
     assigned_to: str | None = None
     last_heartbeat: datetime | None = None
     expected_heartbeat: datetime | None = None
+    # Parent-child hierarchy
+    parent_id: str | None = None
 
     @classmethod
     def create(
@@ -65,6 +67,7 @@ class LocalTask:
         owner: str | None = None,
         assigned_to: str | None = None,
         expected_heartbeat: datetime | None = None,
+        parent_id: str | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> "LocalTask":
         """Create a new task with generated ID."""
@@ -87,6 +90,7 @@ class LocalTask:
             assigned_to=assigned_to,
             last_heartbeat=now if assigned_to else None,
             expected_heartbeat=expected_heartbeat,
+            parent_id=parent_id,
             created_at=now,
             updated_at=now,
         )
@@ -125,6 +129,8 @@ class LocalTask:
             data["last_heartbeat"] = self.last_heartbeat.isoformat()
         if self.expected_heartbeat:
             data["expected_heartbeat"] = self.expected_heartbeat.isoformat()
+        if self.parent_id:
+            data["parent_id"] = self.parent_id
         return data
 
     @classmethod
@@ -163,6 +169,7 @@ class LocalTask:
                 if isinstance(fm.get("expected_heartbeat"), str)
                 else fm.get("expected_heartbeat")
             ),
+            parent_id=fm.get("parent_id"),
         )
 
 
@@ -325,6 +332,15 @@ class TaskMarkdownStore:
     def count(self, **filters: Any) -> int:
         """Count tasks matching filters."""
         return len(self.list(**filters))
+
+    def get_children(self, parent_id: str) -> list[LocalTask]:
+        """Get all direct children of a task."""
+        # Resolve prefix
+        resolved = self.resolve_id(parent_id)
+        if resolved is None:
+            return []
+        all_tasks = self.list()
+        return [t for t in all_tasks if t.parent_id == resolved]
 
     def get_by_status(self, status: str) -> list[LocalTask]:
         """Get tasks by status."""
