@@ -134,7 +134,7 @@ class LocalClient:
 
         # Mark stale tasks inline
         from hopper.storage.tasks import _utc_now
-        from datetime import timedelta
+        from datetime import datetime as dt, timedelta
         now = _utc_now()
         stale_cutoff = now - timedelta(minutes=30)
         for t in result:
@@ -142,7 +142,6 @@ class LocalClient:
                 expected = t.get("expected_heartbeat")
                 heartbeat = t.get("last_heartbeat")
                 if expected:
-                    from datetime import datetime as dt
                     exp_dt = dt.fromisoformat(expected) if isinstance(expected, str) else expected
                     t["stale"] = now > exp_dt if exp_dt else False
                 elif heartbeat:
