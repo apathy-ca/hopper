@@ -47,21 +47,66 @@ See [CLAUDE.md](CLAUDE.md) for full agent instructions.
 ### CLI Commands
 
 ```bash
-# Add tasks/notes
-hopper task add "Remember this for later"
+# Add tasks
 hopper task add "Fix bug" --priority high --tag backend
+hopper task add "GPU sweep" --assign "claude:deep-dive" --status in_progress
+hopper task add "Subtask" --parent <parent-id>
 
-# List and filter
+# List and filter (sorted by status then priority)
 hopper task list
 hopper task list --status open --priority high
+hopper task list --tag gpu --compact
 
 # Update status
-hopper task status <task-id> done
-hopper task status <task-id> claimed
+hopper task status <task-id> in_progress -f
+hopper task status <task-id> completed -f
+hopper task status <task-id> in_progress --assign "claude:my-task" -f
 
-# View details
+# View details (shows child rollup if parent)
 hopper task get <task-id>
+
+# Update tasks
+hopper task update <task-id> --assign "opencode:refactor"
+hopper task update <task-id> --parent <parent-id>
+hopper task update <task-id> --unassign --unparent
 ```
+
+### Multi-Agent Coordination
+
+Hopper tracks which agent is working on what, and whether they're still alive:
+
+```bash
+# Assign work with identity (platform:task-name)
+hopper task status <id> in_progress --assign "claude:acm-rewrite" -f
+
+# Signal you're still alive (agents should call every 10-15 min)
+hopper task heartbeat <task-id>
+
+# Before a long-running job (GPU, data gen), set expected duration
+hopper task heartbeat <task-id> --expect 4h
+
+# Find tasks where the agent has gone silent
+hopper task stale
+hopper task stale --minutes 60
+```
+
+The list view shows staleness as a per-character color gradient on the status text — green fading to red as the heartbeat ages. At a glance you can see which agents are healthy and which have gone silent.
+
+### Parent-Child Tasks
+
+```bash
+# Create child tasks
+hopper task add "Subtask A" --parent <parent-id>
+hopper task add "Subtask B" --parent <parent-id>
+
+# View rollup (shows done/total)
+hopper task get <parent-id>
+hopper task children <parent-id>
+```
+
+Parent tasks show `[done/total]` rollup in the list view, and children are grouped under their parent with `└` indentation.
+
+**Task ID prefix matching**: IDs are truncated to 8 chars in display. All commands accept prefix matches — `hopper task get t7232` resolves to the full ID if unambiguous.
 
 ### GitHub Integration
 

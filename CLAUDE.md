@@ -89,14 +89,80 @@ hopper knowledge show      # Display hopper-usage.md
 hopper knowledge refresh   # Update built-in docs
 ```
 
+## Multi-Agent Coordination
+
+Hopper tracks which agent owns which task and whether they're still alive.
+
+### Agent Identity
+
+Identify yourself with `platform:task-name` when claiming work:
+- `claude:acm-rewrite`, `opencode:consensus-gen`, `human:james`
+- The name describes the work, not your role. Never use generic names like `main`.
+
+### Claiming and Releasing Work
+
+```bash
+# Claim a task
+hopper task status <id> in_progress --assign "claude:my-task" -f
+
+# Release when done
+hopper task status <id> completed -f
+
+# Release without completing (stopping early)
+hopper task update <id> --unassign
+hopper task status <id> open -f
+```
+
+### Heartbeats
+
+Signal that you're still working. Call every 10-15 minutes of active work:
+
+```bash
+hopper task heartbeat <id>
+
+# Before long-running work (GPU jobs, data generation)
+hopper task heartbeat <id> --expect 4h
+```
+
+The `--expect` flag tells the stale detector not to flag you early. Without it, tasks are considered stale after 30 minutes of silence.
+
+### Stale Detection
+
+```bash
+hopper task stale              # Find abandoned tasks (30 min default)
+hopper task stale --minutes 60 # Custom threshold
+```
+
+The list view shows staleness as a per-character color gradient on the status text: green chars fade to red as the heartbeat ages. No separate command needed.
+
+### Parent-Child Tasks
+
+```bash
+hopper task add "Subtask" --parent <parent-id>
+hopper task children <parent-id>    # List children with rollup
+hopper task get <parent-id>          # Shows done/total
+hopper task update <id> --unparent   # Remove from parent
+```
+
+### Task Granularity
+
+One task per logical initiative, not per execution step. A 25-model GPU sweep is one task, not 25. Use tags for filtering and descriptions for details.
+
+### ID Prefix Matching
+
+All commands accept truncated IDs. `hopper task get t7232` resolves to the full ID if unambiguous.
+
 ## Full CLI
 
-For advanced usage:
 ```bash
-hopper task list
-hopper task add "Task" --priority high
-hopper knowledge sync --full  # Sync entire agent-knowledge repo
-hopper github import owner/repo --all  # Sync GitHub issues
+hopper task list                     # Sorted by status then priority
+hopper task list --tag gpu --compact # Filter and compact view
+hopper task add "Task" --priority high --assign "claude:worker" --parent <id>
+hopper task update <id> --assign "claude:x" --parent <id>
+hopper task search "keyword"
+hopper task delete <id> -f
+hopper knowledge sync --full
+hopper github import owner/repo --all
 ```
 
 ---
