@@ -101,33 +101,48 @@ def get_status_style(status: str) -> str:
     return f"bold {color}"
 
 
-def get_staleness_color(ratio: float) -> str:
-    """Map a staleness ratio (0.0–1.0+) to a hex color.
-
-    0.0  = fresh (green)
-    0.5  = halfway (yellow)
-    0.8  = warning (orange)
-    1.0+ = stale (red)
-    """
-    ratio = max(0.0, min(ratio, 1.2))  # clamp
-
+def _lerp_color(ratio: float) -> tuple[int, int, int]:
+    """Interpolate green→yellow→red for a 0.0–1.0+ ratio."""
+    ratio = max(0.0, min(ratio, 1.0))
     if ratio <= 0.5:
-        # Green (#22cc22) → Yellow (#cccc22): shift red up, keep green
         t = ratio / 0.5
-        r = int(0x22 + (0xcc - 0x22) * t)
-        g = 0xcc
-        b = 0x22
-    elif ratio <= 1.0:
-        # Yellow (#cccc22) → Red (#cc2222): drop green
-        t = (ratio - 0.5) / 0.5
-        r = 0xcc
-        g = int(0xcc - (0xcc - 0x22) * t)
-        b = 0x22
+        return (int(0x22 + (0xcc - 0x22) * t), 0xcc, 0x22)
     else:
-        # Overdue — bright red
-        r, g, b = 0xff, 0x22, 0x22
+        t = (ratio - 0.5) / 0.5
+        return (0xcc, int(0xcc - (0xcc - 0x22) * t), 0x22)
 
-    return f"#{r:02x}{g:02x}{b:02x}"
+
+def gradient_text(text: str, ratio: float) -> str:
+    """Color each character of text as a gradient bar.
+
+    Characters up to the ratio point are colored on a green→red scale
+    matching their position. Characters past the ratio point are dim.
+    If ratio >= 1.0, the whole word is red and ' STALE' is appended.
+
+    Example at 75%: green 'in_prog' → orange 'r' → dim 'ess'
+    """
+    if ratio >= 1.0:
+        return f"[bold #ff2222]{text} STALE[/]"
+
+    n = len(text)
+    split = int(n * ratio)
+    parts: list[str] = []
+
+    for i, ch in enumerate(text):
+        if i < split:
+            # Color each char on the green→red scale based on its position
+            char_ratio = i / n
+            r, g, b = _lerp_color(char_ratio)
+            parts.append(f"[bold #{r:02x}{g:02x}{b:02x}]{ch}[/]")
+        elif i == split:
+            # The boundary character — use the overall ratio color
+            r, g, b = _lerp_color(ratio)
+            parts.append(f"[bold #{r:02x}{g:02x}{b:02x}]{ch}[/]")
+        else:
+            # Remaining chars are dim
+            parts.append(f"[dim]{ch}[/]")
+
+    return "".join(parts)
 
 
 def get_priority_style(priority: str) -> str:
@@ -196,9 +211,7 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
             total = children_info["total"]
             status_display = f"[{get_status_style(status)}]{status}[/] [{done}/{total}]"
         elif stale_ratio is not None:
-            color = get_staleness_color(stale_ratio)
-            label = f"{status} STALE" if stale_ratio >= 1.0 else status
-            status_display = f"[bold {color}]{label}[/]"
+            status_display = gradient_text(status, stale_ratio)
         else:
             status_display = f"[{get_status_style(status)}]{status}[/]"
 
