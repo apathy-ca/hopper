@@ -101,6 +101,35 @@ def get_status_style(status: str) -> str:
     return f"bold {color}"
 
 
+def get_staleness_color(ratio: float) -> str:
+    """Map a staleness ratio (0.0–1.0+) to a hex color.
+
+    0.0  = fresh (green)
+    0.5  = halfway (yellow)
+    0.8  = warning (orange)
+    1.0+ = stale (red)
+    """
+    ratio = max(0.0, min(ratio, 1.2))  # clamp
+
+    if ratio <= 0.5:
+        # Green (#22cc22) → Yellow (#cccc22): shift red up, keep green
+        t = ratio / 0.5
+        r = int(0x22 + (0xcc - 0x22) * t)
+        g = 0xcc
+        b = 0x22
+    elif ratio <= 1.0:
+        # Yellow (#cccc22) → Red (#cc2222): drop green
+        t = (ratio - 0.5) / 0.5
+        r = 0xcc
+        g = int(0xcc - (0xcc - 0x22) * t)
+        b = 0x22
+    else:
+        # Overdue — bright red
+        r, g, b = 0xff, 0x22, 0x22
+
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def get_priority_style(priority: str) -> str:
     """Get Rich style for a priority.
 
@@ -158,15 +187,18 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
         if len(title) > 50 and compact:
             title = title[:47] + "..."
 
-        # Build status display
+        # Build status display with staleness gradient
         children_info = task.get("children")
-        is_stale = task.get("stale", False)
+        stale_ratio = task.get("stale_ratio")
+
         if children_info:
             done = children_info["done"]
             total = children_info["total"]
             status_display = f"[{get_status_style(status)}]{status}[/] [{done}/{total}]"
-        elif is_stale:
-            status_display = f"[bold red]{status} STALE[/]"
+        elif stale_ratio is not None:
+            color = get_staleness_color(stale_ratio)
+            label = f"{status} STALE" if stale_ratio >= 1.0 else status
+            status_display = f"[bold {color}]{label}[/]"
         else:
             status_display = f"[{get_status_style(status)}]{status}[/]"
 

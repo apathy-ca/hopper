@@ -132,23 +132,36 @@ class LocalClient:
         tasks = self.task_store.list(**filters)
         result = [self._task_to_dict(t) for t in tasks]
 
-        # Mark stale tasks inline
+        # Compute staleness ratio for in_progress tasks
+        # 0.0 = just heartbeated, 1.0 = stale threshold reached, >1.0 = overdue
         from hopper.storage.tasks import _utc_now
         from datetime import datetime as dt, timedelta
         now = _utc_now()
-        stale_cutoff = now - timedelta(minutes=30)
+        default_window = timedelta(minutes=30)
         for t in result:
             if t.get("status") == "in_progress" and t.get("assigned_to"):
                 expected = t.get("expected_heartbeat")
                 heartbeat = t.get("last_heartbeat")
+                hb_dt = (
+                    dt.fromisoformat(heartbeat) if isinstance(heartbeat, str)
+                    else heartbeat
+                ) if heartbeat else None
+
                 if expected:
                     exp_dt = dt.fromisoformat(expected) if isinstance(expected, str) else expected
-                    t["stale"] = now > exp_dt if exp_dt else False
-                elif heartbeat:
-                    hb_dt = dt.fromisoformat(heartbeat) if isinstance(heartbeat, str) else heartbeat
-                    t["stale"] = hb_dt < stale_cutoff if hb_dt else True
+                    if hb_dt and exp_dt:
+                        window = exp_dt - hb_dt
+                        elapsed = now - hb_dt
+                        t["stale_ratio"] = (elapsed / window) if window.total_seconds() > 0 else 1.0
+                    else:
+                        t["stale_ratio"] = 1.0
+                elif hb_dt:
+                    elapsed = now - hb_dt
+                    t["stale_ratio"] = elapsed / default_window
                 else:
-                    t["stale"] = True
+                    t["stale_ratio"] = 1.0
+
+                t["stale"] = t["stale_ratio"] >= 1.0
 
         # Compute rollup for parent tasks
         child_map: dict[str, list[dict[str, Any]]] = {}
