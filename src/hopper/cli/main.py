@@ -49,6 +49,14 @@ class Context:
 
             return HopperClient(self.config)
 
+    def get_storage_path(self):
+        """Get the storage path for local mode.
+
+        Returns:
+            Path to storage directory, or None for server mode.
+        """
+        return get_storage_path(self.config, self._force_server)
+
 
 @click.group()
 @click.version_option(version=__version__, prog_name="hopper")
@@ -116,6 +124,7 @@ from hopper.cli.commands.learning import learning
 from hopper.cli.commands.project import project
 from hopper.cli.commands.server import server
 from hopper.cli.commands.task import add_shortcut, ls_shortcut, task
+from hopper.cli.commands.upstream import upstream
 
 # Register command groups
 cli.add_command(task)
@@ -125,6 +134,7 @@ cli.add_command(learning)
 cli.add_command(knowledge)
 cli.add_command(context)
 cli.add_command(github)
+cli.add_command(upstream)
 cli.add_command(config_group, name="config")
 cli.add_command(init)
 cli.add_command(auth)

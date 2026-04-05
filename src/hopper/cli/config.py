@@ -59,6 +59,23 @@ class KnowledgeConfig(BaseModel):
     )
 
 
+class UpstreamConfig(BaseModel):
+    """Upstream sync configuration."""
+
+    server: str | None = Field(
+        default=None,
+        description="Upstream server URL (e.g., https://upstream.example.com)",
+    )
+    did_key_path: str | None = Field(
+        default=None,
+        description="Path to DID signing key file",
+    )
+    enabled: bool = Field(
+        default=False,
+        description="Enable upstream sync",
+    )
+
+
 class ProfileConfig(BaseModel):
     """Configuration profile."""
 
@@ -68,6 +85,7 @@ class ProfileConfig(BaseModel):
     local: LocalConfig = Field(default_factory=LocalConfig)
     github: GitHubConfig = Field(default_factory=GitHubConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
+    upstream: UpstreamConfig = Field(default_factory=UpstreamConfig)
 
 
 class Config(BaseSettings):
@@ -127,6 +145,11 @@ class Config(BaseSettings):
                         "auto_detect": profile.knowledge.auto_detect,
                         "enabled": profile.knowledge.enabled,
                     },
+                    "upstream": {
+                        "server": profile.upstream.server,
+                        "did_key_path": profile.upstream.did_key_path,
+                        "enabled": profile.upstream.enabled,
+                    },
                 }
                 for name, profile in self.profiles.items()
             },
@@ -157,6 +180,7 @@ class Config(BaseSettings):
                 local=LocalConfig(**local_data) if local_data else LocalConfig(),
                 github=GitHubConfig(**profile_data.get("github", {})),
                 knowledge=KnowledgeConfig(**profile_data.get("knowledge", {})),
+                upstream=UpstreamConfig(**profile_data.get("upstream", {})),
             )
 
         return cls(
