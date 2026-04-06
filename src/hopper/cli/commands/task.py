@@ -171,6 +171,7 @@ def add_task(
 )
 @click.option("--limit", type=int, default=50, help="Maximum number of tasks to show")
 @click.option("--compact", is_flag=True, help="Use compact table layout")
+@click.option("--ids-only", is_flag=True, help="Output task IDs only, one per line (for scripting)")
 @click.pass_obj
 def list_tasks(
     ctx: Context,
@@ -181,6 +182,7 @@ def list_tasks(
     sort_by: str,
     limit: int,
     compact: bool,
+    ids_only: bool,
 ) -> None:
     """List tasks with optional filters.
 
@@ -210,7 +212,10 @@ def list_tasks(
         with ctx.get_client() as client:
             tasks = client.list_tasks(**params)
 
-        if ctx.json_output:
+        if ids_only:
+            for task in tasks:
+                click.echo(task["id"])
+        elif ctx.json_output:
             print_json(tasks)
         else:
             print_task_table(tasks, compact=compact)
