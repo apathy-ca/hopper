@@ -10,6 +10,9 @@ import sys
 from pathlib import Path
 
 import click
+import httpx
+
+from hopper.cli.output import print_error, print_info, print_json, print_success, print_warning
 
 
 @click.group()
@@ -228,3 +231,313 @@ def test() -> None:
 
     click.echo("\n✓ All tests passed! MCP server is ready to use.")
     click.echo("\nTo start the server, run: hopper mcp start")
+
+
+# --- MCP Token Management Commands ---
+
+
+def _get_did_key():
+    """Load or generate DID key for MCP authentication."""
+    from hopper.upstream.did import DIDKey
+
+    did_key_path = Path.home() / ".hopper" / "did.key"
+
+    if did_key_path.exists():
+        return DIDKey.load(did_key_path)
+    else:
+        # Generate new DID
+        did_key = DIDKey.generate()
+        did_key.save(did_key_path)
+        print_info(f"Generated new DID: {did_key.did}")
+        return did_key
+
+
+def _get_default_server() -> str:
+    """Get default server URL from config or fallback."""
+    try:
+        from hopper.cli.config import load_config
+
+        config = load_config()
+        if config.current_profile.upstream.server:
+            return config.current_profile.upstream.server
+    except Exception:
+        pass
+    return "http://localhost:8080"
+
+
+@mcp.command(name="init-token")
+@click.option(
+    "--server",
+    "-s",
+    default=None,
+    help="Hopper server URL (default from config or http://localhost:8080)",
+)
+@click.option(
+    "--label",
+    "-l",
+    default="claude-web",
+    help="Label for this token (default: claude-web)",
+)
+@click.option(
+    "--instance",
+    "-i",
+    default="default",
+    help="Instance name (e.g., 'work', 'personal')",
+)
+@click.option(
+    "--instance-path",
+    "-p",
+    default=None,
+    help="Path to instance storage directory",
+)
+def mcp_init_token(server: str | None, label: str, instance: str, instance_path: str | None) -> None:
+    """Register for MCP access and get a Bearer token.
+
+    Creates a token linked to your DID and a specific Hopper instance.
+    Use different tokens for different instances (work, personal, etc.).
+
+    Examples:
+        hopper mcp init-token --server https://hopper.example.com
+        hopper mcp init-token -s https://hopper.example.com -i work
+        hopper mcp init-token -s https://hopper.example.com -i project -p /path/to/project/.hopper
+    """
+    from hopper.upstream.did import sign_request
+
+    # Get server URL
+    server_url = server or _get_default_server()
+    server_url = server_url.rstrip("/")
+
+    # Load or generate DID key
+    did_key = _get_did_key()
+
+    # Sign request to server
+    body = {
+        "label": label,
+        "instance": instance,
+        "instance_path": instance_path,
+    }
+    path = "/mcp/register"
+
+    # Serialize body consistently for signing
+    body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
+    auth_header = sign_request(did_key, "POST", path, body_bytes)
+
+    # Make request
+    try:
+        with httpx.Client(timeout=30) as client:
+            response = client.post(
+                f"{server_url}{path}",
+                content=body_bytes,
+                headers={
+                    "Authorization": auth_header,
+                    "Content-Type": "application/json",
+                },
+            )
+
+        if response.status_code == 200:
+            data = response.json()
+            click.echo("\n" + "=" * 60)
+            click.echo("MCP TOKEN GENERATED")
+            click.echo("=" * 60)
+            click.echo(f"\nYour token: {data['token']}")
+            click.echo(f"Your DID:   {data['did']}")
+            click.echo(f"Instance:   {data.get('instance', 'default')}")
+            if "expires_at" in data:
+                click.echo(f"Expires:    {data['expires_at']}")
+            click.echo("\nAdd to Claude Web config:")
+            click.echo('  "authorization_token": "' + data["token"] + '"')
+            click.echo("=" * 60 + "\n")
+        elif response.status_code == 401:
+            print_error("DID authentication failed")
+            raise click.Abort()
+        elif response.status_code == 403:
+            detail = response.json().get("detail", "Not authorized")
+            print_error(f"Access denied: {detail}")
+            print_info("Your DID may be pending approval. Contact the server admin.")
+            raise click.Abort()
+        else:
+            print_error(f"Server error ({response.status_code}): {response.text}")
+            raise click.Abort()
+
+    except httpx.ConnectError:
+        print_error(f"Could not connect to server: {server_url}")
+        print_info("Check that the server URL is correct and the server is running.")
+        raise click.Abort()
+    except httpx.RequestError as e:
+        print_error(f"Request failed: {e}")
+        raise click.Abort()
+
+
+@mcp.command(name="tokens")
+@click.option(
+    "--server",
+    "-s",
+    default=None,
+    help="Hopper server URL",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Output as JSON",
+)
+def mcp_tokens(server: str | None, json_output: bool) -> None:
+    """List your MCP tokens.
+
+    Shows all tokens associated with your DID identity.
+
+    Example:
+        hopper mcp tokens --server https://hopper.example.com
+    """
+    from hopper.upstream.did import sign_request
+
+    # Get server URL
+    server_url = server or _get_default_server()
+    server_url = server_url.rstrip("/")
+
+    # Load DID key
+    did_key_path = Path.home() / ".hopper" / "did.key"
+    if not did_key_path.exists():
+        print_error("No DID key found. Run 'hopper mcp init-token' first to generate one.")
+        raise click.Abort()
+
+    from hopper.upstream.did import DIDKey
+
+    did_key = DIDKey.load(did_key_path)
+
+    # Sign request
+    path = "/mcp/tokens"
+    auth_header = sign_request(did_key, "GET", path, None)
+
+    # Make request
+    try:
+        with httpx.Client(timeout=30) as client:
+            response = client.get(
+                f"{server_url}{path}",
+                headers={
+                    "Authorization": auth_header,
+                },
+            )
+
+        if response.status_code == 200:
+            data = response.json()
+            tokens = data.get("tokens", [])
+
+            if json_output:
+                print_json(data)
+            elif not tokens:
+                print_info("No tokens found.")
+            else:
+                click.echo(f"\nTokens for DID: {did_key.did[:50]}...\n")
+                for token in tokens:
+                    prefix = token.get("prefix", token.get("token", "")[:12])
+                    label = token.get("label", "")
+                    instance = token.get("instance", "default")
+                    created = token.get("created_at", "")
+                    last_used = token.get("last_used", "never")
+
+                    click.echo(f"  {prefix}...")
+                    click.echo(f"    Label:     {label}")
+                    click.echo(f"    Instance:  {instance}")
+                    click.echo(f"    Created:   {created}")
+                    click.echo(f"    Last used: {last_used}")
+                    click.echo()
+        elif response.status_code == 401:
+            print_error("DID authentication failed")
+            raise click.Abort()
+        else:
+            print_error(f"Server error ({response.status_code}): {response.text}")
+            raise click.Abort()
+
+    except httpx.ConnectError:
+        print_error(f"Could not connect to server: {server_url}")
+        raise click.Abort()
+    except httpx.RequestError as e:
+        print_error(f"Request failed: {e}")
+        raise click.Abort()
+
+
+@mcp.command(name="revoke")
+@click.argument("token_prefix")
+@click.option(
+    "--server",
+    "-s",
+    default=None,
+    help="Hopper server URL",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+def mcp_revoke(token_prefix: str, server: str | None, force: bool) -> None:
+    """Revoke an MCP token.
+
+    Revokes a token matching the given prefix. The prefix should be the
+    first characters of the token (at least 8 characters recommended).
+
+    Example:
+        hopper mcp revoke abc123xy --server https://hopper.example.com
+    """
+    from hopper.upstream.did import sign_request
+
+    # Get server URL
+    server_url = server or _get_default_server()
+    server_url = server_url.rstrip("/")
+
+    # Load DID key
+    did_key_path = Path.home() / ".hopper" / "did.key"
+    if not did_key_path.exists():
+        print_error("No DID key found. Run 'hopper mcp init-token' first.")
+        raise click.Abort()
+
+    from hopper.upstream.did import DIDKey
+
+    did_key = DIDKey.load(did_key_path)
+
+    # Confirm
+    if not force:
+        click.confirm(
+            f"Revoke token starting with '{token_prefix}'?",
+            abort=True,
+        )
+
+    # Sign request
+    body = {"prefix": token_prefix}
+    path = "/mcp/revoke"
+    body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
+    auth_header = sign_request(did_key, "POST", path, body_bytes)
+
+    # Make request
+    try:
+        with httpx.Client(timeout=30) as client:
+            response = client.post(
+                f"{server_url}{path}",
+                content=body_bytes,
+                headers={
+                    "Authorization": auth_header,
+                    "Content-Type": "application/json",
+                },
+            )
+
+        if response.status_code == 200:
+            data = response.json()
+            revoked_count = data.get("revoked", 1)
+            print_success(f"Revoked {revoked_count} token(s)")
+        elif response.status_code == 401:
+            print_error("DID authentication failed")
+            raise click.Abort()
+        elif response.status_code == 404:
+            print_error(f"No token found matching prefix '{token_prefix}'")
+            raise click.Abort()
+        else:
+            print_error(f"Server error ({response.status_code}): {response.text}")
+            raise click.Abort()
+
+    except httpx.ConnectError:
+        print_error(f"Could not connect to server: {server_url}")
+        raise click.Abort()
+    except httpx.RequestError as e:
+        print_error(f"Request failed: {e}")
+        raise click.Abort()

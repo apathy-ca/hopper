@@ -22,6 +22,7 @@ from hopper.api.exceptions import (
     hopper_exception_handler,
     validation_exception_handler,
 )
+from hopper.api.mcp_sse import create_sse_server
 
 logger = logging.getLogger(__name__)
 
@@ -117,18 +118,25 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "docs": "/docs",
             "health": "/health",
+            "mcp_sse": "/mcp/sse/",
+            "mcp_register": "/mcp/register",
         }
 
     # Import and include routers
-    from hopper.api.routes import delegations, instances, learning, tasks
+    from hopper.api.routes import delegations, instances, learning, mcp_auth, tasks
 
     app.include_router(tasks.router, prefix="/api/v1", tags=["Tasks"])
     app.include_router(instances.router, prefix="/api/v1", tags=["Instances"])
     app.include_router(delegations.router, prefix="/api/v1", tags=["Delegations"])
     app.include_router(learning.router, prefix="/api/v1", tags=["Learning"])
+    # MCP token registration (DID-authenticated)
+    app.include_router(mcp_auth.router, tags=["MCP Auth"])
     # from hopper.api.routes import projects, auth
     # app.include_router(projects.router, prefix="/api/v1", tags=["Projects"])
     # app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+
+    # Mount MCP SSE server for Claude Web integration
+    app.mount("/mcp", create_sse_server())
 
     return app
 

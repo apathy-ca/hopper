@@ -690,29 +690,17 @@ wheels = [
 
 [[package]]
 name = "hopper"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
-    { name = "alembic" },
-    { name = "anthropic" },
     { name = "click" },
-    { name = "fastapi" },
     { name = "httpx" },
     { name = "mcp" },
-    { name = "opensearch-py" },
-    { name = "passlib", extra = ["bcrypt"] },
-    { name = "psycopg2-binary" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pygithub" },
-    { name = "python-gitlab" },
-    { name = "python-jose", extra = ["cryptography"] },
-    { name = "python-multipart" },
+    { name = "pynacl" },
     { name = "pyyaml" },
-    { name = "redis" },
     { name = "rich" },
-    { name = "sqlalchemy" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
@@ -726,39 +714,51 @@ dev = [
     { name = "types-pyyaml" },
     { name = "types-redis" },
 ]
+server = [
+    { name = "alembic" },
+    { name = "anthropic" },
+    { name = "fastapi" },
+    { name = "opensearch-py" },
+    { name = "passlib", extra = ["bcrypt"] },
+    { name = "psycopg2-binary" },
+    { name = "python-jose", extra = ["cryptography"] },
+    { name = "python-multipart" },
+    { name = "redis" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.12.0" },
-    { name = "anthropic", specifier = ">=0.7.0" },
+    { name = "alembic", marker = "extra == 'server'", specifier = ">=1.12.0" },
+    { name = "anthropic", marker = "extra == 'server'", specifier = ">=0.7.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.11.0" },
     { name = "click", specifier = ">=8.1.7" },
-    { name = "fastapi", specifier = ">=0.104.0" },
+    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.104.0" },
     { name = "httpx", specifier = ">=0.25.0" },
-    { name = "mcp", specifier = ">=0.1.0" },
+    { name = "mcp", specifier = ">=1.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
-    { name = "opensearch-py", specifier = ">=2.4.0" },
-    { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
-    { name = "psycopg2-binary", specifier = ">=2.9.9" },
+    { name = "opensearch-py", marker = "extra == 'server'", specifier = ">=2.4.0" },
+    { name = "passlib", extras = ["bcrypt"], marker = "extra == 'server'", specifier = ">=1.7.4" },
+    { name = "psycopg2-binary", marker = "extra == 'server'", specifier = ">=2.9.9" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
-    { name = "pygithub", specifier = ">=2.1.0" },
+    { name = "pynacl", specifier = ">=1.5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "python-gitlab", specifier = ">=4.2.0" },
-    { name = "python-jose", extras = ["cryptography"], specifier = ">=3.3.0" },
-    { name = "python-multipart", specifier = ">=0.0.6" },
+    { name = "python-jose", extras = ["cryptography"], marker = "extra == 'server'", specifier = ">=3.3.0" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.6" },
     { name = "pyyaml", specifier = ">=6.0.1" },
-    { name = "redis", specifier = ">=5.0.0" },
+    { name = "redis", marker = "extra == 'server'", specifier = ">=5.0.0" },
     { name = "rich", specifier = ">=13.7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.6" },
-    { name = "sqlalchemy", specifier = ">=2.0.0" },
+    { name = "sqlalchemy", marker = "extra == 'server'", specifier = ">=2.0.0" },
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "types-redis", marker = "extra == 'dev'" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.24.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["server", "dev"]
 
 [[package]]
 name = "httpcore"
@@ -1497,22 +1497,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pygithub"
-version = "2.8.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "pynacl" },
-    { name = "requests" },
-    { name = "typing-extensions" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/74/e560bdeffea72ecb26cff27f0fad548bbff5ecc51d6a155311ea7f9e4c4c/pygithub-2.8.1.tar.gz", hash = "sha256:341b7c78521cb07324ff670afd1baa2bf5c286f8d9fd302c1798ba594a5400c9", size = 2246994, upload-time = "2025-09-02T17:41:54.674Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/ba/7049ce39f653f6140aac4beb53a5aaf08b4407b6a3019aae394c1c5244ff/pygithub-2.8.1-py3-none-any.whl", hash = "sha256:23a0a5bca93baef082e03411bf0ce27204c32be8bfa7abc92fe4a3e132936df0", size = 432709, upload-time = "2025-09-02T17:41:52.947Z" },
-]
-
-[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1632,19 +1616,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f0/26/19cadc79a718c5edbec86fd4919a6b6d3f681039a2f6d66d14be94e75fb9/python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6", size = 44221, upload-time = "2025-10-26T15:12:10.434Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61", size = 21230, upload-time = "2025-10-26T15:12:09.109Z" },
-]
-
-[[package]]
-name = "python-gitlab"
-version = "8.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-    { name = "requests-toolbelt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/68/02645bc9d71554e7a263b118e4e55dafe4c4735c1ba74f9712232ed84054/python_gitlab-8.0.0.tar.gz", hash = "sha256:03eae5a9d105448796e6c0e192d402c266057e75790cf4f42c143dddf91313ce", size = 401334, upload-time = "2026-01-28T01:22:27.005Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/60/ba68e51e90a99b14af639463e5d617239029ec25927a0990ff28bd851916/python_gitlab-8.0.0-py3-none-any.whl", hash = "sha256:c635e6722c5710d35ddadfcf95c362b0aa8de11ab3972bc4f230ebd58a6c49ee", size = 144483, upload-time = "2026-01-28T01:22:25.772Z" },
 ]
 
 [[package]]
@@ -1822,18 +1793,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517, upload-time = "2025-08-18T20:46:02.573Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738, upload-time = "2025-08-18T20:46:00.542Z" },
-]
-
-[[package]]
-name = "requests-toolbelt"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c70d38d31cbfe4cc64f7144dc41f6e4e4b78ecd9f5bb/requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6", size = 206888, upload-time = "2023-05-01T04:11:33.229Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
 ]
 
 [[package]]

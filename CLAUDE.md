@@ -165,6 +165,64 @@ hopper knowledge sync --full
 hopper github import owner/repo --all
 ```
 
+## Claude Web Integration (MCP)
+
+Hopper can be used with Claude Web via MCP (Model Context Protocol). This requires running a Hopper server.
+
+### Setup
+
+1. **Start the Hopper server:**
+   ```bash
+   hopper server start --host 0.0.0.0 --port 8080
+   ```
+
+2. **Register for MCP access** (links your DID to a Bearer token):
+   ```bash
+   hopper mcp init-token --server https://your-server.com
+   # Output: hpr_abc123...
+   ```
+
+3. **Configure Claude Web** with the token:
+   ```json
+   {
+     "mcp_servers": [{
+       "type": "url",
+       "url": "https://your-server.com/mcp/sse/",
+       "name": "hopper",
+       "authorization_token": "hpr_abc123..."
+     }]
+   }
+   ```
+
+### Multi-Instance Support
+
+Register separate tokens for different Hopper instances:
+
+```bash
+# Work instance
+hopper mcp init-token -s https://server.com -i work -p /path/to/work/.hopper
+
+# Personal instance
+hopper mcp init-token -s https://server.com -i personal
+```
+
+Use different tokens in different Claude Web configurations to access different instances.
+
+### Token Management
+
+```bash
+hopper mcp tokens --server <url>      # List your tokens
+hopper mcp revoke <prefix> --server <url>  # Revoke a token
+```
+
+### Authentication
+
+Tokens are linked to your DID (Decentralized Identifier). The server validates:
+1. Bearer token → looks up associated DID
+2. DID signature on registration requests
+
+This provides cryptographic identity without requiring account creation.
+
 ---
 
 **Bottom line**: Whenever you learn something worth remembering, need to track work, or want to leave notes for future sessions - use `/hopper`.

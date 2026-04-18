@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hopper"
-version = "0.2.0"
+version = "0.3.0"
 description = "Persistent memory and task management for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,7 +34,8 @@ dependencies = [
     # HTTP client (server-mode CLI, MCP bridge, GitHub platform)
     "httpx>=0.25.0",
     # MCP server (primary use case for Claude Desktop / Claude Code)
-    "mcp>=0.1.0",
+    # Requires >=1.0.0 for SSE transport support (includes starlette, sse-starlette)
+    "mcp>=1.0.0",
     # DID signing for upstream sync
     "pynacl>=1.5.0",
 ]
