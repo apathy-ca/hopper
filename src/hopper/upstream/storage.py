@@ -5,6 +5,7 @@ Simple flat file storage with JSON tasks and an index for quick lookups.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -85,9 +86,6 @@ class DIDRegistry:
 
     def _did_path(self, did: str) -> Path:
         """Get path for a DID record file."""
-        # Use hash to avoid filesystem issues with DID characters
-        import hashlib
-
         did_hash = hashlib.sha256(did.encode()).hexdigest()[:16]
         return self.dids_dir / f"{did_hash}.json"
 
@@ -174,22 +172,18 @@ class DIDRegistry:
 
         Returns (success, message).
         """
-        # Check if approver is admin
         if not self.is_admin(by_did):
             return False, "only admin can approve DIDs"
 
-        # Check if DID exists
         if did not in self._registry:
             return False, "DID not found"
 
-        # Check current status
         current = self._registry[did]
         if current == DIDStatus.ADMIN:
             return False, "cannot modify admin DID"
         if current == DIDStatus.APPROVED:
             return False, "DID already approved"
 
-        # Approve
         now = int(time.time() * 1000)
         self._registry[did] = DIDStatus.APPROVED
 
@@ -259,6 +253,10 @@ class StoredTask:
     from_did: str
 
 
+def _did_hash(did: str) -> str:
+    return hashlib.sha256(did.encode()).hexdigest()[:16]
+
+
 @dataclass
 class UpstreamStorage:
     """Flat file storage for upstream server.
@@ -266,16 +264,17 @@ class UpstreamStorage:
     Directory structure:
         storage_path/
         ├── tasks/
-        │   ├── {task_id}.json
-        │   └── ...
+        │   └── {did_hash}/
+        │       └── {instance_name}/
+        │           └── {task_id}.json
         ├── dids/
         │   ├── registry.json
         │   └── {did_hash}.json
-        └── index.json
+        └── index.json  # {"did_hash/instance/task_id": updated_at_ms}
     """
 
     storage_path: Path
-    _index: dict[str, int] = field(default_factory=dict)  # task_id -> updated_at
+    _index: dict[str, int] = field(default_factory=dict)  # "did_hash/instance/task_id" -> updated_at
     did_registry: DIDRegistry = field(init=False)
 
     def __post_init__(self) -> None:
@@ -283,9 +282,34 @@ class UpstreamStorage:
         self.tasks_dir = self.storage_path / "tasks"
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         self.index_path = self.storage_path / "index.json"
+        self._migrate_flat_tasks()
         self._load_index()
-        # Initialize DID registry
         self.did_registry = DIDRegistry(self.storage_path)
+
+    def _migrate_flat_tasks(self) -> None:
+        """Move legacy flat tasks/task_id.json into tasks/did_hash/instance/ layout."""
+        flat_files = [f for f in self.tasks_dir.glob("*.json")]
+        if not flat_files:
+            return
+
+        for task_file in flat_files:
+            try:
+                with open(task_file) as f:
+                    data = json.load(f)
+                did = data.get("from_did", "unknown")
+                instance = data.get("task", {}).get("instance", "local")
+                task_id = data.get("task", {}).get("id", task_file.stem)
+                dest_dir = self.tasks_dir / _did_hash(did) / instance
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                task_file.rename(dest_dir / f"{task_id}.json")
+            except (json.JSONDecodeError, OSError, KeyError):
+                continue
+
+    def _index_key(self, did: str, instance: str, task_id: str) -> str:
+        return f"{_did_hash(did)}/{instance}/{task_id}"
+
+    def _task_path(self, did: str, instance: str, task_id: str) -> Path:
+        return self.tasks_dir / _did_hash(did) / instance / f"{task_id}.json"
 
     def _load_index(self) -> None:
         """Load the task index from disk."""
@@ -293,6 +317,9 @@ class UpstreamStorage:
             try:
                 with open(self.index_path) as f:
                     self._index = json.load(f)
+                # Rebuild if index still contains legacy flat keys (no slashes)
+                if any("/" not in k for k in self._index):
+                    self._rebuild_index()
             except (json.JSONDecodeError, OSError):
                 self._index = {}
                 self._rebuild_index()
@@ -307,34 +334,29 @@ class UpstreamStorage:
     def _rebuild_index(self) -> None:
         """Rebuild index from task files."""
         self._index = {}
-        for task_file in self.tasks_dir.glob("*.json"):
+        for task_file in self.tasks_dir.glob("*/*/*.json"):
             try:
                 with open(task_file) as f:
                     data = json.load(f)
-                    task_id = data.get("task", {}).get("id")
-                    updated_at = data.get("task", {}).get("updated_at")
-                    if task_id and updated_at:
-                        # Convert ISO string to ms if needed
-                        if isinstance(updated_at, str):
-                            from datetime import datetime
-
-                            dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-                            updated_at = int(dt.timestamp() * 1000)
-                        self._index[task_id] = updated_at
+                did = data.get("from_did", "unknown")
+                instance = data.get("task", {}).get("instance", "local")
+                task_id = data.get("task", {}).get("id")
+                updated_at = data.get("task", {}).get("updated_at")
+                if task_id and updated_at:
+                    if isinstance(updated_at, str):
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                        updated_at = int(dt.timestamp() * 1000)
+                    self._index[self._index_key(did, instance, task_id)] = updated_at
             except (json.JSONDecodeError, OSError, KeyError):
                 continue
         self._save_index()
 
-    def _task_path(self, task_id: str) -> Path:
-        """Get path for a task file."""
-        return self.tasks_dir / f"{task_id}.json"
-
-    def get(self, task_id: str) -> StoredTask | None:
-        """Get a task by ID."""
-        path = self._task_path(task_id)
+    def get(self, did: str, instance: str, task_id: str) -> StoredTask | None:
+        """Get a task by DID, instance, and ID."""
+        path = self._task_path(did, instance, task_id)
         if not path.exists():
             return None
-
         try:
             with open(path) as f:
                 data = json.load(f)
@@ -356,13 +378,13 @@ class UpstreamStorage:
         Uses last-write-wins: accepts if incoming updated_at > stored updated_at.
         """
         task_id = task.id
+        instance = task.instance or "local"
         now = int(time.time() * 1000)
+        key = self._index_key(from_did, instance, task_id)
 
-        # Get incoming updated_at as ms
         if task.updated_at:
             if isinstance(task.updated_at, str):
                 from datetime import datetime
-
                 dt = datetime.fromisoformat(task.updated_at.replace("Z", "+00:00"))
                 incoming_ts = int(dt.timestamp() * 1000)
             else:
@@ -370,15 +392,14 @@ class UpstreamStorage:
         else:
             incoming_ts = now
 
-        # Check for conflict
-        if task_id in self._index:
-            stored_ts = self._index[task_id]
+        if key in self._index:
+            stored_ts = self._index[key]
             if incoming_ts <= stored_ts:
                 return False, f"conflict: server has newer version ({stored_ts} >= {incoming_ts})"
 
-        # Store task
         stored = StoredTask(task=task, received_at=now, from_did=from_did)
-        path = self._task_path(task_id)
+        path = self._task_path(from_did, instance, task_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(path, "w") as f:
             json.dump(
@@ -392,36 +413,41 @@ class UpstreamStorage:
                 default=str,
             )
 
-        # Update index
-        self._index[task_id] = incoming_ts
+        self._index[key] = incoming_ts
         self._save_index()
 
         return True, "accepted"
 
-    def list_since(self, since_ms: int) -> list[SyncTask]:
-        """List all tasks updated since a timestamp."""
+    def list_since(self, since_ms: int, from_did: str, instance: str | None = None) -> list[SyncTask]:
+        """List tasks for a specific DID (and optionally instance) updated since a timestamp."""
+        prefix = _did_hash(from_did) + "/" + (instance + "/" if instance else "")
         tasks = []
-        for task_id, updated_at in self._index.items():
-            if updated_at > since_ms:
-                stored = self.get(task_id)
-                if stored:
-                    tasks.append(stored.task)
+        for key, updated_at in self._index.items():
+            if not key.startswith(prefix):
+                continue
+            if updated_at <= since_ms:
+                continue
+            _, inst, task_id = key.split("/", 2)
+            stored = self.get(from_did, inst, task_id)
+            if stored:
+                tasks.append(stored.task)
         return tasks
 
-    def list_all(self) -> list[SyncTask]:
-        """List all tasks."""
-        return self.list_since(0)
+    def list_all(self, from_did: str, instance: str | None = None) -> list[SyncTask]:
+        """List all tasks for a specific DID (and optionally instance)."""
+        return self.list_since(0, from_did, instance=instance)
 
-    def delete(self, task_id: str) -> bool:
+    def delete(self, did: str, instance: str, task_id: str) -> bool:
         """Delete a task."""
-        path = self._task_path(task_id)
+        path = self._task_path(did, instance, task_id)
+        key = self._index_key(did, instance, task_id)
         if path.exists():
             path.unlink()
-            self._index.pop(task_id, None)
+            self._index.pop(key, None)
             self._save_index()
             return True
         return False
 
-    def get_updated_at(self, task_id: str) -> int | None:
+    def get_updated_at(self, did: str, instance: str, task_id: str) -> int | None:
         """Get the updated_at timestamp for a task."""
-        return self._index.get(task_id)
+        return self._index.get(self._index_key(did, instance, task_id))

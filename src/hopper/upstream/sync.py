@@ -193,6 +193,7 @@ def sync_with_upstream(
     task_store: "TaskMarkdownStore",
     client: UpstreamClient,
     state_path: Path,
+    instance: str = "local",
 ) -> SyncResult:
     """Perform a full sync with upstream server.
 
@@ -229,6 +230,7 @@ def sync_with_upstream(
         response = client.sync(
             tasks=local_changes,
             since=state.last_server_time,
+            instance=instance,
         )
     except Exception as e:
         result.errors.append(str(e))

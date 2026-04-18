@@ -85,6 +85,10 @@ class SyncRequest(BaseModel):
     client_time: int = Field(
         description="Client's current time (ms since epoch)",
     )
+    instance: str = Field(
+        default="local",
+        description="Hopper instance name — scopes the pull to this instance only",
+    )
 
 
 class SyncConflict(BaseModel):

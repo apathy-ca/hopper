@@ -38,6 +38,7 @@ DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
     default=True,
     help="Auto-detect project type for relevant knowledge",
 )
+@click.option("--name", "-n", default=None, help="Instance name (defaults to current directory name)")
 @click.option("--profile", default="default", help="Profile name (for server mode)")
 @click.option("--endpoint", help="API endpoint URL (for server mode)")
 @click.option("--server", "-s", is_flag=True, help="Initialize for server mode instead of local")
@@ -49,6 +50,7 @@ def init(
     knowledge_source: str | None,
     no_knowledge: bool,
     auto_detect: bool,
+    name: str | None,
     profile: str,
     endpoint: str | None,
     server: bool,
@@ -80,6 +82,7 @@ def init(
         no_knowledge=no_knowledge,
         auto_detect=auto_detect,
         non_interactive=non_interactive,
+        instance_name=name,
     )
 
 
@@ -90,6 +93,7 @@ def _init_local_mode(
     no_knowledge: bool,
     auto_detect: bool,
     non_interactive: bool,
+    instance_name: str | None = None,
 ) -> None:
     """Initialize local/embedded Hopper storage with knowledge."""
     from hopper.storage import StorageConfig, MarkdownStorage
@@ -117,7 +121,7 @@ def _init_local_mode(
         console.print("[dim]Reinitializing...[/dim]")
 
     # Initialize storage structure
-    config = StorageConfig.local(storage_path)
+    config = StorageConfig.local(storage_path, instance_name=instance_name or Path.cwd().name)
     storage = MarkdownStorage(config)
     storage.initialize()
 

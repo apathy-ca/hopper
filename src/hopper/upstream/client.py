@@ -110,12 +110,14 @@ class UpstreamClient:
         self,
         tasks: list[SyncTask],
         since: int = 0,
+        instance: str = "local",
     ) -> SyncResponse:
         """Sync tasks with the server.
 
         Args:
             tasks: Tasks to push to the server
             since: Timestamp (ms) to get updates from
+            instance: Hopper instance name, scopes the pull to this instance
 
         Returns:
             SyncResponse with server updates and conflict info
@@ -124,6 +126,7 @@ class UpstreamClient:
             since=since,
             tasks=tasks,
             client_time=int(time.time() * 1000),
+            instance=instance,
         )
 
         try:

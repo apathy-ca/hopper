@@ -5,7 +5,7 @@
     "description": "Intelligent Task Routing and Orchestration System"
   },
   "api": {
-    "base_url": "http://localhost:8080",
+    "base_url": "https://hopper.henrynet.ca:8080",
     "timeout": 30
   },
   "behavior": {

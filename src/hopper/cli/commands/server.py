@@ -29,9 +29,11 @@ def server() -> None:
 
 @server.command(name="start")
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", type=int, default=8000, help="Port to bind to")
+@click.option("--port", type=int, default=8080, help="Port to bind to")
 @click.option("--reload", is_flag=True, help="Enable auto-reload")
 @click.option("--workers", type=int, default=1, help="Number of worker processes")
+@click.option("--ssl-keyfile", default=None, help="SSL private key file")
+@click.option("--ssl-certfile", default=None, help="SSL certificate file")
 @click.pass_obj
 def start_server(
     ctx: Context,
@@ -39,6 +41,8 @@ def start_server(
     port: int,
     reload: bool,
     workers: int,
+    ssl_keyfile: str | None,
+    ssl_certfile: str | None,
 ) -> None:
     """Start the Hopper API server.
 
@@ -46,8 +50,10 @@ def start_server(
         hopper server start
         hopper server start --reload
         hopper server start --host 0.0.0.0 --port 8080
+        hopper server start --ssl-certfile /etc/letsencrypt/live/example.com/fullchain.pem --ssl-keyfile /etc/letsencrypt/live/example.com/privkey.pem
     """
-    print_info(f"Starting Hopper server on {host}:{port}...")
+    scheme = "https" if ssl_certfile else "http"
+    print_info(f"Starting Hopper server on {scheme}://{host}:{port}...")
 
     cmd = [
         "uvicorn",
@@ -57,6 +63,11 @@ def start_server(
         "--port",
         str(port),
     ]
+
+    if ssl_certfile:
+        cmd.extend(["--ssl-certfile", ssl_certfile])
+    if ssl_keyfile:
+        cmd.extend(["--ssl-keyfile", ssl_keyfile])
 
     if reload:
         cmd.append("--reload")

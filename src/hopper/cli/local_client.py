@@ -90,6 +90,7 @@ class LocalClient:
             assigned_to=data.get("assigned_to"),
             parent_id=parent_id,
         )
+        task.instance = self.config.instance_id
         self.task_store.save(task)
         return self._task_to_dict(task)
 
@@ -240,6 +241,7 @@ class LocalClient:
             project=data.get("project_id"),
             status=data.get("status", "open"),
         )
+        task.instance = self.config.instance_id
         self.task_store.save(task)
         return self._task_to_dict(task)
 

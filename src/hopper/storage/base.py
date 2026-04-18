@@ -32,19 +32,41 @@ class StorageConfig:
     instance_name: str = "Local Hopper"
 
     @classmethod
-    def local(cls, path: Path | None = None) -> "StorageConfig":
+    def _read_instance_name(cls, path: Path) -> str | None:
+        """Read instance name from an existing config.yaml, if present."""
+        config_file = path / "config.yaml"
+        if not config_file.exists():
+            return None
+        try:
+            import yaml
+            with open(config_file) as f:
+                data = yaml.safe_load(f) or {}
+            inst = data.get("instance", {})
+            return inst.get("id") or inst.get("name") or None
+        except Exception:
+            return None
+
+    @classmethod
+    def local(cls, path: Path | None = None, instance_name: str | None = None) -> "StorageConfig":
         """Create local storage config."""
+        resolved = path or Path.home() / ".hopper"
+        name = instance_name or cls._read_instance_name(resolved) or resolved.name
         return cls(
             mode="local",
-            path=path or Path.home() / ".hopper",
+            path=resolved,
+            instance_id=name,
+            instance_name=name,
         )
 
     @classmethod
-    def embedded(cls, path: Path) -> "StorageConfig":
+    def embedded(cls, path: Path, instance_name: str | None = None) -> "StorageConfig":
         """Create embedded storage config (project-local)."""
+        name = instance_name or cls._read_instance_name(path) or path.parent.name
         return cls(
             mode="embedded",
             path=path,
+            instance_id=name,
+            instance_name=name,
         )
 
     @classmethod

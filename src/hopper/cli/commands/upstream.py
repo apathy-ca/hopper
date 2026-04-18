@@ -123,6 +123,7 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
             task_store=task_store,
             client=client,
             state_path=state_path,
+            instance=local_client.config.instance_id,
         )
     except UpstreamError as e:
         print_error(f"Sync failed: {e}")
@@ -169,7 +170,7 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
 
 @upstream.command(name="server")
 @click.option("--host", "-h", default="0.0.0.0", help="Host to bind to")
-@click.option("--port", "-p", default=9000, help="Port to listen on")
+@click.option("--port", "-p", default=8080, help="Port to listen on")
 @click.option(
     "--storage",
     "-s",

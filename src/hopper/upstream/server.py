@@ -127,7 +127,7 @@ async def sync(
             accepted.append(task.id)
         else:
             # Extract server timestamp from index
-            server_ts = storage.get_updated_at(task.id) or 0
+            server_ts = storage.get_updated_at(did, task.instance or "local", task.id) or 0
             client_ts = 0
             if task.updated_at:
                 if isinstance(task.updated_at, str):
@@ -147,8 +147,8 @@ async def sync(
                 )
             )
 
-    # Get tasks updated since client's timestamp
-    updated_tasks = storage.list_since(sync_req.since)
+    # Get tasks updated since client's timestamp, scoped to this DID+instance
+    updated_tasks = storage.list_since(sync_req.since, from_did=did, instance=sync_req.instance)
 
     return SyncResponse(
         tasks=updated_tasks,
@@ -311,7 +311,7 @@ def _init_admin_did(storage_path: Path) -> tuple[str, bool]:
 def run_server(
     storage_path: Path,
     host: str = "0.0.0.0",
-    port: int = 9000,
+    port: int = 8080,
 ) -> None:
     """Run the upstream server."""
     import uvicorn
