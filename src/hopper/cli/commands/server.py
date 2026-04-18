@@ -45,13 +45,13 @@ def start_server(
     Examples:
         hopper server start
         hopper server start --reload
-        hopper server start --host 0.0.0.0 --port 9000
+        hopper server start --host 0.0.0.0 --port 8080
     """
     print_info(f"Starting Hopper server on {host}:{port}...")
 
     cmd = [
         "uvicorn",
-        "hopper.api.main:app",
+        "hopper.api.app:app",
         "--host",
         host,
         "--port",
@@ -97,7 +97,7 @@ def stop_server(ctx: Context, force: bool) -> None:
     try:
         # Try to find and kill uvicorn process
         result = subprocess.run(
-            ["pkill", "-f", "uvicorn.*hopper.api.main"], capture_output=True, text=True
+            ["pkill", "-f", "uvicorn.*hopper.api"], capture_output=True, text=True
         )
 
         if result.returncode == 0:

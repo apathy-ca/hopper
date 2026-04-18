@@ -1,350 +1,180 @@
 # Hopper MCP Integration
 
-Complete guide for using Hopper with Claude Desktop and other MCP clients.
+Guide for connecting Hopper to Claude Web and other MCP clients via SSE.
 
 ## Overview
 
-The Hopper MCP (Model Context Protocol) server allows Claude and other AI assistants to interact with Hopper for intelligent task routing and orchestration. This enables zero-friction task capture during conversations without requiring context switches.
+Hopper exposes an MCP (Model Context Protocol) server over SSE (Server-Sent Events) at `/mcp/sse/` on the main API server. This lets Claude Web and other remote MCP clients manage tasks, send heartbeats, search patterns, and submit feedback — all without a local Hopper install.
 
-## Features
+## Quick Start
 
-### MCP Tools
+1. **Start the server** (runs API + MCP + upstream sync on one port):
+   ```bash
+   hopper server start --host 0.0.0.0 --port 8080
+   ```
 
-The Hopper MCP server provides the following tools:
+2. **Register a token** (links your DID identity to a Bearer token):
+   ```bash
+   hopper mcp init-token --server https://your-server.com
+   # Output: hpr_abc123...
+   ```
 
-#### Task Management
-- `hopper_create_task` - Create a new task with automatic routing
-- `hopper_list_tasks` - List and filter tasks by status, priority, project, or tags
-- `hopper_get_task` - Get detailed information about a specific task
-- `hopper_update_task` - Update task fields (title, description, priority, tags)
-- `hopper_update_task_status` - Change task status (pending, in_progress, completed, cancelled)
+3. **Add to Claude Web** (Settings → MCP Servers):
+   ```json
+   {
+     "type": "url",
+     "url": "https://your-server.com/mcp/sse/",
+     "name": "hopper",
+     "authorization_token": "hpr_abc123..."
+   }
+   ```
 
-#### Project Management
-- `hopper_list_projects` - List all registered projects
-- `hopper_get_project` - Get project details and configuration
-- `hopper_create_project` - Register new projects (GitHub, GitLab, etc.)
-- `hopper_get_project_tasks` - Get tasks for a specific project
+## Server Setup
 
-#### Routing
-- `hopper_route_task` - Manually route a task to a destination
-- `hopper_get_routing_suggestions` - Preview routing decisions before creating tasks
+The unified Hopper server runs on a single port and provides:
 
-### MCP Resources
+| Path | Description |
+|------|-------------|
+| `/health` | Health check |
+| `/docs` | Interactive API docs |
+| `/mcp/sse/` | MCP SSE endpoint (Claude Web) |
+| `/mcp/register` | Token registration |
+| `/mcp/tokens` | List your tokens |
+| `/upstream/sync` | DID-authenticated task sync |
+| `/upstream/admin/*` | DID registry management |
+| `/api/v1/tasks` | REST task API |
 
-Browse Hopper data using URI patterns:
+### Systemd (auto-start on boot)
 
-#### Task Resources
-- `hopper://tasks` - All tasks
-- `hopper://tasks/pending` - Pending tasks only
-- `hopper://tasks/in_progress` - In-progress tasks
-- `hopper://tasks/completed` - Completed tasks
-- `hopper://tasks/{task_id}` - Specific task details
-
-#### Project Resources
-- `hopper://projects` - All registered projects
-- `hopper://projects/{project_id}` - Project details with recent tasks
-
-## Installation
-
-### Prerequisites
-
-- Python 3.11 or higher
-- Hopper API server running (default: http://localhost:8080)
-- Claude Desktop or another MCP-compatible client
-
-### Install Hopper
+The server ships with a systemd user unit:
 
 ```bash
-# Install from source
-pip install -e .
-
-# Or install with pip (when published)
-pip install hopper
+systemctl --user enable hopper-upstream.service
+systemctl --user start hopper-upstream.service
+systemctl --user status hopper-upstream.service
 ```
 
-### Verify Installation
-
-```bash
-hopper mcp test
-```
-
-This will verify:
-- Python version compatibility
-- Required dependencies are installed
-- MCP server can be loaded
-- Configuration is valid
-
-## Configuration
+The unit file is at `~/.config/systemd/user/hopper-upstream.service`.
 
 ### Environment Variables
 
-Configure the MCP server using environment variables:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOPPER_MCP_TOKEN` | — | Simple shared Bearer token (dev/legacy) |
+| `HOPPER_MCP_ALLOWED_DIDS` | — | Comma-separated list of allowed DIDs |
+| `HOPPER_MCP_DID_OPEN` | `false` | Allow any valid DID signature |
+| `HOPPER_SERVER_PATH` | `~/.hopper` | Token store location |
+| `HOPPER_UPSTREAM_STORAGE` | `~/.hopper/upstream-data` | Upstream sync data directory |
 
+## Authentication
+
+Three methods are supported, checked in order:
+
+### 1. Registered Token (recommended)
+
+Tokens are DID-linked `hpr_` Bearer tokens. Generate with `hopper mcp init-token`.
+
+**Multiple instances**: register separate tokens per project:
 ```bash
-# API Configuration
-export HOPPER_API_BASE_URL="http://localhost:8080"
-export HOPPER_API_TOKEN="your-api-token"
-
-# Server Behavior
-export HOPPER_AUTO_ROUTE_TASKS="true"
-export HOPPER_DEFAULT_PRIORITY="medium"
-export HOPPER_DEFAULT_TASK_LIMIT="10"
-
-# Context Management
-export HOPPER_ENABLE_CONTEXT_PERSISTENCE="true"
-export HOPPER_CONTEXT_CACHE_TTL="3600"
-
-# Logging
-export HOPPER_LOG_LEVEL="INFO"
-export HOPPER_ENABLE_DEBUG="false"
+hopper mcp init-token -s https://server.com -i work -p /path/to/work/.hopper
+hopper mcp init-token -s https://server.com -i personal
 ```
 
-### Claude Desktop Setup
+Each token routes MCP tool calls to the right `.hopper` directory.
 
-1. **Generate Configuration**
+### 2. DID Auth (direct cryptographic)
 
-```bash
-hopper mcp config
+```
+Authorization: DID did:key:z6Mk... <base64-signature>
 ```
 
-This displays the configuration snippet to add to Claude Desktop.
+Set `HOPPER_MCP_ALLOWED_DIDS` to restrict which DIDs can connect, or `HOPPER_MCP_DID_OPEN=true` for any valid signature.
 
-2. **Locate Claude Desktop Config File**
+### 3. Simple Token (dev/legacy)
 
-Platform-specific locations:
+```bash
+export HOPPER_MCP_TOKEN="your-secret"
+```
 
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+Pass as `authorization_token` in the MCP config. No DID identity — all requests share one storage path.
 
-3. **Add Hopper to Configuration**
+### No Auth
 
-Edit the config file and add:
+If none of the above are configured, the server allows unauthenticated access. Suitable for localhost-only deployments.
+
+## MCP Tools
+
+### Task Management
+
+| Tool | Description |
+|------|-------------|
+| `hopper_create_task` | Create a task (title, description, priority, tags) |
+| `hopper_list_tasks` | List with filters (status, priority, tags, limit) |
+| `hopper_get_task` | Get a task by ID (supports prefix matching) |
+| `hopper_update_task` | Update any fields including assignment and parent |
+| `hopper_update_task_status` | Quick status change |
+| `hopper_delete_task` | Permanently delete a task |
+| `hopper_search_tasks` | Full-text search across titles and descriptions |
+| `hopper_heartbeat` | Signal still working (prevents stale detection) |
+| `hopper_list_stale_tasks` | Find tasks with silent/timed-out agents |
+| `hopper_get_task_children` | List subtasks with rollup |
+
+### Instance / Project
+
+| Tool | Description |
+|------|-------------|
+| `hopper_list_instances` | List Hopper instances |
+| `hopper_list_projects` | List projects |
+
+### Pattern & Learning
+
+| Tool | Description |
+|------|-------------|
+| `hopper_match_patterns` | Find routing patterns matching tags/text/priority |
+| `hopper_submit_feedback` | Rate a task's routing/execution |
+| `hopper_get_learning_statistics` | Overall learning stats |
+| `hopper_list_patterns` | List routing patterns |
+| `hopper_create_pattern` | Create a new routing pattern |
+
+## Token Management
+
+```bash
+# Generate token
+hopper mcp init-token --server https://your-server.com
+
+# List your tokens
+hopper mcp tokens --server https://your-server.com
+
+# Revoke a token (by prefix)
+hopper mcp revoke hpr_abc123 --server https://your-server.com
+```
+
+## Claude Desktop (stdio mode)
+
+For local Claude Desktop (not Claude Web), use stdio transport instead:
 
 ```json
 {
   "mcpServers": {
     "hopper": {
-      "command": "python",
-      "args": ["-m", "hopper.mcp.main"],
+      "command": "hopper",
+      "args": ["mcp", "start"],
       "env": {
-        "HOPPER_API_BASE_URL": "http://localhost:8080",
-        "HOPPER_API_TOKEN": "your-api-token-here"
+        "HOPPER_API_BASE_URL": "http://localhost:8080"
       }
     }
   }
 }
 ```
 
-4. **Restart Claude Desktop**
-
-After updating the configuration, restart Claude Desktop for changes to take effect.
-
-5. **Verify Connection**
-
-In Claude Desktop, the Hopper MCP server should appear in the MCP settings. You can test it by asking Claude to list your tasks:
-
-```
-"Can you list my pending tasks from Hopper?"
-```
-
-## Usage Examples
-
-### Creating Tasks from Conversations
-
-**User**: "We should add dark mode support to the web interface"
-
-**Claude**: "Good idea! Want me to add that to Hopper?"
-
-**User**: "Yes, put it in Hopper"
-
-**Claude**: [calls hopper_create_task]
-```
-✅ Task created: "Add dark mode support to web interface"
-Task ID: task-abc123
-Routed to: web-frontend
-Priority: medium
-URL: https://github.com/your-org/web-frontend/issues/42
-```
-
-### Listing and Filtering Tasks
-
-```
-"Show me all high-priority tasks"
-"What tasks are in progress?"
-"List all tasks tagged with 'bug' in the api project"
-```
-
-### Routing Tasks
-
-```
-"Route task-abc123 to the backend project"
-"Where would you route a task about database migrations?"
-```
-
-### Managing Projects
-
-```
-"List all registered projects"
-"Show me the hopper project details"
-"What tasks are pending for the web-frontend project?"
-```
+The stdio MCP server connects to the local API server and proxies tool calls through it.
 
 ## Troubleshooting
 
-### MCP Server Not Appearing in Claude Desktop
+**SSE connection refused**: Check `hopper server status` or `systemctl --user status hopper-upstream.service`.
 
-1. **Check Configuration File Location**
-   ```bash
-   hopper mcp config
-   ```
-   Verify you're editing the correct file path.
+**401 Unauthorized**: Token may be expired or stored in wrong path. Run `hopper mcp init-token` again.
 
-2. **Validate JSON Syntax**
-   Use a JSON validator to ensure the config file is valid.
+**403 DID not authorized**: If `HOPPER_MCP_ALLOWED_DIDS` is set, your DID isn't on the list.
 
-3. **Check Logs**
-   Claude Desktop logs can help diagnose connection issues.
-
-### Connection Errors
-
-**Issue**: "API Error (401): Unauthorized"
-
-**Solution**: Set a valid API token:
-```bash
-export HOPPER_API_TOKEN="your-valid-token"
-```
-
-**Issue**: "API Error: Connection refused"
-
-**Solution**: Ensure the Hopper API server is running:
-```bash
-# Check if API is accessible
-curl http://localhost:8080/health
-```
-
-### Debug Mode
-
-Enable debug logging for detailed troubleshooting:
-
-```bash
-hopper mcp start --debug
-```
-
-Or in Claude Desktop config:
-```json
-{
-  "env": {
-    "HOPPER_LOG_LEVEL": "DEBUG",
-    "HOPPER_ENABLE_DEBUG": "true"
-  }
-}
-```
-
-## Advanced Configuration
-
-### Custom API Endpoint
-
-For production deployments or custom API servers:
-
-```json
-{
-  "env": {
-    "HOPPER_API_BASE_URL": "https://hopper.example.com",
-    "HOPPER_API_TOKEN": "${HOPPER_TOKEN}"
-  }
-}
-```
-
-### Disable Auto-Routing
-
-To manually specify projects for all tasks:
-
-```json
-{
-  "env": {
-    "HOPPER_AUTO_ROUTE_TASKS": "false"
-  }
-}
-```
-
-### Custom Defaults
-
-```json
-{
-  "env": {
-    "HOPPER_DEFAULT_PRIORITY": "high",
-    "HOPPER_DEFAULT_TASK_LIMIT": "20"
-  }
-}
-```
-
-## Context Management
-
-The MCP server maintains conversation context:
-
-- **Recent Tasks**: Tracks recently created tasks
-- **Active Project**: Remembers the current project context
-- **Conversation Metadata**: Stores conversation-specific data
-
-Context persists across MCP connections and is stored in `~/.hopper/mcp_context.json`.
-
-### Clearing Context
-
-To clear all context:
-
-```python
-# Via API or CLI (when available)
-hopper mcp clear-context
-```
-
-## Security Considerations
-
-1. **API Token Storage**: Never commit API tokens to version control
-2. **Environment Variables**: Use environment variables or secure secret management
-3. **Token Rotation**: Regularly rotate API tokens
-4. **Network Security**: Use HTTPS for production API endpoints
-5. **Access Control**: Restrict API access using tokens with minimal required permissions
-
-## Development and Testing
-
-### Running Tests
-
-```bash
-# Test MCP server configuration
-hopper mcp test
-
-# Start server with debug logging
-hopper mcp start --debug
-```
-
-### Testing with MCP Inspector
-
-The MCP Inspector is a useful tool for testing MCP servers:
-
-```bash
-# Install MCP Inspector
-npm install -g @modelcontextprotocol/inspector
-
-# Run inspector with Hopper
-mcp-inspector python -m hopper.mcp.main
-```
-
-## API Reference
-
-See the full API documentation for detailed information about:
-- Tool parameters and responses
-- Resource URI patterns
-- Error codes and handling
-- Rate limiting and quotas
-
-## Support
-
-For issues and questions:
-- GitHub Issues: https://github.com/your-org/hopper/issues
-- Documentation: https://hopper.example.com/docs
-- Community: https://discord.gg/hopper
-
-## License
-
-Hopper MCP integration is part of Hopper and is licensed under the MIT License.
+**Tools return errors**: Check that `~/.hopper/` exists and is writable. Run `hopper task list` locally to verify storage is healthy.

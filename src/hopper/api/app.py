@@ -9,9 +9,11 @@ This module creates and configures the FastAPI application with:
 """
 
 import logging
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,17 +29,24 @@ from hopper.api.mcp_sse import create_sse_server
 logger = logging.getLogger(__name__)
 
 
+def _get_upstream_storage_path() -> Path:
+    env = os.getenv("HOPPER_UPSTREAM_STORAGE")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".hopper" / "upstream-data"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """
-    Application lifespan context manager.
+    # Initialize upstream sync storage
+    from hopper.upstream.server import configure_storage
+    upstream_path = _get_upstream_storage_path()
+    upstream_path.mkdir(parents=True, exist_ok=True)
+    configure_storage(upstream_path)
+    logger.info(f"Upstream storage: {upstream_path}")
 
-    Handles startup and shutdown events.
-    """
-    # Startup
     logger.info("Starting Hopper API")
     yield
-    # Shutdown
     logger.info("Shutting down Hopper API")
 
 
@@ -110,9 +119,6 @@ def create_app() -> FastAPI:
     # Root endpoint
     @app.get("/", tags=["Root"])
     async def root():
-        """
-        Root endpoint with API information.
-        """
         return {
             "name": "Hopper API",
             "version": "0.1.0",
@@ -120,6 +126,7 @@ def create_app() -> FastAPI:
             "health": "/health",
             "mcp_sse": "/mcp/sse/",
             "mcp_register": "/mcp/register",
+            "upstream_sync": "/upstream/sync",
         }
 
     # Import and include routers
@@ -137,6 +144,10 @@ def create_app() -> FastAPI:
 
     # Mount MCP SSE server for Claude Web integration
     app.mount("/mcp", create_sse_server())
+
+    # Mount upstream sync server (replaces standalone port 9000 service)
+    from hopper.upstream.server import app as upstream_app
+    app.mount("/upstream", upstream_app)
 
     return app
 

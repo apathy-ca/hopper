@@ -331,7 +331,7 @@ def get_token_store(storage_path: Path | None = None) -> MCPTokenStore:
             if env_path:
                 storage_path = Path(env_path).expanduser()
             else:
-                storage_path = Path.home() / ".hopper-server"
+                storage_path = Path.home() / ".hopper"
         _store = MCPTokenStore(storage_path)
 
     return _store

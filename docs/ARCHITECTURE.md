@@ -147,18 +147,35 @@ All frequently-queried fields have indexes:
 - Database read replicas (future)
 - Background job processing (Celery, future)
 
+## Server Deployment
+
+The unified server runs all services on a single port:
+
+| Path prefix | Service |
+|-------------|---------|
+| `/api/v1/` | REST task/instance/learning API |
+| `/mcp/` | MCP SSE endpoint + token registration |
+| `/upstream/` | DID-authenticated peer sync |
+| `/docs` | OpenAPI docs |
+
+**Systemd**: `~/.config/systemd/user/hopper-upstream.service` starts the unified server on boot.
+
+**Upstream storage**: configured via `HOPPER_UPSTREAM_STORAGE` env var (default `~/.hopper/upstream-data`).
+
 ## Security Considerations
 
 ### Authentication
 
-- JWT-based authentication (future)
-- API key support for integrations
-- Role-based access control (future)
+Three layers are in use:
+
+- **DID (Decentralized Identifier)**: Cryptographic identity for upstream sync and MCP token registration. Keys stored in `~/.hopper/did.key`.
+- **Bearer tokens (`hpr_`)**: Session tokens registered via `hopper mcp init-token`, stored in `~/.hopper/mcp_tokens.json`. Used by Claude Web.
+- **Simple token**: `HOPPER_MCP_TOKEN` env var for dev/legacy clients.
 
 ### Data Protection
 
 - No sensitive data in logs
-- Encrypted connections to database
+- Token files have 0o600 permissions
 - Secrets in environment variables
 
 ## Testing Strategy
@@ -188,8 +205,13 @@ All frequently-queried fields have indexes:
 ```
 src/hopper/
 ├── models/          # Data models
-├── api/             # FastAPI endpoints
-├── mcp/             # MCP server
+├── api/             # FastAPI app (unified server)
+│   ├── app.py       # App factory — mounts MCP SSE + upstream
+│   ├── mcp_sse.py   # MCP SSE server (Claude Web)
+│   ├── mcp_tokens.py# hpr_ Bearer token store
+│   └── routes/      # REST API routes
+├── mcp/             # MCP stdio server (Claude Desktop)
+├── upstream/        # DID-authenticated sync server + client
 ├── cli/             # CLI commands
 ├── intelligence/    # Routing strategies
 ├── memory/          # Memory systems

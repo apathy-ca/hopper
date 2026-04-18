@@ -211,25 +211,50 @@ hopper learning feedback submit <task-id> --good
 hopper learning suggest
 ```
 
-### API Server
+### API Server + MCP (Claude Web)
 
-For multi-user or programmatic access:
+One command runs the REST API, MCP SSE endpoint, and upstream sync:
 
 ```bash
-hopper server start
-# Visit http://localhost:8000/docs
+hopper server start --host 0.0.0.0 --port 8080
+# API docs:  http://localhost:8080/docs
+# MCP SSE:   http://localhost:8080/mcp/sse/
+# Upstream:  http://localhost:8080/upstream/sync
 ```
 
-### MCP Server
+Auto-start on boot via systemd:
+```bash
+systemctl --user enable hopper-upstream.service
+systemctl --user start hopper-upstream.service
+```
 
-For Claude Desktop integration:
+**Claude Web integration** — register a token then add to MCP config:
+```bash
+hopper mcp init-token --server https://your-server.com
+# Returns: hpr_abc123...
+```
+
+```json
+{
+  "type": "url",
+  "url": "https://your-server.com/mcp/sse/",
+  "name": "hopper",
+  "authorization_token": "hpr_abc123..."
+}
+```
+
+See [docs/mcp-integration.md](docs/mcp-integration.md) for full setup including auth options and token management.
+
+### MCP Server (Claude Desktop / stdio)
+
+For local Claude Desktop use:
 
 ```json
 {
   "mcpServers": {
     "hopper": {
       "command": "hopper",
-      "args": ["mcp-server"]
+      "args": ["mcp", "start"]
     }
   }
 }

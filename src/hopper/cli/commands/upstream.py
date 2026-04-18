@@ -178,7 +178,11 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
     help="Storage directory for server data",
 )
 def run_server(host: str, port: int, storage: str) -> None:
-    """Start the upstream sync server."""
+    """Start the upstream sync server (standalone).
+
+    Note: The upstream server is now built into 'hopper server start' at /upstream.
+    Use this only if you need a standalone sync server without the full API.
+    """
     from hopper.upstream.server import run_server as start_server
 
     storage_path = Path(storage).expanduser().resolve()
@@ -291,7 +295,7 @@ def whoami(ctx: Context) -> None:
 # --- Admin commands ---
 
 
-def _get_admin_client(ctx: Context, server: str | None = None):
+def _get_admin_client(ctx: Context, server: str | None = None, admin_key: str | None = None):
     """Get an upstream client for admin operations."""
     from hopper.upstream.client import UpstreamClient
     from hopper.upstream.did import load_did_key
@@ -303,12 +307,15 @@ def _get_admin_client(ctx: Context, server: str | None = None):
         print_error("No upstream server configured.")
         raise click.Abort()
 
-    key_path_str = profile.upstream.did_key_path
-    if not key_path_str:
-        print_error("No DID key configured. Run 'hopper upstream init' first.")
-        raise click.Abort()
+    if admin_key:
+        key_path = Path(admin_key).expanduser()
+    else:
+        key_path_str = profile.upstream.did_key_path
+        if not key_path_str:
+            print_error("No DID key configured. Run 'hopper upstream init' first.")
+            raise click.Abort()
+        key_path = Path(key_path_str).expanduser()
 
-    key_path = Path(key_path_str).expanduser()
     if not key_path.exists():
         print_error(f"DID key not found at {key_path}.")
         raise click.Abort()
@@ -330,12 +337,13 @@ def admin() -> None:
 
 @admin.command(name="list")
 @click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.pass_obj
-def admin_list(ctx: Context, server: str | None) -> None:
+def admin_list(ctx: Context, server: str | None, admin_key: str | None) -> None:
     """List all registered DIDs."""
     from hopper.upstream.client import UpstreamError
 
-    client, _ = _get_admin_client(ctx, server)
+    client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
         result = client.list_dids()
@@ -370,12 +378,13 @@ def admin_list(ctx: Context, server: str | None) -> None:
 
 @admin.command(name="pending")
 @click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.pass_obj
-def admin_pending(ctx: Context, server: str | None) -> None:
+def admin_pending(ctx: Context, server: str | None, admin_key: str | None) -> None:
     """List DIDs pending approval."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
-    client, _ = _get_admin_client(ctx, server)
+    client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
         result = client.list_pending()
@@ -407,12 +416,13 @@ def admin_pending(ctx: Context, server: str | None) -> None:
 @admin.command(name="approve")
 @click.argument("did")
 @click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.pass_obj
-def admin_approve(ctx: Context, did: str, server: str | None) -> None:
+def admin_approve(ctx: Context, did: str, server: str | None, admin_key: str | None) -> None:
     """Approve a pending DID."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
-    client, _ = _get_admin_client(ctx, server)
+    client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
         result = client.approve_did(did)
@@ -432,12 +442,13 @@ def admin_approve(ctx: Context, did: str, server: str | None) -> None:
 @admin.command(name="revoke")
 @click.argument("did")
 @click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.pass_obj
-def admin_revoke(ctx: Context, did: str, server: str | None) -> None:
+def admin_revoke(ctx: Context, did: str, server: str | None, admin_key: str | None) -> None:
     """Revoke a DID's access."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
-    client, _ = _get_admin_client(ctx, server)
+    client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
         result = client.revoke_did(did)
