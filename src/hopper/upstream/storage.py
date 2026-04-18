@@ -17,231 +17,279 @@ from .protocol import SyncTask
 
 
 class DIDStatus(str, Enum):
-    """Status of a DID in the registry."""
+    """Status of a DID for a given namespace."""
 
-    ADMIN = "admin"  # First DID, can approve others
-    APPROVED = "approved"  # Approved by admin
-    PENDING = "pending"  # Awaiting approval
+    ADMIN = "admin"      # Server admin — implicitly approved for all namespaces
+    APPROVED = "approved"
+    PENDING = "pending"
+
+
+GLOBAL_NS = "*"  # Sentinel: approved for all namespaces
+
+
+@dataclass
+class NamespaceApproval:
+    """Approval record for one DID+namespace pair."""
+
+    status: DIDStatus
+    approved_by: str | None = None
+    approved_at: int | None = None
 
 
 @dataclass
 class DIDRecord:
-    """A DID record in the registry."""
+    """A DID record — tracks per-namespace approvals."""
 
     did: str
-    status: DIDStatus
-    created_at: int  # ms since epoch
-    approved_by: str | None = None  # DID that approved this one
-    approved_at: int | None = None  # When approved
+    created_at: int
+    namespaces: dict[str, NamespaceApproval] = field(default_factory=dict)
+    # "*" key means approved for all namespaces
 
 
 @dataclass
 class DIDRegistry:
-    """Registry of DIDs and their approval status.
+    """Per-namespace DID approval registry.
+
+    Any approved DID can collaborate on a namespace. Admin (first DID) is
+    implicitly approved for all namespaces. Other DIDs are approved per
+    namespace, or globally via the '*' sentinel.
 
     Directory structure:
         storage_path/
         └── dids/
-            ├── registry.json  # {did: status, admin_did, ...}
-            └── {did_hash}.json  # Full record for each DID
+            ├── registry.json
+            └── {did_hash}.json
     """
 
     storage_path: Path
     _admin_did: str | None = None
-    _registry: dict[str, DIDStatus] = field(default_factory=dict)
+    # _registry: namespace -> {did -> status}
+    _registry: dict[str, dict[str, DIDStatus]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        """Initialize registry directory."""
         self.dids_dir = self.storage_path / "dids"
         self.dids_dir.mkdir(parents=True, exist_ok=True)
         self.registry_path = self.dids_dir / "registry.json"
         self._load_registry()
 
     def _load_registry(self) -> None:
-        """Load the registry from disk."""
-        if self.registry_path.exists():
-            try:
-                with open(self.registry_path) as f:
-                    data = json.load(f)
-                    self._admin_did = data.get("admin_did")
-                    self._registry = {
-                        did: DIDStatus(status)
-                        for did, status in data.get("dids", {}).items()
-                    }
-            except (json.JSONDecodeError, OSError):
-                self._admin_did = None
-                self._registry = {}
+        if not self.registry_path.exists():
+            return
+        try:
+            with open(self.registry_path) as f:
+                data = json.load(f)
+            self._admin_did = data.get("admin_did")
+            raw = data.get("namespaces", {})
+            # Migrate old flat format: {"dids": {"did": "status"}}
+            if "dids" in data and not raw:
+                for did, status in data["dids"].items():
+                    if status == "admin":
+                        pass  # admin_did already set
+                    else:
+                        self._registry.setdefault(GLOBAL_NS, {})[did] = DIDStatus(status)
+            else:
+                self._registry = {
+                    ns: {did: DIDStatus(s) for did, s in dids.items()}
+                    for ns, dids in raw.items()
+                }
+        except (json.JSONDecodeError, OSError):
+            self._admin_did = None
+            self._registry = {}
 
     def _save_registry(self) -> None:
-        """Save the registry to disk."""
         with open(self.registry_path, "w") as f:
             json.dump(
                 {
                     "admin_did": self._admin_did,
-                    "dids": {did: status.value for did, status in self._registry.items()},
+                    "namespaces": {
+                        ns: {did: s.value for did, s in dids.items()}
+                        for ns, dids in self._registry.items()
+                    },
                 },
                 f,
                 indent=2,
             )
 
     def _did_path(self, did: str) -> Path:
-        """Get path for a DID record file."""
         did_hash = hashlib.sha256(did.encode()).hexdigest()[:16]
         return self.dids_dir / f"{did_hash}.json"
 
     def _save_record(self, record: DIDRecord) -> None:
-        """Save a DID record to disk."""
-        path = self._did_path(record.did)
-        with open(path, "w") as f:
+        with open(self._did_path(record.did), "w") as f:
             json.dump(
                 {
                     "did": record.did,
-                    "status": record.status.value,
                     "created_at": record.created_at,
-                    "approved_by": record.approved_by,
-                    "approved_at": record.approved_at,
+                    "namespaces": {
+                        ns: {
+                            "status": a.status.value,
+                            "approved_by": a.approved_by,
+                            "approved_at": a.approved_at,
+                        }
+                        for ns, a in record.namespaces.items()
+                    },
                 },
                 f,
                 indent=2,
             )
 
     def _load_record(self, did: str) -> DIDRecord | None:
-        """Load a DID record from disk."""
         path = self._did_path(did)
         if not path.exists():
             return None
         try:
             with open(path) as f:
                 data = json.load(f)
-                return DIDRecord(
-                    did=data["did"],
-                    status=DIDStatus(data["status"]),
-                    created_at=data["created_at"],
-                    approved_by=data.get("approved_by"),
-                    approved_at=data.get("approved_at"),
+            # Migrate old format
+            if "status" in data:
+                ns_map = {}
+                if data.get("status") not in ("admin", None):
+                    ns_map[GLOBAL_NS] = NamespaceApproval(
+                        status=DIDStatus(data["status"]),
+                        approved_by=data.get("approved_by"),
+                        approved_at=data.get("approved_at"),
+                    )
+                return DIDRecord(did=data["did"], created_at=data["created_at"], namespaces=ns_map)
+            namespaces = {
+                ns: NamespaceApproval(
+                    status=DIDStatus(a["status"]),
+                    approved_by=a.get("approved_by"),
+                    approved_at=a.get("approved_at"),
                 )
+                for ns, a in data.get("namespaces", {}).items()
+            }
+            return DIDRecord(did=data["did"], created_at=data["created_at"], namespaces=namespaces)
         except (json.JSONDecodeError, OSError, KeyError):
             return None
 
     @property
     def admin_did(self) -> str | None:
-        """Get the admin DID."""
         return self._admin_did
 
     def is_admin(self, did: str) -> bool:
-        """Check if a DID is the admin."""
         return self._admin_did == did
 
-    def get_status(self, did: str) -> DIDStatus | None:
-        """Get the status of a DID."""
-        return self._registry.get(did)
+    def is_authorized(self, did: str, namespace: str) -> bool:
+        """Check if DID is authorized for a namespace."""
+        if self.is_admin(did):
+            return True
+        # Global approval
+        if did in self._registry.get(GLOBAL_NS, {}):
+            return self._registry[GLOBAL_NS][did] == DIDStatus.APPROVED
+        # Namespace-specific approval
+        return self._registry.get(namespace, {}).get(did) == DIDStatus.APPROVED
 
-    def is_authorized(self, did: str) -> bool:
-        """Check if a DID is authorized to sync."""
-        status = self._registry.get(did)
-        return status in (DIDStatus.ADMIN, DIDStatus.APPROVED)
+    def get_status(self, did: str, namespace: str) -> DIDStatus | None:
+        if self.is_admin(did):
+            return DIDStatus.ADMIN
+        if did in self._registry.get(GLOBAL_NS, {}):
+            return self._registry[GLOBAL_NS][did]
+        return self._registry.get(namespace, {}).get(did)
 
-    def register_or_get(self, did: str) -> tuple[DIDStatus, bool]:
-        """Register a new DID or get existing status.
+    def register_or_get(self, did: str, namespace: str) -> tuple[DIDStatus, bool]:
+        """Register DID for a namespace, or return existing status.
 
-        Returns (status, is_new).
-        First DID becomes admin automatically.
+        Returns (status, is_new). First DID becomes global admin.
         """
-        if did in self._registry:
-            return self._registry[did], False
+        if self.is_admin(did):
+            return DIDStatus.ADMIN, False
+        existing = self.get_status(did, namespace)
+        if existing is not None:
+            return existing, False
 
         now = int(time.time() * 1000)
-
-        # First DID becomes admin
         if self._admin_did is None:
             self._admin_did = did
-            status = DIDStatus.ADMIN
-            record = DIDRecord(did=did, status=status, created_at=now)
-        else:
-            status = DIDStatus.PENDING
-            record = DIDRecord(did=did, status=status, created_at=now)
+            self._save_registry()
+            record = DIDRecord(did=did, created_at=now)
+            self._save_record(record)
+            return DIDStatus.ADMIN, True
 
-        self._registry[did] = status
-        self._save_record(record)
+        # Register as pending for this namespace
+        self._registry.setdefault(namespace, {})[did] = DIDStatus.PENDING
         self._save_registry()
+        record = self._load_record(did) or DIDRecord(did=did, created_at=now)
+        record.namespaces[namespace] = NamespaceApproval(status=DIDStatus.PENDING)
+        self._save_record(record)
+        return DIDStatus.PENDING, True
 
-        return status, True
+    def approve(self, did: str, namespace: str, by_did: str) -> tuple[bool, str]:
+        """Approve a DID for a namespace (or all namespaces if namespace == '*').
 
-    def approve(self, did: str, by_did: str) -> tuple[bool, str]:
-        """Approve a DID. Only admin can approve.
-
-        Returns (success, message).
+        Only admin can approve.
         """
         if not self.is_admin(by_did):
             return False, "only admin can approve DIDs"
-
-        if did not in self._registry:
-            return False, "DID not found"
-
-        current = self._registry[did]
-        if current == DIDStatus.ADMIN:
+        if self.is_admin(did):
             return False, "cannot modify admin DID"
-        if current == DIDStatus.APPROVED:
-            return False, "DID already approved"
 
         now = int(time.time() * 1000)
-        self._registry[did] = DIDStatus.APPROVED
-
-        record = self._load_record(did)
-        if record:
-            record.status = DIDStatus.APPROVED
-            record.approved_by = by_did
-            record.approved_at = now
-            self._save_record(record)
-
+        self._registry.setdefault(namespace, {})[did] = DIDStatus.APPROVED
         self._save_registry()
-        return True, "approved"
 
-    def revoke(self, did: str, by_did: str) -> tuple[bool, str]:
-        """Revoke a DID's access. Only admin can revoke.
+        record = self._load_record(did) or DIDRecord(did=did, created_at=now)
+        record.namespaces[namespace] = NamespaceApproval(
+            status=DIDStatus.APPROVED, approved_by=by_did, approved_at=now
+        )
+        self._save_record(record)
+        return True, f"approved for {'all namespaces' if namespace == GLOBAL_NS else namespace}"
 
-        Returns (success, message).
-        """
+    def revoke(self, did: str, namespace: str, by_did: str) -> tuple[bool, str]:
+        """Revoke a DID's access to a namespace (or all if namespace == '*')."""
         if not self.is_admin(by_did):
             return False, "only admin can revoke DIDs"
-
-        if did not in self._registry:
-            return False, "DID not found"
-
-        current = self._registry[did]
-        if current == DIDStatus.ADMIN:
+        if self.is_admin(did):
             return False, "cannot revoke admin DID"
 
-        self._registry[did] = DIDStatus.PENDING
+        self._registry.get(namespace, {}).pop(did, None)
+        if not self._registry.get(namespace):
+            self._registry.pop(namespace, None)
+        self._save_registry()
 
         record = self._load_record(did)
         if record:
-            record.status = DIDStatus.PENDING
-            record.approved_by = None
-            record.approved_at = None
+            record.namespaces.pop(namespace, None)
             self._save_record(record)
+        return True, f"revoked from {'all namespaces' if namespace == GLOBAL_NS else namespace}"
 
-        self._save_registry()
-        return True, "revoked"
+    def list_all(self, namespace: str | None = None) -> list[DIDRecord]:
+        """List all DID records, optionally filtered to a namespace."""
+        seen: set[str] = set()
+        if namespace:
+            dids = set(self._registry.get(namespace, {}).keys()) | \
+                   set(self._registry.get(GLOBAL_NS, {}).keys())
+            if self._admin_did:
+                dids.add(self._admin_did)
+        else:
+            dids = {self._admin_did} if self._admin_did else set()
+            for ns_dids in self._registry.values():
+                dids.update(ns_dids.keys())
 
-    def list_all(self) -> list[DIDRecord]:
-        """List all DID records."""
         records = []
-        for did in self._registry:
+        for did in dids:
+            if did in seen:
+                continue
+            seen.add(did)
             record = self._load_record(did)
             if record:
                 records.append(record)
+            elif did == self._admin_did:
+                records.append(DIDRecord(did=did, created_at=0))
         return records
 
-    def list_pending(self) -> list[DIDRecord]:
-        """List pending DID records."""
-        return [r for r in self.list_all() if r.status == DIDStatus.PENDING]
-
-    def list_approved(self) -> list[DIDRecord]:
-        """List approved DID records (including admin)."""
-        return [
-            r for r in self.list_all() if r.status in (DIDStatus.ADMIN, DIDStatus.APPROVED)
-        ]
+    def list_pending(self, namespace: str | None = None) -> list[DIDRecord]:
+        """List DIDs pending approval for a namespace (or any namespace)."""
+        result = []
+        namespaces = [namespace] if namespace else list(self._registry.keys())
+        seen: set[str] = set()
+        for ns in namespaces:
+            for did, status in self._registry.get(ns, {}).items():
+                if status == DIDStatus.PENDING and did not in seen:
+                    seen.add(did)
+                    record = self._load_record(did)
+                    if record:
+                        result.append(record)
+        return result
 
 
 @dataclass

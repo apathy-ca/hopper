@@ -17,14 +17,18 @@ from .protocol import SyncConflict, SyncRequest, SyncResponse
 from .storage import DIDStatus, UpstreamStorage
 
 
+class NamespaceApprovalInfo(BaseModel):
+    status: str
+    approved_by: str | None = None
+    approved_at: int | None = None
+
+
 class DIDInfo(BaseModel):
     """DID information for API responses."""
 
     did: str
-    status: str
     created_at: int
-    approved_by: str | None = None
-    approved_at: int | None = None
+    namespaces: dict[str, NamespaceApprovalInfo] = {}
 
 
 class AdminResponse(BaseModel):
@@ -97,24 +101,25 @@ async def sync(
 
     First DID to connect becomes admin. Subsequent DIDs must be approved.
     """
-    # Register DID if new, check authorization
-    status, is_new = storage.did_registry.register_or_get(did)
-
-    if is_new and status == DIDStatus.ADMIN:
-        # First DID - automatically authorized
-        pass
-    elif not storage.did_registry.is_authorized(did):
-        raise HTTPException(
-            status_code=403,
-            detail=f"DID pending approval. Contact admin to approve: {did}",
-        )
-
-    # Parse request body
+    # Parse body first so we know the namespace before auth checks
     body = await request.body()
     try:
         sync_req = SyncRequest.model_validate_json(body)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request body: {e}")
+
+    namespace = sync_req.instance
+
+    # Register DID for this namespace if new, check authorization
+    status, is_new = storage.did_registry.register_or_get(did, namespace)
+
+    if is_new and status == DIDStatus.ADMIN:
+        pass  # First DID — global admin
+    elif not storage.did_registry.is_authorized(did, namespace):
+        raise HTTPException(
+            status_code=403,
+            detail=f"DID not approved for namespace '{namespace}'. Contact admin: {did}",
+        )
 
     server_time = int(time.time() * 1000)
     accepted: list[str] = []
@@ -158,27 +163,35 @@ async def sync(
     )
 
 
+def _did_info(record: "DIDRecord") -> DIDInfo:
+    from .storage import DIDStatus
+    return DIDInfo(
+        did=record.did,
+        created_at=record.created_at,
+        namespaces={
+            ns: NamespaceApprovalInfo(
+                status=a.status.value,
+                approved_by=a.approved_by,
+                approved_at=a.approved_at,
+            )
+            for ns, a in record.namespaces.items()
+        },
+    )
+
+
 @router.get("/admin/dids")
 async def list_dids(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
+    namespace: str | None = None,
 ) -> DIDListResponse:
-    """List all registered DIDs. Only admin can see full list."""
-    # Anyone can call this but non-admin only sees limited info
-    records = storage.did_registry.list_all()
-
+    """List registered DIDs, optionally filtered to a namespace."""
+    if not storage.did_registry.is_admin(did):
+        raise HTTPException(status_code=403, detail="Only admin can list DIDs")
+    records = storage.did_registry.list_all(namespace=namespace)
     return DIDListResponse(
         admin_did=storage.did_registry.admin_did,
-        dids=[
-            DIDInfo(
-                did=r.did,
-                status=r.status.value,
-                created_at=r.created_at,
-                approved_by=r.approved_by,
-                approved_at=r.approved_at,
-            )
-            for r in records
-        ],
+        dids=[_did_info(r) for r in records],
     )
 
 
@@ -186,32 +199,23 @@ async def list_dids(
 async def list_pending(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
+    namespace: str | None = None,
 ) -> DIDListResponse:
-    """List pending DIDs awaiting approval. Only admin can view."""
+    """List pending DIDs, optionally filtered to a namespace."""
     if not storage.did_registry.is_admin(did):
         raise HTTPException(status_code=403, detail="Only admin can view pending DIDs")
-
-    records = storage.did_registry.list_pending()
-
+    records = storage.did_registry.list_pending(namespace=namespace)
     return DIDListResponse(
         admin_did=storage.did_registry.admin_did,
-        dids=[
-            DIDInfo(
-                did=r.did,
-                status=r.status.value,
-                created_at=r.created_at,
-                approved_by=r.approved_by,
-                approved_at=r.approved_at,
-            )
-            for r in records
-        ],
+        dids=[_did_info(r) for r in records],
     )
 
 
 class ApproveRequest(BaseModel):
-    """Request to approve a DID."""
+    """Request to approve or revoke a DID."""
 
     did: str
+    namespace: str = "*"  # specific namespace or "*" for all
 
 
 @router.post("/admin/approve")
@@ -220,19 +224,17 @@ async def approve_did(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
 ) -> AdminResponse:
-    """Approve a pending DID. Only admin can approve."""
+    """Approve a DID for a namespace (or all namespaces if namespace='*')."""
     body = await request.body()
     try:
         req = ApproveRequest.model_validate_json(body)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
 
-    success, message = storage.did_registry.approve(req.did, by_did=did)
-
+    success, message = storage.did_registry.approve(req.did, namespace=req.namespace, by_did=did)
     if not success:
         raise HTTPException(status_code=403, detail=message)
-
-    return AdminResponse(success=True, message=f"Approved {req.did}")
+    return AdminResponse(success=True, message=f"Approved {req.did}: {message}")
 
 
 @router.post("/admin/revoke")
@@ -241,19 +243,17 @@ async def revoke_did(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
 ) -> AdminResponse:
-    """Revoke a DID's access. Only admin can revoke."""
+    """Revoke a DID's access to a namespace (or all if namespace='*')."""
     body = await request.body()
     try:
         req = ApproveRequest.model_validate_json(body)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
 
-    success, message = storage.did_registry.revoke(req.did, by_did=did)
-
+    success, message = storage.did_registry.revoke(req.did, namespace=req.namespace, by_did=did)
     if not success:
         raise HTTPException(status_code=403, detail=message)
-
-    return AdminResponse(success=True, message=f"Revoked {req.did}")
+    return AdminResponse(success=True, message=f"Revoked {req.did}: {message}")
 
 
 def _build_standalone_app() -> FastAPI:
