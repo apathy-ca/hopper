@@ -127,7 +127,7 @@ async def sync(
             accepted.append(task.id)
         else:
             # Extract server timestamp from index
-            server_ts = storage.get_updated_at(did, task.instance or "local", task.id) or 0
+            server_ts = storage.get_updated_at(task.instance or "local", task.id) or 0
             client_ts = 0
             if task.updated_at:
                 if isinstance(task.updated_at, str):
@@ -147,8 +147,8 @@ async def sync(
                 )
             )
 
-    # Get tasks updated since client's timestamp, scoped to this DID+instance
-    updated_tasks = storage.list_since(sync_req.since, from_did=did, instance=sync_req.instance)
+    # Get tasks updated since client's timestamp, scoped to this instance namespace
+    updated_tasks = storage.list_since(sync_req.since, instance=sync_req.instance)
 
     return SyncResponse(
         tasks=updated_tasks,
