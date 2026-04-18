@@ -48,6 +48,8 @@ class LocalTask:
     expected_heartbeat: datetime | None = None
     # Parent-child hierarchy
     parent_id: str | None = None
+    # Soft delete — propagated via sync
+    deleted: bool = False
 
     @classmethod
     def create(
@@ -131,6 +133,8 @@ class LocalTask:
             data["expected_heartbeat"] = self.expected_heartbeat.isoformat()
         if self.parent_id:
             data["parent_id"] = self.parent_id
+        if self.deleted:
+            data["deleted"] = True
         return data
 
     @classmethod
@@ -170,6 +174,7 @@ class LocalTask:
                 else fm.get("expected_heartbeat")
             ),
             parent_id=fm.get("parent_id"),
+            deleted=bool(fm.get("deleted", False)),
         )
 
 
@@ -233,7 +238,7 @@ class TaskMarkdownStore:
         self.storage.update_index(task.id, doc.frontmatter, file_path)
 
     def delete(self, task_id: str) -> bool:
-        """Delete task (accepts prefix matches). Returns True if deleted."""
+        """Hard-delete task file. Used when applying a remote deletion. Returns True if deleted."""
         resolved = self.resolve_id(task_id)
         if resolved is None:
             return False
@@ -243,6 +248,15 @@ class TaskMarkdownStore:
             self.storage._save_index()
             return True
         return False
+
+    def mark_deleted(self, task_id: str) -> bool:
+        """Soft-delete task (sets deleted=True, saves). Syncs the deletion to other instances."""
+        task = self.get(task_id)
+        if task is None:
+            return False
+        task.deleted = True
+        self.save(task)
+        return True
 
     def list(self, **filters: Any) -> list[LocalTask]:
         """List tasks with optional filters."""
@@ -273,11 +287,13 @@ class TaskMarkdownStore:
             project_tasks = set(index.get("by_project", {}).get(filters["project"], []))
             task_ids &= project_tasks
 
-        # Load matching tasks
+        include_deleted = filters.pop("include_deleted", False)
+
+        # Load matching tasks (exclude soft-deleted unless include_deleted)
         tasks = []
         for task_id in task_ids:
             task = self.get(task_id)
-            if task:
+            if task and (include_deleted or not task.deleted):
                 tasks.append(task)
 
         # Sort by updated_at descending

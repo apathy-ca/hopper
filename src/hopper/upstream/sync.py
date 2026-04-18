@@ -101,7 +101,7 @@ def _local_task_to_sync_task(task: "LocalTask") -> SyncTask:
         last_heartbeat=task.last_heartbeat,
         expected_heartbeat=task.expected_heartbeat,
         parent_id=task.parent_id,
-        deleted=False,
+        deleted=task.deleted,
     )
 
 
@@ -195,6 +195,8 @@ def sync_with_upstream(
     state_path: Path,
     instance: str = "local",
 ) -> SyncResult:
+    # Per-instance state file so switching instances doesn't skip tasks
+    state_path = state_path.parent / f"{state_path.name}_{instance}"
     """Perform a full sync with upstream server.
 
     1. Load sync state (last sync timestamp)
@@ -216,8 +218,8 @@ def sync_with_upstream(
     # Load sync state
     state = SyncState.load(state_path)
 
-    # Collect local tasks modified since last sync
-    all_tasks = task_store.list()
+    # Collect local tasks modified since last sync (including soft-deleted)
+    all_tasks = task_store.list(include_deleted=True)
     local_changes = []
 
     for task in all_tasks:

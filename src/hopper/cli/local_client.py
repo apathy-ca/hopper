@@ -354,8 +354,8 @@ class LocalClient:
         return self._task_to_dict(task)
 
     def delete_task(self, task_id: str) -> None:
-        """Delete task."""
-        if not self.task_store.delete(task_id):
+        """Soft-delete task so the deletion propagates via sync."""
+        if not self.task_store.mark_deleted(task_id):
             raise LocalClientError(f"Task not found: {task_id}")
 
     def search_tasks(self, query: str, **params: Any) -> list[dict[str, Any]]:
