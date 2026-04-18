@@ -92,13 +92,14 @@ def config() -> None:
     Displays the configuration snippet to add to Claude Desktop's
     MCP settings file.
     """
+    api_base_url = _get_default_server()
     config_template = {
         "mcpServers": {
             "hopper": {
                 "command": "python",
                 "args": ["-m", "hopper.mcp.main"],
                 "env": {
-                    "HOPPER_API_BASE_URL": "http://localhost:8080",
+                    "HOPPER_API_BASE_URL": api_base_url,
                     "HOPPER_API_TOKEN": "your-api-token-here",
                 },
             }
@@ -135,13 +136,14 @@ def init_config(output: str | None) -> None:
     Creates a configuration file template that can be customized
     for your Hopper deployment.
     """
+    api_base_url = _get_default_server()
     config_template = {
         "mcpServers": {
             "hopper": {
                 "command": "python",
                 "args": ["-m", "hopper.mcp.main"],
                 "env": {
-                    "HOPPER_API_BASE_URL": "http://localhost:8080",
+                    "HOPPER_API_BASE_URL": api_base_url,
                     "HOPPER_API_TOKEN": "${HOPPER_API_TOKEN}",
                     "HOPPER_LOG_LEVEL": "INFO",
                     "HOPPER_ENABLE_DEBUG": "false",
