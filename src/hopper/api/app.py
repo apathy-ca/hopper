@@ -126,7 +126,7 @@ def create_app() -> FastAPI:
             "health": "/health",
             "mcp_sse": "/mcp/sse/",
             "mcp_register": "/mcp/register",
-            "upstream_sync": "/upstream/sync",
+            "upstream_sync": "/sync",
         }
 
     # Import and include routers
@@ -145,9 +145,10 @@ def create_app() -> FastAPI:
     # Mount MCP SSE server for Claude Web integration
     app.mount("/mcp", create_sse_server())
 
-    # Mount upstream sync server (replaces standalone port 9000 service)
-    from hopper.upstream.server import app as upstream_app
-    app.mount("/upstream", upstream_app)
+    # Include upstream sync routes at root so DID-signed paths (/sync, /admin/*)
+    # match the client's signature expectations without a mount prefix.
+    from hopper.upstream.server import router as upstream_router
+    app.include_router(upstream_router, tags=["Upstream"])
 
     return app
 

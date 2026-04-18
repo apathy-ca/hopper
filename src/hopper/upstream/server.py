@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 
 from .did import verify_signature
@@ -40,11 +40,7 @@ class DIDListResponse(BaseModel):
     admin_did: str | None
     dids: list[DIDInfo]
 
-app = FastAPI(
-    title="Hopper Upstream",
-    description="Lightweight sync server for Hopper instances",
-    version="0.1.0",
-)
+router = APIRouter()
 
 # Storage instance (configured at startup)
 _storage: UpstreamStorage | None = None
@@ -88,13 +84,7 @@ async def verify_did_auth(
     return did
 
 
-@app.get("/health")
-async def health() -> dict:
-    """Health check endpoint."""
-    return {"status": "ok", "time": int(time.time() * 1000)}
-
-
-@app.post("/sync")
+@router.post("/sync")
 async def sync(
     request: Request,
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
@@ -168,7 +158,7 @@ async def sync(
     )
 
 
-@app.get("/admin/dids")
+@router.get("/admin/dids")
 async def list_dids(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
@@ -192,7 +182,7 @@ async def list_dids(
     )
 
 
-@app.get("/admin/pending")
+@router.get("/admin/pending")
 async def list_pending(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
@@ -224,7 +214,7 @@ class ApproveRequest(BaseModel):
     did: str
 
 
-@app.post("/admin/approve")
+@router.post("/admin/approve")
 async def approve_did(
     request: Request,
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
@@ -245,7 +235,7 @@ async def approve_did(
     return AdminResponse(success=True, message=f"Approved {req.did}")
 
 
-@app.post("/admin/revoke")
+@router.post("/admin/revoke")
 async def revoke_did(
     request: Request,
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
@@ -264,6 +254,31 @@ async def revoke_did(
         raise HTTPException(status_code=403, detail=message)
 
     return AdminResponse(success=True, message=f"Revoked {req.did}")
+
+
+def _build_standalone_app() -> FastAPI:
+    """Build a standalone FastAPI app that exposes the upstream router.
+
+    Adds a /health endpoint for standalone deployments. When the router is
+    included in the main Hopper API (see hopper.api.app), the main app's
+    /health is used instead.
+    """
+    standalone = FastAPI(
+        title="Hopper Upstream",
+        description="Lightweight sync server for Hopper instances",
+        version="0.1.0",
+    )
+
+    @standalone.get("/health")
+    async def _health() -> dict:
+        return {"status": "ok", "time": int(time.time() * 1000)}
+
+    standalone.include_router(router)
+    return standalone
+
+
+# Module-level FastAPI app for standalone deployments (run_server / uvicorn entrypoints).
+app = _build_standalone_app()
 
 
 def create_app(storage_path: Path) -> FastAPI:
