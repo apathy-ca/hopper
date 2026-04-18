@@ -339,15 +339,16 @@ def admin() -> None:
 @admin.command(name="list")
 @click.option("--server", "-s", help="Upstream server URL")
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Filter to a specific namespace")
 @click.pass_obj
-def admin_list(ctx: Context, server: str | None, admin_key: str | None) -> None:
+def admin_list(ctx: Context, server: str | None, admin_key: str | None, namespace: str | None) -> None:
     """List all registered DIDs."""
     from hopper.upstream.client import UpstreamError
 
     client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
-        result = client.list_dids()
+        result = client.list_dids(namespace=namespace)
     except UpstreamError as e:
         print_error(str(e))
         raise click.Abort()
@@ -366,29 +367,30 @@ def admin_list(ctx: Context, server: str | None, admin_key: str | None) -> None:
         print_info("")
 
         for d in dids:
-            status = d["status"]
             did = d["did"]
-            marker = ""
-            if status == "admin":
-                marker = " (admin)"
-            elif status == "pending":
-                marker = " [PENDING]"
-
-            click.echo(f"  {did}{marker}")
+            namespaces = d.get("namespaces", {})
+            if namespaces:
+                for ns, info in namespaces.items():
+                    status = info["status"]
+                    marker = f" [{status.upper()}]" if status != "approved" else ""
+                    click.echo(f"  {did}  {ns}{marker}")
+            else:
+                click.echo(f"  {did}  (admin)")
 
 
 @admin.command(name="pending")
 @click.option("--server", "-s", help="Upstream server URL")
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Filter to a specific namespace")
 @click.pass_obj
-def admin_pending(ctx: Context, server: str | None, admin_key: str | None) -> None:
+def admin_pending(ctx: Context, server: str | None, admin_key: str | None, namespace: str | None) -> None:
     """List DIDs pending approval."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
     client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
-        result = client.list_pending()
+        result = client.list_pending(namespace=namespace)
     except NotAdminError:
         print_error("Only admin can view pending DIDs.")
         raise click.Abort()
@@ -410,23 +412,38 @@ def admin_pending(ctx: Context, server: str | None, admin_key: str | None) -> No
             from datetime import datetime
 
             created = datetime.fromtimestamp(d["created_at"] / 1000)
+            namespaces = d.get("namespaces", {})
+            pending_ns = [ns for ns, info in namespaces.items() if info["status"] == "pending"]
             click.echo(f"  {d['did']}")
             click.echo(f"    Requested: {created.isoformat()}")
+            if pending_ns:
+                click.echo(f"    Namespaces: {', '.join(pending_ns)}")
 
 
 @admin.command(name="approve")
 @click.argument("did")
 @click.option("--server", "-s", help="Upstream server URL")
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Approve for a specific namespace")
+@click.option("--all", "all_namespaces", is_flag=True, help="Approve for all namespaces")
 @click.pass_obj
-def admin_approve(ctx: Context, did: str, server: str | None, admin_key: str | None) -> None:
-    """Approve a pending DID."""
+def admin_approve(
+    ctx: Context,
+    did: str,
+    server: str | None,
+    admin_key: str | None,
+    namespace: str | None,
+    all_namespaces: bool,
+) -> None:
+    """Approve a pending DID for a namespace (or all with --all)."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
     client, _ = _get_admin_client(ctx, server, admin_key)
 
+    ns = "*" if all_namespaces else (namespace or "*")
+
     try:
-        result = client.approve_did(did)
+        result = client.approve_did(did, namespace=ns)
     except NotAdminError as e:
         print_error(str(e))
         raise click.Abort()
@@ -437,22 +454,34 @@ def admin_approve(ctx: Context, did: str, server: str | None, admin_key: str | N
     if ctx.json_output:
         print_json(result)
     else:
-        print_success(f"Approved: {did}")
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        print_success(f"Approved {did} for {scope}")
 
 
 @admin.command(name="revoke")
 @click.argument("did")
 @click.option("--server", "-s", help="Upstream server URL")
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Revoke for a specific namespace")
+@click.option("--all", "all_namespaces", is_flag=True, help="Revoke for all namespaces")
 @click.pass_obj
-def admin_revoke(ctx: Context, did: str, server: str | None, admin_key: str | None) -> None:
-    """Revoke a DID's access."""
+def admin_revoke(
+    ctx: Context,
+    did: str,
+    server: str | None,
+    admin_key: str | None,
+    namespace: str | None,
+    all_namespaces: bool,
+) -> None:
+    """Revoke a DID's access to a namespace (or all with --all)."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
     client, _ = _get_admin_client(ctx, server, admin_key)
 
+    ns = "*" if all_namespaces else (namespace or "*")
+
     try:
-        result = client.revoke_did(did)
+        result = client.revoke_did(did, namespace=ns)
     except NotAdminError as e:
         print_error(str(e))
         raise click.Abort()
@@ -463,4 +492,5 @@ def admin_revoke(ctx: Context, did: str, server: str | None, admin_key: str | No
     if ctx.json_output:
         print_json(result)
     else:
-        print_success(f"Revoked: {did}")
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        print_success(f"Revoked {did} from {scope}")

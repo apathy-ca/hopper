@@ -151,12 +151,15 @@ class UpstreamClient:
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
 
-    def list_dids(self) -> dict:
-        """List all registered DIDs."""
+    def list_dids(self, namespace: str | None = None) -> dict:
+        """List all registered DIDs, optionally filtered to a namespace."""
         try:
-            response = self._make_request("GET", "/admin/dids")
+            path = f"/admin/dids?namespace={namespace}" if namespace else "/admin/dids"
+            response = self._make_request("GET", path)
             if response.status_code == 401:
                 raise AuthenticationError("DID authentication failed")
+            if response.status_code == 403:
+                raise NotAdminError("Only admin can list DIDs")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -164,10 +167,11 @@ class UpstreamClient:
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
 
-    def list_pending(self) -> dict:
+    def list_pending(self, namespace: str | None = None) -> dict:
         """List pending DIDs awaiting approval. Requires admin."""
         try:
-            response = self._make_request("GET", "/admin/pending")
+            path = f"/admin/pending?namespace={namespace}" if namespace else "/admin/pending"
+            response = self._make_request("GET", path)
             if response.status_code == 401:
                 raise AuthenticationError("DID authentication failed")
             if response.status_code == 403:
@@ -181,13 +185,13 @@ class UpstreamClient:
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
 
-    def approve_did(self, target_did: str) -> dict:
-        """Approve a pending DID. Requires admin."""
+    def approve_did(self, target_did: str, namespace: str = "*") -> dict:
+        """Approve a DID for a namespace (or all if namespace='*'). Requires admin."""
         try:
             response = self._make_request(
                 "POST",
                 "/admin/approve",
-                body={"did": target_did},
+                body={"did": target_did, "namespace": namespace},
             )
             if response.status_code == 401:
                 raise AuthenticationError("DID authentication failed")
@@ -202,13 +206,13 @@ class UpstreamClient:
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
 
-    def revoke_did(self, target_did: str) -> dict:
-        """Revoke a DID's access. Requires admin."""
+    def revoke_did(self, target_did: str, namespace: str = "*") -> dict:
+        """Revoke a DID's access to a namespace (or all if namespace='*'). Requires admin."""
         try:
             response = self._make_request(
                 "POST",
                 "/admin/revoke",
-                body={"did": target_did},
+                body={"did": target_did, "namespace": namespace},
             )
             if response.status_code == 401:
                 raise AuthenticationError("DID authentication failed")
