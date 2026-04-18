@@ -157,3 +157,6 @@ inbox/processed/*.json
 # Hopper index (regenerated) and per-clone sync cursor
 .hopper/.index/
 .hopper/.sync_state
+
+# Hopper task files — synced via upstream, not git
+.hopper/tasks/
