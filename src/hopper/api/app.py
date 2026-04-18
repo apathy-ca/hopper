@@ -127,10 +127,12 @@ def create_app() -> FastAPI:
             "mcp_sse": "/mcp/sse/",
             "mcp_register": "/mcp/register",
             "upstream_sync": "/sync",
+            "oauth_metadata": "/.well-known/oauth-authorization-server",
+            "oauth_resource_metadata": "/.well-known/oauth-protected-resource",
         }
 
     # Import and include routers
-    from hopper.api.routes import delegations, instances, learning, mcp_auth, tasks
+    from hopper.api.routes import delegations, instances, learning, mcp_auth, oauth, tasks
 
     app.include_router(tasks.router, prefix="/api/v1", tags=["Tasks"])
     app.include_router(instances.router, prefix="/api/v1", tags=["Instances"])
@@ -138,6 +140,8 @@ def create_app() -> FastAPI:
     app.include_router(learning.router, prefix="/api/v1", tags=["Learning"])
     # MCP token registration (DID-authenticated)
     app.include_router(mcp_auth.router, tags=["MCP Auth"])
+    # OAuth 2.1 + RFC 9728 metadata for Claude Web custom connector flow
+    app.include_router(oauth.router)
     # from hopper.api.routes import projects, auth
     # app.include_router(projects.router, prefix="/api/v1", tags=["Projects"])
     # app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
