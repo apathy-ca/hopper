@@ -32,10 +32,13 @@ Authentication methods (in order of preference):
 If no auth is configured, the server allows unauthenticated access.
 """
 
+import logging
 import os
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.sse import SseServerTransport
@@ -240,7 +243,7 @@ def _get_client():
     """
     sid = _session_id.get()
     _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
-    if instance_name:
+if instance_name:
         ns_dir = _upstream_storage_path() / "tasks" / instance_name
         if ns_dir.exists():
             return UpstreamNamespaceClient(instance_name)
