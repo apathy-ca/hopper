@@ -831,39 +831,41 @@ def hopper_create_pattern(
 
 
 # =============================================================================
-# Prompts
+# Usage / bootstrap tool
 # =============================================================================
 
 
-@mcp.prompt()
-def hopper_usage() -> str:
-    """How to use Hopper as a persistent task and memory store for AI agents."""
+@mcp.tool()
+def hopper_instructions() -> str:
+    """Return usage instructions for Hopper. Call this first to understand how to use the available tools effectively.
+
+    Returns a guide covering the task lifecycle, heartbeats, instance switching,
+    patterns, learning feedback, and agent identity conventions.
+    """
     return """# Hopper — Persistent Task & Memory Store
 
 Hopper is a long-term task store for AI agents. Tasks persist across sessions.
 
 ## Core workflow
 
-**Check what's open before starting work:**
+Check what's open before starting work:
   hopper_list_tasks(status="open", limit=20)
 
-**Claim a task when you start it:**
+Claim a task when you start it:
   hopper_update_task_status(task_id, "in_progress", assigned_to="claude:<task-name>")
 
-**Send heartbeats every 10-15 min during long work:**
+Send heartbeats every 10-15 min during long work:
   hopper_heartbeat(task_id)
 
-**Complete or release when done:**
+Complete or release when done:
   hopper_update_task_status(task_id, "completed")
-  — or to release without finishing:
-  hopper_update_task(task_id, assigned_to=None, status="open")
+  — or to release without finishing: hopper_update_task(task_id, assigned_to=None, status="open")
 
 ## Creating tasks
 
   hopper_create_task(title="...", priority="high", tags=["backend"])
 
-Priority: critical > high > medium > low
-Tags are free-form — use them for filtering.
+Priority: critical > high > medium > low. Tags are free-form.
 
 ## Searching
 
@@ -875,7 +877,7 @@ Tags are free-form — use them for filtering.
 
 Each token is scoped to a Hopper instance (a project namespace).
   hopper_list_instances()        — see available instances
-  hopper_switch_instance("name") — switch context
+  hopper_switch_instance("name") — switch context for subsequent calls
 
 ## Patterns & learning
 
@@ -893,6 +895,13 @@ Never use generic names like "claude:main".
 ## Stale task detection
 
   hopper_list_stale_tasks()  — finds tasks with no heartbeat in 30+ min
+
+## Task schema fields
+
+  id, title, status, priority, description, tags, instance, source
+  depends_on, parent_id, assigned_to, owner, requester
+  external_id, external_url, external_platform, context
+  created_at, updated_at, last_heartbeat, expected_heartbeat
 """
 
 
