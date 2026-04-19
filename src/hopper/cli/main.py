@@ -137,6 +137,10 @@ cli.add_command(context)
 cli.add_command(github)
 cli.add_command(upstream)
 cli.add_command(mcp)
+
+# Shortcut: `hopper sync` → `hopper upstream sync`
+from hopper.cli.commands.upstream import sync_upstream  # noqa: E402
+cli.add_command(sync_upstream, name="sync")
 cli.add_command(config_group, name="config")
 cli.add_command(init)
 cli.add_command(auth)
