@@ -232,12 +232,13 @@ def _get_client():
     """Get the appropriate client for the current session's instance."""
     sid = _session_id.get()
     instance_path, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
-    if instance_path:
-        return LocalClient(storage_path=instance_path)
+    # Upstream data takes priority for named instances — it's the canonical server store
     if instance_name:
         ns_dir = _upstream_storage_path() / "tasks" / instance_name
         if ns_dir.exists():
             return UpstreamNamespaceClient(instance_name)
+    if instance_path:
+        return LocalClient(storage_path=instance_path)
     return LocalClient()
 
 
