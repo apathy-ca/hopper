@@ -868,34 +868,46 @@ def create_sse_server():
     )
 
 
-def create_streamable_http_server():
-    """Create Starlette app for MCP Streamable HTTP transport (MCP 1.26+).
+from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-    Returns a Starlette application that handles the modern Streamable HTTP
-    transport used by Claude Web. Mounts at `/` so the caller should mount
-    this at the desired prefix (e.g. /mcp).
+# Module-level session manager — started by the main app lifespan (see app.py)
+_streamable_session_manager: StreamableHTTPSessionManager | None = None
 
-    Auth is validated on every request. The mcp-session-id header is used
-    as the key into _session_instances so that hopper_switch_instance works
-    across the stateful per-session transports.
+
+def get_streamable_session_manager() -> StreamableHTTPSessionManager:
+    """Return the module-level Streamable HTTP session manager, creating it if needed."""
+    global _streamable_session_manager
+    if _streamable_session_manager is None:
+        _streamable_session_manager = StreamableHTTPSessionManager(
+            app=mcp._mcp_server,
+            json_response=True,
+            stateless=False,
+        )
+    return _streamable_session_manager
+
+
+class _StreamableHTTPASGIHandler:
+    """Auth-gated ASGI handler for MCP Streamable HTTP transport.
+
+    Acts as a raw ASGI callable so that it can drive the full ASGI lifecycle
+    (headers + body streaming) without Starlette expecting a Response return value.
     """
-    import contextlib
 
-    from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
-    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return
 
-    session_manager = StreamableHTTPSessionManager(
-        app=mcp._mcp_server,
-        json_response=False,
-        stateless=False,
-    )
+        from starlette.requests import Request as StarletteRequest
+        request = StarletteRequest(scope, receive)
 
-    async def handle_streamable(request):
-        """Auth-gated entry point for Streamable HTTP."""
+        # Read body once for auth (may be empty for GET/DELETE)
         body = await request.body()
+
         auth_error, auth_id, instance_path = _check_auth(request, body)
         if auth_error:
-            return auth_error
+            await auth_error(scope, receive, send)
+            return
 
         # Extract or allocate a session ID for context-var based instance routing
         raw_sid = request.headers.get(MCP_SESSION_ID_HEADER)
@@ -912,18 +924,21 @@ def create_streamable_http_server():
             return {"type": "http.request", "body": body, "more_body": False}
 
         try:
-            await session_manager.handle_request(request.scope, replay_receive, request._send)
+            sm = get_streamable_session_manager()
+            await sm.handle_request(scope, replay_receive, send)
         finally:
             _session_id.reset(sid_token)
             _session_did.reset(did_token)
             # Don't pop _session_instances here — the session persists across requests
 
-    @contextlib.asynccontextmanager
-    async def lifespan(app):
-        async with session_manager.run():
-            yield
 
-    return Starlette(
-        routes=[Route("/", endpoint=handle_streamable, methods=["GET", "POST", "DELETE"])],
-        lifespan=lifespan,
-    )
+def create_streamable_http_server() -> _StreamableHTTPASGIHandler:
+    """Return auth-gated ASGI handler for MCP Streamable HTTP transport (MCP 1.26+).
+
+    Returns a raw ASGI callable that can be mounted directly on FastAPI with
+    app.mount("/mcp", create_streamable_http_server()).
+
+    The underlying StreamableHTTPSessionManager must be started via its run()
+    context manager before requests arrive — done in the main app's lifespan.
+    """
+    return _StreamableHTTPASGIHandler()
