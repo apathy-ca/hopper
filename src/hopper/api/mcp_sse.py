@@ -831,8 +831,69 @@ def hopper_create_pattern(
 
 
 # =============================================================================
-# Shared server creation helpers
+# Prompts
 # =============================================================================
+
+
+@mcp.prompt()
+def hopper_usage() -> str:
+    """How to use Hopper as a persistent task and memory store for AI agents."""
+    return """# Hopper — Persistent Task & Memory Store
+
+Hopper is a long-term task store for AI agents. Tasks persist across sessions.
+
+## Core workflow
+
+**Check what's open before starting work:**
+  hopper_list_tasks(status="open", limit=20)
+
+**Claim a task when you start it:**
+  hopper_update_task_status(task_id, "in_progress", assigned_to="claude:<task-name>")
+
+**Send heartbeats every 10-15 min during long work:**
+  hopper_heartbeat(task_id)
+
+**Complete or release when done:**
+  hopper_update_task_status(task_id, "completed")
+  — or to release without finishing:
+  hopper_update_task(task_id, assigned_to=None, status="open")
+
+## Creating tasks
+
+  hopper_create_task(title="...", priority="high", tags=["backend"])
+
+Priority: critical > high > medium > low
+Tags are free-form — use them for filtering.
+
+## Searching
+
+  hopper_search_tasks("keyword")
+  hopper_list_tasks(status="open", priority="high")
+  hopper_list_tasks(tags=["gpu"])
+
+## Instances
+
+Each token is scoped to a Hopper instance (a project namespace).
+  hopper_list_instances()        — see available instances
+  hopper_switch_instance("name") — switch context
+
+## Patterns & learning
+
+Patterns route tasks to instances automatically.
+  hopper_list_patterns()
+  hopper_match_patterns(title, tags, priority)
+  hopper_submit_feedback(task_id, "routed correctly", outcome="correct")
+
+## Agent identity convention
+
+Use "platform:task-name" when assigning yourself:
+  "claude:auth-refactor", "claude:data-pipeline"
+Never use generic names like "claude:main".
+
+## Stale task detection
+
+  hopper_list_stale_tasks()  — finds tasks with no heartbeat in 30+ min
+"""
 
 
 def _canonical_base_url(request) -> str:
