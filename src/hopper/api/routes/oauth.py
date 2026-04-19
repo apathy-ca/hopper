@@ -81,7 +81,7 @@ async def protected_resource_metadata(request: Request) -> dict:
     """
     base = _public_base_url(request)
     return {
-        "resource": base,
+        "resource": f"{base}/mcp",
         "authorization_servers": [base],
         "scopes_supported": SUPPORTED_SCOPES,
         "bearer_methods_supported": ["header"],
