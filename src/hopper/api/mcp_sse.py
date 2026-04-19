@@ -229,16 +229,21 @@ class UpstreamNamespaceClient:
 
 
 def _get_client():
-    """Get the appropriate client for the current session's instance."""
+    """Get the appropriate client for the current session's instance.
+
+    Instance resolution is server-side only:
+    1. Named instance → upstream-data namespace (canonical server store)
+    2. Fallback → server's default LocalClient (~/.hopper)
+
+    instance_path from client tokens is intentionally ignored — the server
+    never accesses arbitrary filesystem paths supplied by clients.
+    """
     sid = _session_id.get()
-    instance_path, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
-    # Upstream data takes priority for named instances — it's the canonical server store
+    _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
     if instance_name:
         ns_dir = _upstream_storage_path() / "tasks" / instance_name
         if ns_dir.exists():
             return UpstreamNamespaceClient(instance_name)
-    if instance_path:
-        return LocalClient(storage_path=instance_path)
     return LocalClient()
 
 
