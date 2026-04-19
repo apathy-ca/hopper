@@ -33,6 +33,7 @@ If no auth is configured, the server allows unauthenticated access.
 """
 
 import os
+import uuid
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -50,18 +51,21 @@ MCP_AUTH_TOKEN = os.getenv("HOPPER_MCP_TOKEN")
 MCP_ALLOWED_DIDS = os.getenv("HOPPER_MCP_ALLOWED_DIDS", "").split(",") if os.getenv("HOPPER_MCP_ALLOWED_DIDS") else []
 MCP_DID_OPEN_ACCESS = os.getenv("HOPPER_MCP_DID_OPEN", "").lower() in ("1", "true", "yes")
 
-# Context variable for current session's instance path
-# Set by the SSE handler based on the authenticated token
-_current_instance_path: ContextVar[Path | None] = ContextVar("instance_path", default=None)
+# Session ID ContextVar — set once at SSE connect, inherited by all tool calls
+_session_id: ContextVar[str | None] = ContextVar("session_id", default=None)
+
+# Session-level instance path store — mutable by hopper_switch_instance tool
+# Keyed by session ID so concurrent sessions don't interfere
+_session_instances: dict[str, Path | None] = {}
+
+# DID for the current session — used by switch to validate token ownership
+_session_did: ContextVar[str | None] = ContextVar("session_did", default=None)
 
 
 def _get_client() -> LocalClient:
-    """Get a LocalClient for the current session's instance.
-
-    Uses the instance_path from the authenticated token if available,
-    otherwise uses the default (~/.hopper).
-    """
-    instance_path = _current_instance_path.get()
+    """Get a LocalClient for the current session's instance."""
+    sid = _session_id.get()
+    instance_path = _session_instances.get(sid) if sid else None
     if instance_path:
         return LocalClient(storage_path=instance_path)
     return LocalClient()
@@ -423,6 +427,51 @@ def hopper_list_instances() -> dict:
         return {"status": "error", "message": e.message}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def hopper_switch_instance(instance_name: str) -> dict:
+    """Switch which Hopper instance this session reads from.
+
+    Authentication is DID-based and doesn't change. This just redirects
+    which hopper data store subsequent tool calls operate on. The server
+    looks up a registered token for the authenticated DID that matches
+    the requested instance name.
+
+    Args:
+        instance_name: Name of the instance to switch to (e.g. 'Rosetta_Program', 'hopper')
+    """
+    sid = _session_id.get()
+    if not sid:
+        return {"status": "error", "message": "No active session"}
+
+    did = _session_did.get()
+
+    # Find a registered hpr_ token for this DID + instance
+    try:
+        from hopper.api.mcp_tokens import get_token_store
+        store = get_token_store()
+        all_tokens = store.list_tokens(did=did) if did else []
+        match = next(
+            (t for t in all_tokens if t.get("instance") == instance_name and t.get("instance_path")),
+            None,
+        )
+    except Exception as e:
+        return {"status": "error", "message": f"Token lookup failed: {e}"}
+
+    if not match:
+        return {
+            "status": "error",
+            "message": f"No registered token found for instance '{instance_name}' with your DID. "
+                       f"Run: hopper mcp init-token -i {instance_name} -p /path/to/.hopper",
+        }
+
+    new_path = Path(match["instance_path"])
+    if not new_path.exists():
+        return {"status": "error", "message": f"Instance path does not exist on server: {new_path}"}
+
+    _session_instances[sid] = new_path
+    return {"status": "switched", "instance": instance_name, "path": str(new_path)}
 
 
 # =============================================================================
@@ -792,8 +841,11 @@ def create_sse_server():
         if auth_error:
             return auth_error
 
-        # Set instance path for this session's tool calls
-        token = _current_instance_path.set(instance_path)
+        # Assign a session ID and register the initial instance path
+        sid = str(uuid.uuid4())
+        _session_instances[sid] = instance_path
+        sid_token = _session_id.set(sid)
+        did_token = _session_did.set(auth_id)
         try:
             async with transport.connect_sse(
                 request.scope, request.receive, request._send
@@ -804,7 +856,9 @@ def create_sse_server():
                     mcp._mcp_server.create_initialization_options(),
                 )
         finally:
-            _current_instance_path.reset(token)
+            _session_instances.pop(sid, None)
+            _session_id.reset(sid_token)
+            _session_did.reset(did_token)
 
     async def handle_messages(request):
         """Handle POST messages with auth check."""
@@ -818,12 +872,7 @@ def create_sse_server():
         async def replay_receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
-        # Set instance path for this request's tool calls
-        token = _current_instance_path.set(instance_path)
-        try:
-            return await transport.handle_post_message(request.scope, replay_receive, request._send)
-        finally:
-            _current_instance_path.reset(token)
+        return await transport.handle_post_message(request.scope, replay_receive, request._send)
 
     return Starlette(
         routes=[
