@@ -54,20 +54,190 @@ MCP_DID_OPEN_ACCESS = os.getenv("HOPPER_MCP_DID_OPEN", "").lower() in ("1", "tru
 # Session ID ContextVar — set once at SSE connect, inherited by all tool calls
 _session_id: ContextVar[str | None] = ContextVar("session_id", default=None)
 
-# Session-level instance path store — mutable by hopper_switch_instance tool
-# Keyed by session ID so concurrent sessions don't interfere
-_session_instances: dict[str, Path | None] = {}
+# Session-level instance store — (instance_path, instance_name) per session ID
+_session_instances: dict[str, tuple[Path | None, str | None]] = {}
 
 # DID for the current session — used by switch to validate token ownership
 _session_did: ContextVar[str | None] = ContextVar("session_did", default=None)
 
 
-def _get_client() -> LocalClient:
-    """Get a LocalClient for the current session's instance."""
+def _upstream_storage_path() -> Path:
+    env = os.getenv("HOPPER_UPSTREAM_STORAGE")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / ".hopper" / "upstream-data"
+
+
+class UpstreamNamespaceClient:
+    """Read/write tasks directly from the upstream-data JSON store.
+
+    Avoids requiring a local .hopper mirror for server-side instances.
+    Tasks are stored as JSON at upstream-data/tasks/{namespace}/{id}.json.
+    """
+
+    def __init__(self, namespace: str):
+        self._ns = namespace
+        self._dir = _upstream_storage_path() / "tasks" / namespace
+        self._dir.mkdir(parents=True, exist_ok=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def _read_all(self, include_deleted: bool = False) -> list[dict]:
+        tasks = []
+        for f in self._dir.glob("*.json"):
+            try:
+                import json as _json
+                rec = _json.loads(f.read_text())
+                t = rec.get("task", rec)
+                if not include_deleted and t.get("deleted"):
+                    continue
+                tasks.append(t)
+            except Exception:
+                pass
+        return tasks
+
+    def _read_one(self, task_id: str) -> dict | None:
+        import json as _json
+        # Exact match first
+        exact = self._dir / f"{task_id}.json"
+        if exact.exists():
+            rec = _json.loads(exact.read_text())
+            return rec.get("task", rec)
+        # Prefix match
+        matches = [f for f in self._dir.glob(f"{task_id}*.json")]
+        if len(matches) == 1:
+            rec = _json.loads(matches[0].read_text())
+            return rec.get("task", rec)
+        return None
+
+    def _write_one(self, task: dict) -> None:
+        import json as _json, time as _time
+        path = self._dir / f"{task['id']}.json"
+        existing = {}
+        if path.exists():
+            existing = _json.loads(path.read_text())
+        existing["task"] = task
+        existing.setdefault("received_at", int(_time.time() * 1000))
+        path.write_text(_json.dumps(existing, indent=2, default=str))
+
+    def list_tasks(self, status=None, priority=None, tags=None, limit=50, **_) -> list[dict]:
+        tasks = self._read_all()
+        if status:
+            tasks = [t for t in tasks if t.get("status") == status]
+        if priority:
+            tasks = [t for t in tasks if t.get("priority") == priority]
+        if tags:
+            tag_set = set(tags.split(",")) if isinstance(tags, str) else set(tags)
+            tasks = [t for t in tasks if tag_set & set(t.get("tags") or [])]
+        tasks.sort(key=lambda t: t.get("updated_at", ""), reverse=True)
+        return tasks[:limit]
+
+    def get_task(self, task_id: str) -> dict:
+        t = self._read_one(task_id)
+        if not t:
+            raise Exception(f"Task not found: {task_id}")
+        return t
+
+    def create_task(self, data: dict) -> dict:
+        import uuid as _uuid, datetime as _dt
+        task_id = "t" + _uuid.uuid4().hex[:8]
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        task = {
+            "id": task_id,
+            "title": data.get("title", ""),
+            "status": data.get("status", "open"),
+            "priority": data.get("priority", "medium"),
+            "description": data.get("description"),
+            "tags": data.get("tags", []),
+            "instance": self._ns,
+            "source": "mcp",
+            "created_at": now,
+            "updated_at": now,
+            "assigned_to": None,
+            "parent_id": None,
+            "deleted": False,
+        }
+        self._write_one(task)
+        return task
+
+    def update_task(self, task_id: str, data: dict) -> dict:
+        import datetime as _dt
+        task = self.get_task(task_id)
+        if "add_tags" in data:
+            task["tags"] = list(set(task.get("tags") or []) | set(data.pop("add_tags")))
+        if "remove_tags" in data:
+            task["tags"] = [t for t in (task.get("tags") or []) if t not in data.pop("remove_tags")]
+        for k, v in data.items():
+            if k not in ("add_tags", "remove_tags"):
+                task[k] = v
+        task["updated_at"] = _dt.datetime.utcnow().isoformat() + "Z"
+        self._write_one(task)
+        return task
+
+    def delete_task(self, task_id: str) -> None:
+        self.update_task(task_id, {"deleted": True})
+
+    def search_tasks(self, query: str, status=None, limit=20, **_) -> list[dict]:
+        q = query.lower()
+        tasks = [t for t in self._read_all()
+                 if q in (t.get("title") or "").lower() or q in (t.get("description") or "").lower()]
+        if status:
+            tasks = [t for t in tasks if t.get("status") == status]
+        return tasks[:limit]
+
+    def heartbeat_task(self, task_id: str, expect_minutes=None) -> dict:
+        import datetime as _dt
+        data = {"last_heartbeat": _dt.datetime.utcnow().isoformat() + "Z"}
+        if expect_minutes:
+            exp = _dt.datetime.utcnow() + _dt.timedelta(minutes=expect_minutes)
+            data["expected_heartbeat"] = exp.isoformat() + "Z"
+        return self.update_task(task_id, data)
+
+    def list_stale_tasks(self, minutes: int = 30) -> list[dict]:
+        import datetime as _dt
+        threshold = _dt.datetime.utcnow() - _dt.timedelta(minutes=minutes)
+        stale = []
+        for t in self._read_all():
+            if not t.get("assigned_to"):
+                continue
+            hb = t.get("last_heartbeat")
+            if hb and _dt.datetime.fromisoformat(hb.rstrip("Z")) < threshold:
+                stale.append(t)
+        return stale
+
+    def get_task_children(self, task_id: str) -> list[dict]:
+        return [t for t in self._read_all() if t.get("parent_id") == task_id]
+
+    def get_task_with_rollup(self, task_id: str) -> dict:
+        task = self.get_task(task_id)
+        children = self.get_task_children(task_id)
+        done = sum(1 for c in children if c.get("status") in ("completed", "cancelled"))
+        task["children"] = {"total": len(children), "done": done}
+        return task
+
+    def list_projects(self) -> list: return []
+    def list_instances(self) -> list: return [{"id": self._ns, "name": self._ns}]
+    def match_patterns(self, **_) -> list: return []
+    def submit_feedback(self, task_id, data): return {"status": "ok"}
+    def get_learning_statistics(self) -> dict: return {}
+    def list_patterns(self, active_only=True) -> dict: return {"patterns": [], "total": 0}
+    def create_pattern(self, data) -> dict: return data
+
+
+def _get_client():
+    """Get the appropriate client for the current session's instance."""
     sid = _session_id.get()
-    instance_path = _session_instances.get(sid) if sid else None
+    instance_path, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
     if instance_path:
         return LocalClient(storage_path=instance_path)
+    if instance_name:
+        ns_dir = _upstream_storage_path() / "tasks" / instance_name
+        if ns_dir.exists():
+            return UpstreamNamespaceClient(instance_name)
     return LocalClient()
 
 
@@ -447,7 +617,13 @@ def hopper_switch_instance(instance_name: str) -> dict:
 
     did = _session_did.get()
 
-    # Find a registered hpr_ token for this DID + instance
+    # Check upstream-data first — no local mirror required
+    ns_dir = _upstream_storage_path() / "tasks" / instance_name
+    if ns_dir.exists():
+        _session_instances[sid] = (None, instance_name)
+        return {"status": "switched", "instance": instance_name, "source": "upstream"}
+
+    # Fall back to a registered hpr_ token with a local path
     try:
         from hopper.api.mcp_tokens import get_token_store
         store = get_token_store()
@@ -462,15 +638,14 @@ def hopper_switch_instance(instance_name: str) -> dict:
     if not match:
         return {
             "status": "error",
-            "message": f"No registered token found for instance '{instance_name}' with your DID. "
-                       f"Run: hopper mcp init-token -i {instance_name} -p /path/to/.hopper",
+            "message": f"No upstream data or registered token found for instance '{instance_name}'.",
         }
 
     new_path = Path(match["instance_path"])
     if not new_path.exists():
         return {"status": "error", "message": f"Instance path does not exist on server: {new_path}"}
 
-    _session_instances[sid] = new_path
+    _session_instances[sid] = (new_path, instance_name)
     return {"status": "switched", "instance": instance_name, "path": str(new_path)}
 
 
@@ -675,13 +850,14 @@ def _bearer_challenge(request, error: str | None = None) -> dict[str, str]:
     return {"WWW-Authenticate": ", ".join(parts)}
 
 
-def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | None, Path | None]:
+def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | None, Path | None, str | None]:
     """Check authentication (DID, OAuth access token, or legacy Bearer).
 
-    Returns (error_response, authenticated_id, instance_path) where:
+    Returns (error_response, authenticated_id, instance_path, instance_name) where:
     - error_response is None if auth passes, or a JSONResponse with 401/403 if it fails
     - authenticated_id is the DID if auth passes
-    - instance_path is the storage path for this token's instance (or None for default)
+    - instance_path is the storage path for this token's instance (or None)
+    - instance_name is the instance name from the token (or None)
 
     Auth methods (checked in order):
     1. DID auth: `Authorization: DID <did> <signature>`
@@ -698,66 +874,52 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
 
     if not auth_header:
         if not auth_required:
-            return None, None, None  # No auth required, allow
+            return None, None, None, None  # No auth required, allow
         return JSONResponse(
             {"error": "Missing Authorization header"},
             status_code=401,
             headers=_bearer_challenge(request),
-        ), None, None
+        ), None, None, None
 
     # Try DID auth first
     if auth_header.startswith("DID "):
         from hopper.upstream.did import verify_signature
-
-        # For SSE, we verify against GET method and path (no body for initial connect)
-        method = request.method
-        path = request.url.path
-
         valid, did = verify_signature(
             auth_header=auth_header,
-            method=method,
-            path=path,
+            method=request.method,
+            path=request.url.path,
             body=body,
         )
-
         if not valid or not did:
             return JSONResponse(
                 {"error": "Invalid DID signature"},
                 status_code=401,
                 headers={"WWW-Authenticate": "DID"},
-            ), None, None
-
-        # Check if DID is allowed
+            ), None, None, None
         if MCP_ALLOWED_DIDS and did not in MCP_ALLOWED_DIDS:
             return JSONResponse(
                 {"error": f"DID not authorized: {did}"},
                 status_code=403,
-            ), None, None
-
-        # DID is valid and allowed (or open access) - no instance path for direct DID auth
-        return None, did, None
+            ), None, None, None
+        return None, did, None, None
 
     # Try Bearer token
     if auth_header.startswith("Bearer "):
-        token = auth_header[7:]  # Strip "Bearer "
+        token = auth_header[7:]
 
         # OAuth 2.1 access token (issued by /oauth/token)
         if token.startswith("hpo_"):
             from hopper.api.oauth_store import get_oauth_store
-
             try:
                 record = get_oauth_store().lookup_access_token(token)
             except Exception:
                 record = None
-
             if not record:
                 return JSONResponse(
                     {"error": "Invalid or expired access token"},
                     status_code=401,
                     headers=_bearer_challenge(request, error="invalid_token"),
-                ), None, None
-
-            # RFC 8707 audience validation: token must be for this server
+                ), None, None, None
             canonical = _canonical_base_url(request)
             recorded = str(record.get("resource", "")).rstrip("/")
             if not (recorded == canonical
@@ -767,55 +929,56 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
                     {"error": "Token audience does not match this resource"},
                     status_code=401,
                     headers=_bearer_challenge(request, error="invalid_token"),
-                ), None, None
-
+                ), None, None, None
             did = record["did"]
             instance_path = record.get("instance_path")
+            instance_name = record.get("instance")
             if instance_path:
                 instance_path = Path(instance_path)
-            return None, did, instance_path
+                if not instance_path.exists():
+                    instance_path = None  # Fall back to upstream lookup by name
+            return None, did, instance_path, instance_name
 
         # Registered hpr_ token (maps to DID + instance)
         if token.startswith("hpr_"):
             from hopper.api.mcp_tokens import get_token_store
-
             try:
                 store = get_token_store()
                 token_info = store.lookup_full(token)
                 if token_info:
                     did = token_info["did"]
                     instance_path = token_info.get("instance_path")
+                    instance_name = token_info.get("instance")
                     if instance_path:
                         instance_path = Path(instance_path)
-                    return None, did, instance_path
+                        if not instance_path.exists():
+                            instance_path = None
+                    return None, did, instance_path, instance_name
             except Exception:
-                pass  # Fall through to error
-
+                pass
             return JSONResponse(
                 {"error": "Invalid or expired token"},
                 status_code=401,
                 headers=_bearer_challenge(request, error="invalid_token"),
-            ), None, None
+            ), None, None, None
 
         # Legacy: check against simple HOPPER_MCP_TOKEN env var
         if MCP_AUTH_TOKEN and token == MCP_AUTH_TOKEN:
             import hashlib
             token_id = f"bearer:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
-            return None, token_id, None
+            return None, token_id, None, None
 
-        # No valid token
         return JSONResponse(
             {"error": "Invalid token"},
             status_code=401,
             headers=_bearer_challenge(request, error="invalid_token"),
-        ), None, None
+        ), None, None, None
 
-    # Unknown auth scheme
     return JSONResponse(
         {"error": "Unsupported Authorization scheme. Use 'DID' or 'Bearer'"},
         status_code=401,
         headers=_bearer_challenge(request),
-    ), None, None
+    ), None, None, None
 
 
 def create_sse_server():
@@ -827,12 +990,12 @@ def create_sse_server():
     transport = SseServerTransport("/messages/")
 
     async def handle_sse(request):
-        auth_error, auth_id, instance_path = _check_auth(request)
+        auth_error, auth_id, instance_path, instance_name = _check_auth(request)
         if auth_error:
             return auth_error
 
         sid = str(uuid.uuid4())
-        _session_instances[sid] = instance_path
+        _session_instances[sid] = (instance_path, instance_name)
         sid_token = _session_id.set(sid)
         did_token = _session_did.set(auth_id)
         try:
@@ -851,7 +1014,7 @@ def create_sse_server():
 
     async def handle_messages(request):
         body = await request.body()
-        auth_error, auth_id, instance_path = _check_auth(request, body)
+        auth_error, auth_id, instance_path, instance_name = _check_auth(request, body)
         if auth_error:
             return auth_error
 
@@ -904,7 +1067,7 @@ class _StreamableHTTPASGIHandler:
         # Read body once for auth (may be empty for GET/DELETE)
         body = await request.body()
 
-        auth_error, auth_id, instance_path = _check_auth(request, body)
+        auth_error, auth_id, instance_path, instance_name = _check_auth(request, body)
         if auth_error:
             await auth_error(scope, receive, send)
             return
@@ -913,9 +1076,9 @@ class _StreamableHTTPASGIHandler:
         raw_sid = request.headers.get(MCP_SESSION_ID_HEADER)
         sid = raw_sid or str(uuid.uuid4())
 
-        # On first touch for a session, record the authenticated instance path
+        # On first touch for a session, record the authenticated instance
         if sid not in _session_instances:
-            _session_instances[sid] = instance_path
+            _session_instances[sid] = (instance_path, instance_name)
 
         sid_token = _session_id.set(sid)
         did_token = _session_did.set(auth_id)
