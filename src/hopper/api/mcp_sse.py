@@ -920,8 +920,16 @@ class _StreamableHTTPASGIHandler:
         sid_token = _session_id.set(sid)
         did_token = _session_did.set(auth_id)
 
+        # Replay body once, then forward real receive so http.disconnect is
+        # properly delivered (SSE streams block until client disconnect).
+        _replayed = False
+
         async def replay_receive():
-            return {"type": "http.request", "body": body, "more_body": False}
+            nonlocal _replayed
+            if not _replayed:
+                _replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
 
         try:
             sm = get_streamable_session_manager()
