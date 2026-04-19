@@ -814,10 +814,14 @@ def create_sse_server():
         if auth_error:
             return auth_error
 
+        # Replay the already-consumed body for the transport's receive callable
+        async def replay_receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
         # Set instance path for this request's tool calls
         token = _current_instance_path.set(instance_path)
         try:
-            return await transport.handle_post_message(request.scope, request.receive, request._send)
+            return await transport.handle_post_message(request.scope, replay_receive, request._send)
         finally:
             _current_instance_path.reset(token)
 
