@@ -103,6 +103,8 @@ async def authorization_server_metadata(request: Request) -> dict:
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none"],
         "scopes_supported": SUPPORTED_SCOPES,
+        "service_name": "Hopper",
+        "logo_uri": f"{base}/icon-512.png",
     }
 
 

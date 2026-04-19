@@ -18,6 +18,8 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from hopper.api.exceptions import (
     HopperException,
@@ -145,6 +147,27 @@ def create_app() -> FastAPI:
     # from hopper.api.routes import projects, auth
     # app.include_router(projects.router, prefix="/api/v1", tags=["Projects"])
     # app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+
+    # Serve static assets (favicon, logo)
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists():
+        @app.get("/favicon.ico", include_in_schema=False)
+        async def favicon():
+            return FileResponse(static_dir / "favicon.ico")
+
+        @app.get("/favicon.png", include_in_schema=False)
+        async def favicon_png():
+            return FileResponse(static_dir / "favicon-32.png", media_type="image/png")
+
+        @app.get("/logo.png", include_in_schema=False)
+        async def logo():
+            return FileResponse(static_dir / "logo.png", media_type="image/png")
+
+        @app.get("/icon-512.png", include_in_schema=False)
+        async def icon_512():
+            return FileResponse(static_dir / "icon-512.png", media_type="image/png")
+
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # Mount MCP SSE server for Claude Web integration
     app.mount("/mcp", create_sse_server())
