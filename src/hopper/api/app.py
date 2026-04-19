@@ -26,7 +26,7 @@ from hopper.api.exceptions import (
     hopper_exception_handler,
     validation_exception_handler,
 )
-from hopper.api.mcp_sse import create_sse_server, create_streamable_http_server
+from hopper.api.mcp_sse import create_sse_server, create_streamable_http_server, get_streamable_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info(f"Upstream storage: {upstream_path}")
 
     logger.info("Starting Hopper API")
-    yield
+    async with get_streamable_session_manager().run():
+        yield
     logger.info("Shutting down Hopper API")
 
 
