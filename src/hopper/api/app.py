@@ -26,7 +26,7 @@ from hopper.api.exceptions import (
     hopper_exception_handler,
     validation_exception_handler,
 )
-from hopper.api.mcp_sse import create_sse_server
+from hopper.api.mcp_sse import create_sse_server, create_streamable_http_server
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +126,8 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "docs": "/docs",
             "health": "/health",
-            "mcp_sse": "/mcp/sse/",
-            "mcp_register": "/mcp/register",
+            "mcp": "/mcp",
+            "mcp_sse_legacy": "/mcp/sse/sse/",
             "upstream_sync": "/sync",
             "oauth_metadata": "/.well-known/oauth-authorization-server",
             "oauth_resource_metadata": "/.well-known/oauth-protected-resource",
@@ -169,8 +169,10 @@ def create_app() -> FastAPI:
 
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-    # Mount MCP SSE server for Claude Web integration
-    app.mount("/mcp", create_sse_server())
+    # Streamable HTTP transport at /mcp (Claude Web 2024+, MCP 1.26+)
+    app.mount("/mcp", create_streamable_http_server())
+    # Legacy SSE transport at /mcp/sse/ (older clients)
+    app.mount("/mcp/sse", create_sse_server())
 
     # Include upstream sync routes at root so DID-signed paths (/sync, /admin/*)
     # match the client's signature expectations without a mount prefix.

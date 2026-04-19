@@ -650,7 +650,7 @@ def hopper_create_pattern(
 
 
 # =============================================================================
-# SSE Server Creation
+# Shared server creation helpers
 # =============================================================================
 
 
@@ -819,29 +819,18 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
 
 
 def create_sse_server():
-    """Create Starlette app for MCP SSE transport.
+    """Create Starlette app for MCP SSE transport (legacy path /mcp/sse/).
 
-    Returns a Starlette application that can be mounted on an existing
-    ASGI app or run standalone for MCP SSE communication.
-
-    The server exposes two endpoints:
-    - /sse/ - SSE endpoint for server-to-client communication
-    - /messages/ - POST endpoint for client-to-server messages
-
-    Authentication:
-        Set HOPPER_MCP_TOKEN env var to require Bearer token auth.
-        Token is passed via authorization_token in Claude's mcp_servers config.
+    Returns a Starlette application mounting the SSE transport at /sse/
+    and the POST message endpoint at /messages/.
     """
     transport = SseServerTransport("/messages/")
 
     async def handle_sse(request):
-        """Handle SSE connection for MCP communication."""
-        # Check authentication (no body for SSE GET)
         auth_error, auth_id, instance_path = _check_auth(request)
         if auth_error:
             return auth_error
 
-        # Assign a session ID and register the initial instance path
         sid = str(uuid.uuid4())
         _session_instances[sid] = instance_path
         sid_token = _session_id.set(sid)
@@ -861,14 +850,11 @@ def create_sse_server():
             _session_did.reset(did_token)
 
     async def handle_messages(request):
-        """Handle POST messages with auth check."""
-        # Read body for DID signature verification
         body = await request.body()
         auth_error, auth_id, instance_path = _check_auth(request, body)
         if auth_error:
             return auth_error
 
-        # Replay the already-consumed body for the transport's receive callable
         async def replay_receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
@@ -882,42 +868,62 @@ def create_sse_server():
     )
 
 
-def get_mcp_app():
-    """Get the MCP SSE Starlette application.
+def create_streamable_http_server():
+    """Create Starlette app for MCP Streamable HTTP transport (MCP 1.26+).
 
-    Convenience function for importing and mounting the MCP SSE server.
+    Returns a Starlette application that handles the modern Streamable HTTP
+    transport used by Claude Web. Mounts at `/` so the caller should mount
+    this at the desired prefix (e.g. /mcp).
 
-    Usage:
-        from hopper.api.mcp_sse import get_mcp_app
-        mcp_app = get_mcp_app()
-        # Mount on FastAPI: app.mount("/mcp", mcp_app)
-
-    Authentication (two methods):
-
-    1. DID Auth (recommended):
-        # Allow specific DIDs
-        export HOPPER_MCP_ALLOWED_DIDS="did:key:z6Mk...,did:key:z6Mk..."
-        hopper server start
-
-        # Or allow any valid DID signature (open access with identity)
-        export HOPPER_MCP_DID_OPEN=true
-        hopper server start
-
-        Clients sign requests with their DID key:
-        Authorization: DID did:key:z6Mk... <base64-signature>
-
-    2. Bearer Token (simple):
-        export HOPPER_MCP_TOKEN="your-secret-token"
-        hopper server start
-
-        In Claude API/Web config:
-        {
-            "mcp_servers": [{
-                "type": "url",
-                "url": "https://your-server.com/mcp/sse/",
-                "name": "hopper",
-                "authorization_token": "your-secret-token"
-            }]
-        }
+    Auth is validated on every request. The mcp-session-id header is used
+    as the key into _session_instances so that hopper_switch_instance works
+    across the stateful per-session transports.
     """
-    return create_sse_server()
+    import contextlib
+
+    from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp._mcp_server,
+        json_response=False,
+        stateless=False,
+    )
+
+    async def handle_streamable(request):
+        """Auth-gated entry point for Streamable HTTP."""
+        body = await request.body()
+        auth_error, auth_id, instance_path = _check_auth(request, body)
+        if auth_error:
+            return auth_error
+
+        # Extract or allocate a session ID for context-var based instance routing
+        raw_sid = request.headers.get(MCP_SESSION_ID_HEADER)
+        sid = raw_sid or str(uuid.uuid4())
+
+        # On first touch for a session, record the authenticated instance path
+        if sid not in _session_instances:
+            _session_instances[sid] = instance_path
+
+        sid_token = _session_id.set(sid)
+        did_token = _session_did.set(auth_id)
+
+        async def replay_receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        try:
+            await session_manager.handle_request(request.scope, replay_receive, request._send)
+        finally:
+            _session_id.reset(sid_token)
+            _session_did.reset(did_token)
+            # Don't pop _session_instances here — the session persists across requests
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        async with session_manager.run():
+            yield
+
+    return Starlette(
+        routes=[Route("/", endpoint=handle_streamable, methods=["GET", "POST", "DELETE"])],
+        lifespan=lifespan,
+    )
