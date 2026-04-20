@@ -44,6 +44,7 @@ DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
 @click.option("--endpoint", help="API endpoint URL (for server mode)")
 @click.option("--server", "-s", is_flag=True, help="Initialize for server mode instead of local")
 @click.option("--non-interactive", is_flag=True, help="Non-interactive mode")
+@click.option("--allow-git", is_flag=True, help="Do not add .hopper/ to .gitignore")
 @click.pass_obj
 def init(
     ctx: Context,
@@ -56,6 +57,7 @@ def init(
     endpoint: str | None,
     server: bool,
     non_interactive: bool,
+    allow_git: bool,
 ) -> None:
     """Initialize Hopper for a project or globally.
 
@@ -67,6 +69,7 @@ def init(
         hopper init                     # Initialize in current directory (default)
         hopper init --no-knowledge      # Skip agent-knowledge, just hopper-usage.md
         hopper init -k /path/to/knowledge  # Use custom knowledge source
+        hopper init --allow-git         # Don't gitignore .hopper/
         hopper init --server            # Initialize server mode config
         hopper init --server --endpoint https://api.hopper.io
     """
@@ -84,6 +87,7 @@ def init(
         auto_detect=auto_detect,
         non_interactive=non_interactive,
         instance_name=name,
+        allow_git=allow_git,
     )
 
 
@@ -95,6 +99,7 @@ def _init_local_mode(
     auto_detect: bool,
     non_interactive: bool,
     instance_name: str | None = None,
+    allow_git: bool = False,
 ) -> None:
     """Initialize local/embedded Hopper storage with knowledge."""
     from hopper.storage import StorageConfig, MarkdownStorage
@@ -165,14 +170,18 @@ def _init_local_mode(
     elif no_knowledge:
         print_info("Skipped agent-knowledge (--no-knowledge)")
 
-    # Add to .gitignore if not present
-    gitignore = Path.cwd() / ".gitignore"
-    if gitignore.exists():
-        content = gitignore.read_text()
-        if ".hopper/.index" not in content:
-            with open(gitignore, "a") as f:
-                f.write("\n# Hopper index (regenerated)\n.hopper/.index/\n")
-            print_info("Added .hopper/.index to .gitignore")
+    # Add .hopper/ to .gitignore unless caller explicitly opted out
+    if not allow_git:
+        gitignore = Path.cwd() / ".gitignore"
+        if not gitignore.exists():
+            gitignore.write_text("# Hopper data directory\n.hopper/\n")
+            print_info("Created .gitignore with .hopper/")
+        else:
+            content = gitignore.read_text()
+            if ".hopper/" not in content and ".hopper" not in content:
+                with open(gitignore, "a") as f:
+                    f.write("\n# Hopper data directory\n.hopper/\n")
+                print_info("Added .hopper/ to .gitignore")
 
     # Write AGENTS.md and CLAUDE.md so AI agents discover Hopper automatically
     agent_file_results = write_agent_files(Path.cwd())

@@ -54,7 +54,7 @@ Before ending a session, record state:
 
 ## Storage
 
-Tasks are stored locally in `.hopper/` as markdown files. They persist across sessions and can be version controlled.
+Tasks are stored locally in `.hopper/` as markdown files. They persist across sessions via Hopper's own sync mechanisms — `.hopper/` is gitignored by default and is **not** version controlled with your project.
 
 ## Adding Hopper to a Project
 
@@ -76,7 +76,7 @@ This creates:
 └── .index/          # Cache (gitignored, regenerated)
 ```
 
-**What gets committed:** Everything except `.hopper/.index/` (auto-added to .gitignore).
+**What gets committed:** Nothing — `.hopper/` is gitignored by default (added to `.gitignore` on init). Use `hopper init --allow-git` to skip this if you intentionally want to version-control the Hopper data.
 
 **Knowledge sync:** On init, Hopper clones relevant sections from [agent-knowledge](https://github.com/apathy-ca/agent-knowledge) based on detected project type (Python, MCP, Czarina, etc.).
 
