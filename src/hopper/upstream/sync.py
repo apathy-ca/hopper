@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .client import UpstreamClient
+from .client import UpstreamClient, UpstreamError
 from .did import DIDKey
 from .protocol import SyncTask
 
@@ -234,7 +234,7 @@ def sync_with_upstream(
             since=state.last_server_time,
             instance=instance,
         )
-    except Exception as e:
+    except UpstreamError as e:
         result.errors.append(str(e))
         return result
 

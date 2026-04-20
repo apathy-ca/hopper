@@ -164,8 +164,27 @@ class Config(BaseSettings):
         if not config_path.exists():
             return cls(config_path=config_path)
 
-        with open(config_path) as f:
-            data = yaml.safe_load(f) or {}
+        try:
+            with open(config_path) as f:
+                data = yaml.safe_load(f) or {}
+        except PermissionError:
+            import sys
+
+            print(
+                f"Error: Cannot read {config_path} (permission denied). "
+                f"Check file permissions.",
+                file=sys.stderr,
+            )
+            return cls(config_path=config_path)
+        except yaml.YAMLError:
+            import sys
+
+            print(
+                f"Error: {config_path} contains invalid YAML. "
+                f"Using defaults.",
+                file=sys.stderr,
+            )
+            return cls(config_path=config_path)
 
         profiles = {}
         for name, profile_data in data.get("profiles", {}).items():

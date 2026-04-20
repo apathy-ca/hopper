@@ -1,6 +1,7 @@
 """Configuration and authentication commands."""
 
 from pathlib import Path
+from typing import Any
 
 import click
 from rich import box
@@ -272,6 +273,83 @@ def config_group() -> None:
     pass
 
 
+def _resolve_profile_attr(prof: "ProfileConfig", key: str) -> tuple[Any, bool]:
+    """Resolve a dotted key path against a ProfileConfig.
+
+    Returns (value, found). Traverses nested config objects like
+    api.endpoint, upstream.server, etc.
+    """
+    parts = key.split(".")
+    if len(parts) < 2:
+        return None, False
+
+    # Map top-level names to config objects
+    sections = {
+        "api": prof.api,
+        "auth": prof.auth,
+        "local": prof.local,
+        "github": prof.github,
+        "knowledge": prof.knowledge,
+        "upstream": prof.upstream,
+    }
+
+    section = sections.get(parts[0])
+    if section is None:
+        return None, False
+
+    if not hasattr(section, parts[1]):
+        return None, False
+
+    return getattr(section, parts[1]), True
+
+
+def _set_profile_attr(prof: "ProfileConfig", key: str, value: str) -> bool:
+    """Set a dotted key path on a ProfileConfig.
+
+    Handles type coercion for bool, int, and Path fields.
+    Returns True if set successfully, False if key not found.
+    """
+    parts = key.split(".")
+    if len(parts) < 2:
+        return False
+
+    sections = {
+        "api": prof.api,
+        "auth": prof.auth,
+        "local": prof.local,
+        "github": prof.github,
+        "knowledge": prof.knowledge,
+        "upstream": prof.upstream,
+    }
+
+    section = sections.get(parts[0])
+    if section is None:
+        return False
+
+    attr_name = parts[1]
+    if not hasattr(section, attr_name):
+        return False
+
+    # Coerce value to the field's type
+    current = getattr(section, attr_name)
+    if isinstance(current, bool) or (current is None and attr_name in ("enabled", "auto_detect", "auto_detect_embedded")):
+        coerced: Any = value.lower() in ("true", "1", "yes")
+    elif isinstance(current, int):
+        coerced = int(value)
+    elif isinstance(current, Path):
+        coerced = Path(value)
+    else:
+        # str or None — treat "null"/"none" as None for nullable fields
+        coerced = None if value.lower() in ("null", "none") else value
+
+    setattr(section, attr_name, coerced)
+    return True
+
+
+# Sensitive key names that should be masked in output
+_SENSITIVE_KEYS = {"token", "api_key", "did_key_path"}
+
+
 @config_group.command(name="get")
 @click.argument("key")
 @click.option("--profile", help="Profile name (default: active profile)")
@@ -282,6 +360,7 @@ def get_config(ctx: Context, key: str, profile: str | None) -> None:
     Examples:
         hopper config get api.endpoint
         hopper config get auth.token
+        hopper config get upstream.server
         hopper config get active_profile
     """
     profile_name = profile or ctx.config.active_profile
@@ -291,33 +370,23 @@ def get_config(ctx: Context, key: str, profile: str | None) -> None:
         print_error(f"Profile '{profile}' not found")
         raise click.Abort()
 
-    # Parse key path
-    parts = key.split(".")
-
     if key == "active_profile":
         value = ctx.config.active_profile
-    elif parts[0] == "api":
-        if len(parts) < 2:
-            print_error("Invalid key. Use 'api.endpoint' or 'api.timeout'")
-            raise click.Abort()
-        value = getattr(prof.api, parts[1], None)
-    elif parts[0] == "auth":
-        if len(parts) < 2:
-            print_error("Invalid key. Use 'auth.token' or 'auth.api_key'")
-            raise click.Abort()
-        value = getattr(prof.auth, parts[1], None)
     else:
-        print_error(f"Unknown key: {key}")
-        raise click.Abort()
+        value, found = _resolve_profile_attr(prof, key)
+        if not found:
+            print_error(f"Unknown key: {key}")
+            raise click.Abort()
 
     if ctx.json_output:
         print_json({key: value})
     else:
+        display = value
         # Mask sensitive values
-        if "token" in key or "key" in key:
-            if value:
-                value = f"{value[:8]}..." if len(value) > 8 else "***"
-        console.print(f"[bold]{key}:[/bold] {value or '(not set)'}")
+        if key.split(".")[-1] in _SENSITIVE_KEYS:
+            if display:
+                display = f"{str(display)[:8]}..." if len(str(display)) > 8 else "***"
+        console.print(f"[bold]{key}:[/bold] {display or '(not set)'}")
 
 
 @config_group.command(name="set")
@@ -331,6 +400,8 @@ def set_config(ctx: Context, key: str, value: str, profile: str | None) -> None:
     Examples:
         hopper config set api.endpoint http://localhost:8000
         hopper config set api.timeout 60
+        hopper config set upstream.server https://hopper.example.com
+        hopper config set github.token ghp_xxxx
         hopper config set active_profile production
     """
     profile_name = profile or ctx.config.active_profile
@@ -341,39 +412,15 @@ def set_config(ctx: Context, key: str, value: str, profile: str | None) -> None:
 
     prof = ctx.config.profiles[profile_name]
 
-    # Parse key path
-    parts = key.split(".")
-
     if key == "active_profile":
         if value not in ctx.config.profiles:
             print_error(f"Profile '{value}' does not exist")
             raise click.Abort()
         ctx.config.active_profile = value
-    elif parts[0] == "api":
-        if len(parts) < 2:
-            print_error("Invalid key. Use 'api.endpoint' or 'api.timeout'")
-            raise click.Abort()
-        if parts[1] == "endpoint":
-            prof.api.endpoint = value
-        elif parts[1] == "timeout":
-            prof.api.timeout = int(value)
-        else:
-            print_error(f"Unknown api key: {parts[1]}")
-            raise click.Abort()
-    elif parts[0] == "auth":
-        if len(parts) < 2:
-            print_error("Invalid key. Use 'auth.token' or 'auth.api_key'")
-            raise click.Abort()
-        if parts[1] == "token":
-            prof.auth.token = value
-        elif parts[1] == "api_key":
-            prof.auth.api_key = value
-        else:
-            print_error(f"Unknown auth key: {parts[1]}")
-            raise click.Abort()
     else:
-        print_error(f"Unknown key: {key}")
-        raise click.Abort()
+        if not _set_profile_attr(prof, key, value):
+            print_error(f"Unknown key: {key}")
+            raise click.Abort()
 
     # Save configuration
     ctx.config.save()
@@ -427,21 +474,30 @@ def list_config(ctx: Context, profile: str | None) -> None:
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
-    table.add_row("api.endpoint", prof.api.endpoint)
-    table.add_row("api.timeout", str(prof.api.timeout))
+    # Iterate all config sections dynamically
+    sections = [
+        ("api", prof.api),
+        ("auth", prof.auth),
+        ("local", prof.local),
+        ("github", prof.github),
+        ("knowledge", prof.knowledge),
+        ("upstream", prof.upstream),
+    ]
 
-    # Show masked auth info
-    if prof.auth.token:
-        token_preview = f"{prof.auth.token[:8]}..." if len(prof.auth.token) > 8 else "***"
-        table.add_row("auth.token", token_preview)
-    else:
-        table.add_row("auth.token", "[dim](not set)[/dim]")
+    for section_name, section_obj in sections:
+        for field_name in section_obj.model_fields:
+            key = f"{section_name}.{field_name}"
+            value = getattr(section_obj, field_name)
 
-    if prof.auth.api_key:
-        key_preview = f"{prof.auth.api_key[:8]}..." if len(prof.auth.api_key) > 8 else "***"
-        table.add_row("auth.api_key", key_preview)
-    else:
-        table.add_row("auth.api_key", "[dim](not set)[/dim]")
+            # Mask sensitive values
+            if field_name in _SENSITIVE_KEYS and value:
+                display = f"{str(value)[:8]}..." if len(str(value)) > 8 else "***"
+            elif value is None:
+                display = "[dim](not set)[/dim]"
+            else:
+                display = str(value)
+
+            table.add_row(key, display)
 
     console.print(table)
     console.print()

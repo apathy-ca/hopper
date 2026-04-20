@@ -433,7 +433,7 @@ def delete_task(ctx: Context, task_id: str, force: bool) -> None:
                 task = client.get_task(task_id)
             console.print(f"\n[bold]Task to delete:[/bold] {task.get('title', '')}\n")
         except ClientError:
-            pass
+            console.print(f"\n[bold yellow]![/bold yellow] Could not fetch task details for {task_id}\n")
 
         if not Confirm.ask("[bold red]Delete this task?[/bold red]", default=False):
             print_info("Cancelled")

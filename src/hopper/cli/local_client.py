@@ -91,7 +91,7 @@ class LocalClient:
             parent_id=parent_id,
         )
         task.instance = self.config.instance_id
-        self.task_store.save(task)
+        self.task_store.create(task)
         return self._task_to_dict(task)
 
     # Sort ranks: lower number = higher in the list
@@ -242,7 +242,7 @@ class LocalClient:
             status=data.get("status", "open"),
         )
         task.instance = self.config.instance_id
-        self.task_store.save(task)
+        self.task_store.create(task)
         return self._task_to_dict(task)
 
     def get_task(self, task_id: str) -> dict[str, Any]:

@@ -52,6 +52,11 @@ class LocalTask:
     deleted: bool = False
 
     @classmethod
+    def _generate_id(cls) -> str:
+        """Generate a unique task ID, retrying on collision."""
+        return f"t{uuid4().hex[:8]}"
+
+    @classmethod
     def create(
         cls,
         title: str,
@@ -75,7 +80,7 @@ class LocalTask:
         """Create a new task with generated ID."""
         now = _utc_now()
         return cls(
-            id=f"t{uuid4().hex[:8]}",
+            id=cls._generate_id(),
             title=title,
             description=description,
             priority=priority,
@@ -224,8 +229,18 @@ class TaskMarkdownStore:
             return None
         return LocalTask.from_frontmatter(doc.frontmatter, doc.content)
 
+    def create(self, task: LocalTask) -> None:
+        """Save a new task, regenerating ID on collision."""
+        file_path = self._task_path(task.id)
+        attempts = 0
+        while file_path.exists() and attempts < 5:
+            task.id = LocalTask._generate_id()
+            file_path = self._task_path(task.id)
+            attempts += 1
+        self.save(task)
+
     def save(self, task: LocalTask) -> None:
-        """Save task to markdown file."""
+        """Save task to markdown file (create or update)."""
         task.updated_at = _utc_now()
 
         doc = MarkdownDocument(
