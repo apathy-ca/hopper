@@ -115,8 +115,9 @@ def _apply_sync_task_to_local(
     """
     from hopper.storage.tasks import LocalTask
 
-    # Check if we have this task locally
-    existing = task_store.get(sync_task.id)
+    # Check if we have this task locally (include tombstones — we need to
+    # compare timestamps against soft-deleted tasks too)
+    existing = task_store.get(sync_task.id, include_deleted=True)
 
     if existing:
         # Compare timestamps - only update if remote is newer

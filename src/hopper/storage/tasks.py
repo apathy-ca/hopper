@@ -219,15 +219,22 @@ class TaskMarkdownStore:
             return matches[0]
         return None  # 0 or ambiguous
 
-    def get(self, task_id: str) -> LocalTask | None:
-        """Get task by ID (accepts prefix matches)."""
+    def get(self, task_id: str, include_deleted: bool = False) -> LocalTask | None:
+        """Get task by ID (accepts prefix matches).
+
+        Soft-deleted tasks are hidden by default. Pass include_deleted=True to
+        see tombstones (used by sync and by mark_deleted for idempotency).
+        """
         resolved = self.resolve_id(task_id)
         if resolved is None:
             return None
         doc = self.storage.read_document(self._task_path(resolved))
         if doc is None:
             return None
-        return LocalTask.from_frontmatter(doc.frontmatter, doc.content)
+        task = LocalTask.from_frontmatter(doc.frontmatter, doc.content)
+        if task.deleted and not include_deleted:
+            return None
+        return task
 
     def create(self, task: LocalTask) -> None:
         """Save a new task, regenerating ID on collision."""
@@ -265,10 +272,15 @@ class TaskMarkdownStore:
         return False
 
     def mark_deleted(self, task_id: str) -> bool:
-        """Soft-delete task (sets deleted=True, saves). Syncs the deletion to other instances."""
-        task = self.get(task_id)
+        """Soft-delete task (sets deleted=True, saves). Syncs the deletion to other instances.
+
+        Idempotent — re-marking an already-deleted task is a no-op and still returns True.
+        """
+        task = self.get(task_id, include_deleted=True)
         if task is None:
             return False
+        if task.deleted:
+            return True
         task.deleted = True
         self.save(task)
         return True
@@ -307,8 +319,8 @@ class TaskMarkdownStore:
         # Load matching tasks (exclude soft-deleted unless include_deleted)
         tasks = []
         for task_id in task_ids:
-            task = self.get(task_id)
-            if task and (include_deleted or not task.deleted):
+            task = self.get(task_id, include_deleted=include_deleted)
+            if task:
                 tasks.append(task)
 
         # Sort by updated_at descending
