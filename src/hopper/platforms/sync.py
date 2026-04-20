@@ -97,7 +97,7 @@ class GitHubSyncService:
         from hopper.storage.tasks import LocalTask
 
         task = LocalTask.create(**task_data)
-        self.task_store.save(task)
+        self.task_store.create(task)
 
         return task.id
 

@@ -5,7 +5,9 @@ Human-readable, git-friendly storage using markdown with YAML frontmatter.
 """
 
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +100,7 @@ class MarkdownStorage(StorageBackend):
         # Index cache
         self._index: dict[str, Any] | None = None
         self._index_dirty = False
+        self._index_mtime: float = 0.0  # mtime of index file when last loaded
 
     def initialize(self) -> None:
         """Create directory structure."""
@@ -169,8 +172,24 @@ class MarkdownStorage(StorageBackend):
         return MarkdownDocument.parse(file_path.read_text(encoding="utf-8"))
 
     def write_document(self, file_path: Path, doc: MarkdownDocument) -> None:
-        """Write a markdown document."""
-        file_path.write_text(doc.render(), encoding="utf-8")
+        """Write a markdown document atomically (write-then-rename)."""
+        content = doc.render().encode("utf-8")
+        fd, tmp_path = tempfile.mkstemp(dir=file_path.parent, suffix=".tmp")
+        closed = False
+        try:
+            os.write(fd, content)
+            os.fsync(fd)
+            os.close(fd)
+            closed = True
+            os.replace(tmp_path, file_path)
+        except BaseException:
+            if not closed:
+                os.close(fd)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def delete_file(self, file_path: Path) -> bool:
         """Delete a file. Returns True if deleted."""
@@ -190,9 +209,15 @@ class MarkdownStorage(StorageBackend):
     # =========================================================================
 
     def get_index(self) -> dict[str, Any]:
-        """Get task index, loading from file if needed."""
+        """Get task index, loading or reloading from file if stale."""
+        index_file = self.index_path / "tasks.json"
         if self._index is None:
             self._load_index()
+        elif index_file.exists():
+            # Reload if another process updated the index file
+            current_mtime = index_file.stat().st_mtime
+            if current_mtime != self._index_mtime:
+                self._load_index()
         return self._index or {}
 
     def _load_index(self) -> None:
@@ -201,22 +226,38 @@ class MarkdownStorage(StorageBackend):
         if index_file.exists():
             try:
                 self._index = json.loads(index_file.read_text(encoding="utf-8"))
+                self._index_mtime = index_file.stat().st_mtime
             except json.JSONDecodeError:
                 self._rebuild_index()
         else:
             self._rebuild_index()
 
     def _save_index(self) -> None:
-        """Save index to file."""
+        """Save index to file atomically (write-then-rename)."""
         if self._index is None:
             return
 
         index_file = self.index_path / "tasks.json"
         self._index["generated_at"] = _utc_now().isoformat()
-        index_file.write_text(
-            json.dumps(self._index, indent=2, default=str),
-            encoding="utf-8",
-        )
+        content = json.dumps(self._index, indent=2, default=str).encode("utf-8")
+
+        fd, tmp_path = tempfile.mkstemp(dir=self.index_path, suffix=".tmp")
+        closed = False
+        try:
+            os.write(fd, content)
+            os.fsync(fd)
+            os.close(fd)
+            closed = True
+            os.replace(tmp_path, index_file)
+        except BaseException:
+            if not closed:
+                os.close(fd)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        self._index_mtime = index_file.stat().st_mtime
         self._index_dirty = False
 
     def _rebuild_index(self) -> None:

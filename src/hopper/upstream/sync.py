@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .client import UpstreamClient
+from .client import UpstreamClient, UpstreamError
 from .did import DIDKey
 from .protocol import SyncTask
 
@@ -115,8 +115,9 @@ def _apply_sync_task_to_local(
     """
     from hopper.storage.tasks import LocalTask
 
-    # Check if we have this task locally
-    existing = task_store.get(sync_task.id)
+    # Check if we have this task locally (include tombstones — we need to
+    # compare timestamps against soft-deleted tasks too)
+    existing = task_store.get(sync_task.id, include_deleted=True)
 
     if existing:
         # Compare timestamps - only update if remote is newer
@@ -234,7 +235,7 @@ def sync_with_upstream(
             since=state.last_server_time,
             instance=instance,
         )
-    except Exception as e:
+    except UpstreamError as e:
         result.errors.append(str(e))
         return result
 

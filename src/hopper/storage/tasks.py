@@ -52,6 +52,11 @@ class LocalTask:
     deleted: bool = False
 
     @classmethod
+    def _generate_id(cls) -> str:
+        """Generate a unique task ID, retrying on collision."""
+        return f"t{uuid4().hex[:8]}"
+
+    @classmethod
     def create(
         cls,
         title: str,
@@ -75,7 +80,7 @@ class LocalTask:
         """Create a new task with generated ID."""
         now = _utc_now()
         return cls(
-            id=f"t{uuid4().hex[:8]}",
+            id=cls._generate_id(),
             title=title,
             description=description,
             priority=priority,
@@ -214,18 +219,35 @@ class TaskMarkdownStore:
             return matches[0]
         return None  # 0 or ambiguous
 
-    def get(self, task_id: str) -> LocalTask | None:
-        """Get task by ID (accepts prefix matches)."""
+    def get(self, task_id: str, include_deleted: bool = False) -> LocalTask | None:
+        """Get task by ID (accepts prefix matches).
+
+        Soft-deleted tasks are hidden by default. Pass include_deleted=True to
+        see tombstones (used by sync and by mark_deleted for idempotency).
+        """
         resolved = self.resolve_id(task_id)
         if resolved is None:
             return None
         doc = self.storage.read_document(self._task_path(resolved))
         if doc is None:
             return None
-        return LocalTask.from_frontmatter(doc.frontmatter, doc.content)
+        task = LocalTask.from_frontmatter(doc.frontmatter, doc.content)
+        if task.deleted and not include_deleted:
+            return None
+        return task
+
+    def create(self, task: LocalTask) -> None:
+        """Save a new task, regenerating ID on collision."""
+        file_path = self._task_path(task.id)
+        attempts = 0
+        while file_path.exists() and attempts < 5:
+            task.id = LocalTask._generate_id()
+            file_path = self._task_path(task.id)
+            attempts += 1
+        self.save(task)
 
     def save(self, task: LocalTask) -> None:
-        """Save task to markdown file."""
+        """Save task to markdown file (create or update)."""
         task.updated_at = _utc_now()
 
         doc = MarkdownDocument(
@@ -250,10 +272,15 @@ class TaskMarkdownStore:
         return False
 
     def mark_deleted(self, task_id: str) -> bool:
-        """Soft-delete task (sets deleted=True, saves). Syncs the deletion to other instances."""
-        task = self.get(task_id)
+        """Soft-delete task (sets deleted=True, saves). Syncs the deletion to other instances.
+
+        Idempotent — re-marking an already-deleted task is a no-op and still returns True.
+        """
+        task = self.get(task_id, include_deleted=True)
         if task is None:
             return False
+        if task.deleted:
+            return True
         task.deleted = True
         self.save(task)
         return True
@@ -292,8 +319,8 @@ class TaskMarkdownStore:
         # Load matching tasks (exclude soft-deleted unless include_deleted)
         tasks = []
         for task_id in task_ids:
-            task = self.get(task_id)
-            if task and (include_deleted or not task.deleted):
+            task = self.get(task_id, include_deleted=include_deleted)
+            if task:
                 tasks.append(task)
 
         # Sort by updated_at descending

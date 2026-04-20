@@ -135,10 +135,6 @@ class UpstreamClient:
                 "/sync",
                 body=request.model_dump(mode="json"),
             )
-
-            if response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
-
             response.raise_for_status()
             return SyncResponse.model_validate(response.json())
 
@@ -156,13 +152,13 @@ class UpstreamClient:
         try:
             path = f"/admin/dids?namespace={namespace}" if namespace else "/admin/dids"
             response = self._make_request("GET", path)
-            if response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
-            if response.status_code == 403:
-                raise NotAdminError("Only admin can list DIDs")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can list DIDs")
             raise UpstreamError(f"Failed to list DIDs: {e.response.status_code}")
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
@@ -172,13 +168,11 @@ class UpstreamClient:
         try:
             path = f"/admin/pending?namespace={namespace}" if namespace else "/admin/pending"
             response = self._make_request("GET", path)
-            if response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
-            if response.status_code == 403:
-                raise NotAdminError("Only admin can view pending DIDs")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can view pending DIDs")
             raise UpstreamError(f"Failed to list pending: {e.response.status_code}")
@@ -193,13 +187,11 @@ class UpstreamClient:
                 "/admin/approve",
                 body={"did": target_did, "namespace": namespace},
             )
-            if response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
-            if response.status_code == 403:
-                raise NotAdminError(response.json().get("detail", "Not authorized"))
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized"))
             raise UpstreamError(f"Failed to approve: {e.response.status_code}")
@@ -214,13 +206,11 @@ class UpstreamClient:
                 "/admin/revoke",
                 body={"did": target_did, "namespace": namespace},
             )
-            if response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
-            if response.status_code == 403:
-                raise NotAdminError(response.json().get("detail", "Not authorized"))
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized"))
             raise UpstreamError(f"Failed to revoke: {e.response.status_code}")
