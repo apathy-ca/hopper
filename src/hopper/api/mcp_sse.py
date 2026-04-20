@@ -845,9 +845,20 @@ def hopper_instructions() -> str:
     Returns a guide covering the task lifecycle, heartbeats, instance switching,
     patterns, learning feedback, and agent identity conventions.
     """
-    return """# Hopper — Persistent Task & Memory Store
+    sid = _session_id.get()
+    _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
+    instance_line = f"Active instance: **{instance_name}**" if instance_name else "Active instance: **default** (token has no instance scope)"
+
+    return f"""# Hopper — Persistent Task & Memory Store
 
 Hopper is a long-term task store for AI agents. Tasks persist across sessions.
+
+## Your session
+
+{instance_line}
+
+This is set by your authentication token and applies to all tool calls in this session.
+Use hopper_switch_instance("name") only if you need to explicitly change it.
 
 ## Core workflow
 
@@ -1129,6 +1140,10 @@ def get_streamable_session_manager() -> StreamableHTTPSessionManager:
     return _streamable_session_manager
 
 
+_SSE_KEEPALIVE_INTERVAL = 1500  # seconds — fires before nginx's 3600s proxy_read_timeout
+_SSE_KEEPALIVE_PING = b": ping\n\n"
+
+
 class _StreamableHTTPASGIHandler:
     """Auth-gated ASGI handler for MCP Streamable HTTP transport.
 
@@ -1151,8 +1166,22 @@ class _StreamableHTTPASGIHandler:
             await auth_error(scope, receive, send)
             return
 
-        # Extract or allocate a session ID for context-var based instance routing
+        # Extract or allocate a session ID for context-var based instance routing.
+        # If the client sends a session ID that no longer exists in the session manager
+        # (expired after server restart or timeout), strip it so the manager creates a
+        # fresh session instead of returning a 404 that Claude Web won't recover from.
+        sm = get_streamable_session_manager()
         raw_sid = request.headers.get(MCP_SESSION_ID_HEADER)
+        if raw_sid and raw_sid not in sm._server_instances:
+            logger.info("MCP session %s not found — reconnecting as new session", raw_sid)
+            scope = dict(scope)
+            _sid_header_bytes = MCP_SESSION_ID_HEADER.lower().encode()
+            scope["headers"] = [
+                (k, v) for k, v in scope.get("headers", [])
+                if k.lower() != _sid_header_bytes
+            ]
+            raw_sid = None
+
         sid = raw_sid or str(uuid.uuid4())
 
         # On first touch for a session, record the authenticated instance
@@ -1173,9 +1202,35 @@ class _StreamableHTTPASGIHandler:
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
+        # For SSE responses, inject periodic comment pings so the nginx
+        # proxy_read_timeout (3600s) never fires on an idle stream.
+        _is_sse = False
+
+        async def tracked_send(message):
+            nonlocal _is_sse
+            if message.get("type") == "http.response.start":
+                for k, v in message.get("headers", []):
+                    if k == b"content-type" and b"text/event-stream" in v:
+                        _is_sse = True
+            await send(message)
+
+        async def keepalive_loop():
+            import anyio
+            while True:
+                await anyio.sleep(_SSE_KEEPALIVE_INTERVAL)
+                if not _is_sse:
+                    continue
+                try:
+                    await send({"type": "http.response.body", "body": _SSE_KEEPALIVE_PING, "more_body": True})
+                except Exception:
+                    break
+
+        import anyio
         try:
-            sm = get_streamable_session_manager()
-            await sm.handle_request(scope, replay_receive, send)
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(keepalive_loop)
+                await sm.handle_request(scope, replay_receive, tracked_send)
+                tg.cancel_scope.cancel()
         finally:
             _session_id.reset(sid_token)
             _session_did.reset(did_token)

@@ -283,8 +283,8 @@ def _get_default_server() -> str:
 @click.option(
     "--instance",
     "-i",
-    default="default",
-    help="Instance name (e.g., 'work', 'personal')",
+    default=None,
+    help="Instance name (default: read from local .hopper context)",
 )
 @click.option(
     "--instance-path",
@@ -292,11 +292,12 @@ def _get_default_server() -> str:
     default=None,
     help="Path to instance storage directory",
 )
-def mcp_init_token(server: str | None, label: str, instance: str, instance_path: str | None) -> None:
+def mcp_init_token(server: str | None, label: str, instance: str | None, instance_path: str | None) -> None:
     """Register for MCP access and get a Bearer token.
 
     Creates a token linked to your DID and a specific Hopper instance.
-    Use different tokens for different instances (work, personal, etc.).
+    The instance name is read from the nearest .hopper context automatically;
+    use -i to override it explicitly.
 
     Examples:
         hopper mcp init-token --server https://hopper.example.com
@@ -304,6 +305,8 @@ def mcp_init_token(server: str | None, label: str, instance: str, instance_path:
         hopper mcp init-token -s https://hopper.example.com -i project -p /path/to/project/.hopper
     """
     from hopper.upstream.did import sign_request
+    from hopper.cli.config import detect_embedded_hopper
+    from hopper.storage.base import StorageConfig
 
     # Get server URL
     server_url = server or _get_default_server()
@@ -311,6 +314,17 @@ def mcp_init_token(server: str | None, label: str, instance: str, instance_path:
 
     # Load or generate DID key
     did_key = _get_did_key()
+
+    # Auto-detect instance name and path from .hopper context when not provided
+    if instance is None or instance_path is None:
+        embedded = detect_embedded_hopper()
+        if embedded:
+            if instance is None:
+                instance = StorageConfig._read_instance_name(embedded) or embedded.parent.name
+            if instance_path is None:
+                instance_path = str(embedded)
+    if instance is None:
+        instance = "default"
 
     # Sign request to server
     body = {
