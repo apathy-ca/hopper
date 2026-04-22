@@ -23,9 +23,10 @@ def upstream() -> None:
     type=click.Path(),
     help="Path to save the DID key (default: ~/.hopper/did.key)",
 )
+@click.option("--server", "-s", help="Upstream server URL (e.g. https://hopper.example.com)")
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing key")
 @click.pass_obj
-def init_upstream(ctx: Context, key_path: str | None, force: bool) -> None:
+def init_upstream(ctx: Context, key_path: str | None, server: str | None, force: bool) -> None:
     """Generate a DID key pair for upstream authentication."""
     from hopper.upstream.did import generate_did_key
 
@@ -49,17 +50,42 @@ def init_upstream(ctx: Context, key_path: str | None, force: bool) -> None:
     profile = config.current_profile
     profile.upstream.did_key_path = str(path)
     profile.upstream.enabled = True
+    if server:
+        profile.upstream.server = server.rstrip("/")
     config.save()
 
     if ctx.json_output:
         print_json({
             "did": did_key.did,
             "key_path": str(path),
+            "server": profile.upstream.server,
         })
     else:
         print_success(f"Generated DID key: {did_key.did}")
         print_info(f"Key saved to: {path}")
-        print_info("Configure upstream.server in your config to enable sync.")
+        if profile.upstream.server:
+            print_info(f"Upstream server: {profile.upstream.server}")
+        else:
+            print_info("Set a server with: hopper upstream set-server <url>")
+
+
+@upstream.command(name="set-server")
+@click.argument("url")
+@click.pass_obj
+def set_server(ctx: Context, url: str) -> None:
+    """Set the upstream server URL in config.
+
+    Example: hopper upstream set-server https://hopper.example.com
+    """
+    config = ctx.config
+    profile = config.current_profile
+    profile.upstream.server = url.rstrip("/")
+    config.save()
+
+    if ctx.json_output:
+        print_json({"server": profile.upstream.server})
+    else:
+        print_success(f"Upstream server set to: {profile.upstream.server}")
 
 
 @upstream.command(name="sync")
@@ -184,7 +210,14 @@ def run_server(host: str, port: int, storage: str) -> None:
     Note: The upstream server is now built into 'hopper server start' at /upstream.
     Use this only if you need a standalone sync server without the full API.
     """
-    from hopper.upstream.server import run_server as start_server
+    try:
+        from hopper.upstream.server import run_server as start_server
+    except ModuleNotFoundError as e:
+        print_error(
+            f"Missing server dependency: {e.name}. "
+            "Install server extras with: pip install 'hopper-memory[server]'"
+        )
+        raise click.Abort()
 
     storage_path = Path(storage).expanduser().resolve()
     storage_path.mkdir(parents=True, exist_ok=True)

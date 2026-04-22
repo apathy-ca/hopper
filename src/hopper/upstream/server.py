@@ -57,10 +57,24 @@ def get_storage() -> UpstreamStorage:
     return _storage
 
 
-def configure_storage(storage_path: Path) -> None:
-    """Configure the storage backend."""
+def configure_storage(
+    storage_path: Path,
+    shadow_sqlite_url: str | None = None,
+) -> None:
+    """Configure the storage backend.
+
+    ``shadow_sqlite_url``: optional SQLAlchemy URL. When set, each JSON
+    task write also produces a records + revisions pair in the SQL store.
+    Shadow writes are fail-soft — failures there never break the JSON
+    path. Intended for Phase 4a (second half) rollout on ember.
+    """
     global _storage
-    _storage = UpstreamStorage(storage_path)
+    shadow_writer = None
+    if shadow_sqlite_url:
+        from .shadow import RevisionShadowWriter
+
+        shadow_writer = RevisionShadowWriter(shadow_sqlite_url)
+    _storage = UpstreamStorage(storage_path, shadow_writer=shadow_writer)
 
 
 async def verify_did_auth(
@@ -564,6 +578,7 @@ def run_server(
 
     # Pre-register admin DID
     if _storage:
-        _storage.did_registry.register_or_get(admin_did)
+        from hopper.upstream.storage import GLOBAL_NS
+        _storage.did_registry.register_or_get(admin_did, GLOBAL_NS)
 
     uvicorn.run(app, host=host, port=port)
