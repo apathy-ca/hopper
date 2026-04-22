@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from .did import verify_signature
 from .protocol import SyncConflict, SyncRequest, SyncResponse
-from .storage import DIDStatus, UpstreamStorage
+from .storage import DIDStatus, GLOBAL_NS, Invite, UpstreamStorage
 
 
 class NamespaceApprovalInfo(BaseModel):
@@ -216,6 +216,7 @@ class ApproveRequest(BaseModel):
 
     did: str
     namespace: str = "*"  # specific namespace or "*" for all
+    role: str = "approved"  # "approved" or "approver"
 
 
 @router.post("/admin/approve")
@@ -224,14 +225,25 @@ async def approve_did(
     storage: Annotated[UpstreamStorage, Depends(get_storage)],
     did: Annotated[str, Depends(verify_did_auth)],
 ) -> AdminResponse:
-    """Approve a DID for a namespace (or all namespaces if namespace='*')."""
+    """Approve a DID for a namespace.
+
+    Admin may set any role for any namespace. Approvers may set role=approved
+    on their own namespace only.
+    """
     body = await request.body()
     try:
         req = ApproveRequest.model_validate_json(body)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
 
-    success, message = storage.did_registry.approve(req.did, namespace=req.namespace, by_did=did)
+    try:
+        role = DIDStatus(req.role)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}")
+
+    success, message = storage.did_registry.approve(
+        req.did, namespace=req.namespace, by_did=did, role=role
+    )
     if not success:
         raise HTTPException(status_code=403, detail=message)
     return AdminResponse(success=True, message=f"Approved {req.did}: {message}")
@@ -254,6 +266,217 @@ async def revoke_did(
     if not success:
         raise HTTPException(status_code=403, detail=message)
     return AdminResponse(success=True, message=f"Revoked {req.did}: {message}")
+
+
+# --- Invite endpoints ---
+
+
+class InviteCreateRequest(BaseModel):
+    namespace: str
+    role: str = "approved"  # "approved" or "approver"
+    expires_in_ms: int | None = None  # None = no expiry
+    max_uses: int = 1
+
+
+class InviteInfo(BaseModel):
+    token_hash: str
+    namespace: str
+    role: str
+    issued_by: str
+    created_at: int
+    expires_at: int | None
+    max_uses: int
+    uses: int
+
+
+class InviteCreateResponse(BaseModel):
+    token: str  # Only returned at creation time
+    invite: InviteInfo
+
+
+class InviteListResponse(BaseModel):
+    invites: list[InviteInfo]
+
+
+class InviteRedeemRequest(BaseModel):
+    token: str
+
+
+class InviteRevokeRequest(BaseModel):
+    token_hash_prefix: str
+
+
+def _invite_info(inv: Invite) -> InviteInfo:
+    return InviteInfo(
+        token_hash=inv.token_hash,
+        namespace=inv.namespace,
+        role=inv.role.value,
+        issued_by=inv.issued_by,
+        created_at=inv.created_at,
+        expires_at=inv.expires_at,
+        max_uses=inv.max_uses,
+        uses=inv.uses,
+    )
+
+
+@router.post("/invite/create")
+async def invite_create(
+    request: Request,
+    storage: Annotated[UpstreamStorage, Depends(get_storage)],
+    did: Annotated[str, Depends(verify_did_auth)],
+) -> InviteCreateResponse:
+    """Create an invite token.
+
+    Admin may issue any role for any namespace. Approvers may issue role=approved
+    on their own namespace only.
+    """
+    body = await request.body()
+    try:
+        req = InviteCreateRequest.model_validate_json(body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+
+    try:
+        role = DIDStatus(req.role)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}")
+    if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
+        raise HTTPException(status_code=400, detail="role must be approved or approver")
+
+    reg = storage.did_registry
+    is_admin = reg.is_admin(did)
+    if not is_admin:
+        if role == DIDStatus.APPROVER:
+            raise HTTPException(status_code=403, detail="only admin can issue approver invites")
+        if req.namespace == GLOBAL_NS:
+            raise HTTPException(status_code=403, detail="only admin can issue global invites")
+        if not reg.is_approver(did, req.namespace):
+            raise HTTPException(
+                status_code=403,
+                detail=f"not authorized to invite for namespace '{req.namespace}'",
+            )
+
+    if req.max_uses < 1:
+        raise HTTPException(status_code=400, detail="max_uses must be >= 1")
+
+    expires_at = None
+    if req.expires_in_ms is not None:
+        expires_at = int(time.time() * 1000) + req.expires_in_ms
+
+    token, invite = storage.invites.create(
+        namespace=req.namespace,
+        role=role,
+        issued_by=did,
+        expires_at=expires_at,
+        max_uses=req.max_uses,
+    )
+    return InviteCreateResponse(token=token, invite=_invite_info(invite))
+
+
+@router.post("/invite/redeem")
+async def invite_redeem(
+    request: Request,
+    storage: Annotated[UpstreamStorage, Depends(get_storage)],
+    did: Annotated[str, Depends(verify_did_auth)],
+) -> AdminResponse:
+    """Redeem an invite token for the caller's DID."""
+    body = await request.body()
+    try:
+        req = InviteRedeemRequest.model_validate_json(body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+
+    reg = storage.did_registry
+
+    # Fetch invite first to validate before mutating.
+    invite_preview = storage.invites.get(req.token)
+    if invite_preview is None:
+        raise HTTPException(status_code=404, detail="invite not found")
+
+    # Re-check issuer authority at redeem time — admin authority is stable, but
+    # an approver could have been revoked between issue and redeem.
+    issuer = invite_preview.issued_by
+    if not reg.is_admin(issuer):
+        if invite_preview.role == DIDStatus.APPROVER:
+            raise HTTPException(status_code=403, detail="issuer no longer has approver authority")
+        if not reg.is_approver(issuer, invite_preview.namespace):
+            raise HTTPException(
+                status_code=403,
+                detail=f"issuer no longer has approver authority for '{invite_preview.namespace}'",
+            )
+
+    if reg.is_admin(did):
+        raise HTTPException(status_code=400, detail="admin does not need to redeem invites")
+
+    invite, message = storage.invites.redeem(req.token, by_did=did)
+    if invite is None:
+        raise HTTPException(status_code=403, detail=message)
+
+    # Register the DID first (creates record if new), then apply the role.
+    reg.register_or_get(did, invite.namespace)
+    reg.set_status(did, invite.namespace, invite.role, by_did=invite.issued_by)
+    return AdminResponse(
+        success=True,
+        message=f"redeemed: {invite.role.value} on '{invite.namespace}'",
+    )
+
+
+@router.get("/invite/list")
+async def invite_list(
+    storage: Annotated[UpstreamStorage, Depends(get_storage)],
+    did: Annotated[str, Depends(verify_did_auth)],
+    namespace: str | None = None,
+) -> InviteListResponse:
+    """List invites. Admin sees all; approvers see invites for their namespaces."""
+    reg = storage.did_registry
+    all_invites = storage.invites.list_all(namespace=namespace)
+
+    if reg.is_admin(did):
+        visible = all_invites
+    else:
+        # Approver only sees invites for namespaces they can approve.
+        visible = [
+            inv for inv in all_invites
+            if reg.is_approver(did, inv.namespace) or inv.issued_by == did
+        ]
+    return InviteListResponse(invites=[_invite_info(i) for i in visible])
+
+
+@router.post("/invite/revoke")
+async def invite_revoke(
+    request: Request,
+    storage: Annotated[UpstreamStorage, Depends(get_storage)],
+    did: Annotated[str, Depends(verify_did_auth)],
+) -> AdminResponse:
+    """Revoke an invite by token hash (or unique prefix)."""
+    body = await request.body()
+    try:
+        req = InviteRevokeRequest.model_validate_json(body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+
+    # Look up first so we can authority-check before revoking.
+    reg = storage.did_registry
+    matches = [
+        p for p in storage.invites.invites_dir.glob("*.json")
+        if p.stem.startswith(req.token_hash_prefix)
+    ]
+    if not matches:
+        raise HTTPException(status_code=404, detail="no matching invite")
+    if len(matches) > 1:
+        raise HTTPException(status_code=400, detail=f"ambiguous prefix: {len(matches)} matches")
+    invite = storage.invites._load_path(matches[0])
+    if invite is None:
+        raise HTTPException(status_code=500, detail="invite record corrupt")
+
+    if not reg.is_admin(did):
+        if invite.issued_by != did and not reg.is_approver(did, invite.namespace):
+            raise HTTPException(status_code=403, detail="not authorized to revoke this invite")
+
+    success, message = storage.invites.revoke(req.token_hash_prefix)
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return AdminResponse(success=True, message=message)
 
 
 def _build_standalone_app() -> FastAPI:

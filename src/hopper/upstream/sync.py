@@ -33,18 +33,30 @@ class SyncState:
 
     @classmethod
     def load(cls, path: Path) -> SyncState:
-        """Load sync state from file."""
+        """Load sync state from file.
+
+        If the stored ``last_sync`` is implausibly far in the future (local
+        clock jumped forward, then jumped back), reset to 0 rather than
+        silently filtering out every future local edit.
+        """
         if not path.exists():
             return cls()
         try:
             with open(path) as f:
                 data = json.load(f)
-                return cls(
-                    last_sync=data.get("last_sync", 0),
-                    last_server_time=data.get("last_server_time", 0),
-                )
+                last_sync = data.get("last_sync", 0)
+                last_server_time = data.get("last_server_time", 0)
         except (json.JSONDecodeError, OSError):
             return cls()
+
+        # Guard: allow up to 1h skew, otherwise treat as corrupt.
+        now_ms = int(time.time() * 1000)
+        skew_ms = 3600 * 1000
+        if last_sync > now_ms + skew_ms:
+            last_sync = 0
+            last_server_time = 0
+
+        return cls(last_sync=last_sync, last_server_time=last_server_time)
 
     def save(self, path: Path) -> None:
         """Save sync state to file."""
@@ -219,6 +231,11 @@ def sync_with_upstream(
     # Load sync state
     state = SyncState.load(state_path)
 
+    # Snapshot the cursor BEFORE reading local tasks. If we captured it after
+    # the network round-trip, any local edit that happened during the sync
+    # window would have updated_at < cursor and be dropped on the next run.
+    sync_start_ms = int(time.time() * 1000)
+
     # Collect local tasks modified since last sync (including soft-deleted)
     all_tasks = task_store.list(include_deleted=True)
     local_changes = []
@@ -252,8 +269,8 @@ def sync_with_upstream(
         if task_id:
             result.pulled.append(task_id)
 
-    # Update sync state
-    state.last_sync = int(time.time() * 1000)
+    # Update sync state using the pre-sync snapshot, not "now".
+    state.last_sync = sync_start_ms
     state.last_server_time = response.server_time
     state.save(state_path)
 

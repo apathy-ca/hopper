@@ -19,7 +19,8 @@ from .protocol import SyncTask
 class DIDStatus(str, Enum):
     """Status of a DID for a given namespace."""
 
-    ADMIN = "admin"      # Server admin — implicitly approved for all namespaces
+    ADMIN = "admin"        # Server admin — implicitly approved for all namespaces
+    APPROVER = "approver"  # Authorized for namespace AND can approve/invite others for it
     APPROVED = "approved"
     PENDING = "pending"
 
@@ -173,11 +174,21 @@ class DIDRegistry:
         """Check if DID is authorized for a namespace."""
         if self.is_admin(did):
             return True
+        authorized = {DIDStatus.APPROVED, DIDStatus.APPROVER}
         # Global approval
         if did in self._registry.get(GLOBAL_NS, {}):
-            return self._registry[GLOBAL_NS][did] == DIDStatus.APPROVED
+            return self._registry[GLOBAL_NS][did] in authorized
         # Namespace-specific approval
-        return self._registry.get(namespace, {}).get(did) == DIDStatus.APPROVED
+        return self._registry.get(namespace, {}).get(did) in authorized
+
+    def is_approver(self, did: str, namespace: str) -> bool:
+        """Check if DID can approve/invite others for a namespace."""
+        if self.is_admin(did):
+            return True
+        # Global approver via '*'
+        if self._registry.get(GLOBAL_NS, {}).get(did) == DIDStatus.APPROVER:
+            return True
+        return self._registry.get(namespace, {}).get(did) == DIDStatus.APPROVER
 
     def get_status(self, did: str, namespace: str) -> DIDStatus | None:
         if self.is_admin(did):
@@ -213,33 +224,70 @@ class DIDRegistry:
         self._save_record(record)
         return DIDStatus.PENDING, True
 
-    def approve(self, did: str, namespace: str, by_did: str) -> tuple[bool, str]:
-        """Approve a DID for a namespace (or all namespaces if namespace == '*').
-
-        Only admin can approve.
-        """
-        if not self.is_admin(by_did):
-            return False, "only admin can approve DIDs"
-        if self.is_admin(did):
-            return False, "cannot modify admin DID"
-
+    def set_status(
+        self, did: str, namespace: str, status: DIDStatus, by_did: str
+    ) -> None:
+        """Write a status transition to both registry and per-DID record."""
         now = int(time.time() * 1000)
-        self._registry.setdefault(namespace, {})[did] = DIDStatus.APPROVED
+        self._registry.setdefault(namespace, {})[did] = status
         self._save_registry()
 
         record = self._load_record(did) or DIDRecord(did=did, created_at=now)
         record.namespaces[namespace] = NamespaceApproval(
-            status=DIDStatus.APPROVED, approved_by=by_did, approved_at=now
+            status=status, approved_by=by_did, approved_at=now
         )
         self._save_record(record)
-        return True, f"approved for {'all namespaces' if namespace == GLOBAL_NS else namespace}"
+
+    def approve(
+        self,
+        did: str,
+        namespace: str,
+        by_did: str,
+        role: DIDStatus = DIDStatus.APPROVED,
+    ) -> tuple[bool, str]:
+        """Approve a DID for a namespace at a given role.
+
+        Authority:
+        - Admin may set any role, any namespace (including '*').
+        - Approver may set role=APPROVED on their specific namespace only.
+        """
+        if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
+            return False, f"invalid role: {role}"
+        if self.is_admin(did):
+            return False, "cannot modify admin DID"
+
+        by_is_admin = self.is_admin(by_did)
+        if not by_is_admin:
+            if role == DIDStatus.APPROVER:
+                return False, "only admin can grant approver role"
+            if namespace == GLOBAL_NS:
+                return False, "only admin can approve across all namespaces"
+            if not self.is_approver(by_did, namespace):
+                return False, f"not authorized to approve for namespace '{namespace}'"
+
+        self.set_status(did, namespace, role, by_did)
+        scope = "all namespaces" if namespace == GLOBAL_NS else namespace
+        label = "approver on" if role == DIDStatus.APPROVER else "approved for"
+        return True, f"{label} {scope}"
 
     def revoke(self, did: str, namespace: str, by_did: str) -> tuple[bool, str]:
-        """Revoke a DID's access to a namespace (or all if namespace == '*')."""
-        if not self.is_admin(by_did):
-            return False, "only admin can revoke DIDs"
+        """Revoke a DID's access to a namespace (or all if namespace == '*').
+
+        Admin can revoke anyone. Approver can revoke only APPROVED members of
+        their specific namespace (never another approver or admin).
+        """
         if self.is_admin(did):
             return False, "cannot revoke admin DID"
+
+        by_is_admin = self.is_admin(by_did)
+        if not by_is_admin:
+            if namespace == GLOBAL_NS:
+                return False, "only admin can revoke across all namespaces"
+            if not self.is_approver(by_did, namespace):
+                return False, f"not authorized to revoke for namespace '{namespace}'"
+            target_status = self._registry.get(namespace, {}).get(did)
+            if target_status != DIDStatus.APPROVED:
+                return False, "approvers can only revoke APPROVED members"
 
         self._registry.get(namespace, {}).pop(did, None)
         if not self._registry.get(namespace):
@@ -293,6 +341,157 @@ class DIDRegistry:
 
 
 @dataclass
+class Invite:
+    """An invite record.
+
+    The raw token is never stored — only its SHA256 hash. The full token
+    value is returned once, at creation time.
+    """
+
+    token_hash: str
+    namespace: str
+    role: DIDStatus  # APPROVED or APPROVER
+    issued_by: str
+    created_at: int
+    expires_at: int | None
+    max_uses: int
+    uses: int
+    redeemed_by: list[str] = field(default_factory=list)
+
+    def is_valid(self, now_ms: int | None = None) -> tuple[bool, str]:
+        now = now_ms if now_ms is not None else int(time.time() * 1000)
+        if self.expires_at is not None and now >= self.expires_at:
+            return False, "invite expired"
+        if self.uses >= self.max_uses:
+            return False, "invite exhausted"
+        return True, ""
+
+
+@dataclass
+class InviteStore:
+    """Token-based invite store.
+
+    Tokens are bearer secrets; only their hash is persisted. Directory layout:
+        storage_path/invites/{token_hash}.json
+    """
+
+    storage_path: Path
+
+    def __post_init__(self) -> None:
+        self.invites_dir = self.storage_path / "invites"
+        self.invites_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _hash(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    def _path(self, token_hash: str) -> Path:
+        return self.invites_dir / f"{token_hash}.json"
+
+    def _save(self, invite: Invite) -> None:
+        with open(self._path(invite.token_hash), "w") as f:
+            json.dump(
+                {
+                    "token_hash": invite.token_hash,
+                    "namespace": invite.namespace,
+                    "role": invite.role.value,
+                    "issued_by": invite.issued_by,
+                    "created_at": invite.created_at,
+                    "expires_at": invite.expires_at,
+                    "max_uses": invite.max_uses,
+                    "uses": invite.uses,
+                    "redeemed_by": invite.redeemed_by,
+                },
+                f,
+                indent=2,
+            )
+
+    def _load_path(self, path: Path) -> Invite | None:
+        if not path.exists():
+            return None
+        try:
+            with open(path) as f:
+                d = json.load(f)
+            return Invite(
+                token_hash=d["token_hash"],
+                namespace=d["namespace"],
+                role=DIDStatus(d["role"]),
+                issued_by=d["issued_by"],
+                created_at=d["created_at"],
+                expires_at=d.get("expires_at"),
+                max_uses=d["max_uses"],
+                uses=d.get("uses", 0),
+                redeemed_by=d.get("redeemed_by", []),
+            )
+        except (json.JSONDecodeError, OSError, KeyError, ValueError):
+            return None
+
+    def create(
+        self,
+        namespace: str,
+        role: DIDStatus,
+        issued_by: str,
+        expires_at: int | None,
+        max_uses: int = 1,
+    ) -> tuple[str, Invite]:
+        """Create an invite and return (token, record). Token is only returned here."""
+        import secrets
+        token = "hinv_" + secrets.token_urlsafe(24)
+        now = int(time.time() * 1000)
+        invite = Invite(
+            token_hash=self._hash(token),
+            namespace=namespace,
+            role=role,
+            issued_by=issued_by,
+            created_at=now,
+            expires_at=expires_at,
+            max_uses=max_uses,
+            uses=0,
+        )
+        self._save(invite)
+        return token, invite
+
+    def get(self, token: str) -> Invite | None:
+        return self._load_path(self._path(self._hash(token)))
+
+    def redeem(self, token: str, by_did: str) -> tuple[Invite | None, str]:
+        """Atomically redeem an invite. Returns (invite, message)."""
+        invite = self.get(token)
+        if invite is None:
+            return None, "invite not found"
+        ok, reason = invite.is_valid()
+        if not ok:
+            return None, reason
+        if by_did in invite.redeemed_by:
+            return None, "already redeemed by this DID"
+        invite.uses += 1
+        invite.redeemed_by.append(by_did)
+        self._save(invite)
+        return invite, "redeemed"
+
+    def list_all(self, namespace: str | None = None) -> list[Invite]:
+        invites = []
+        for p in self.invites_dir.glob("*.json"):
+            inv = self._load_path(p)
+            if inv and (namespace is None or inv.namespace == namespace):
+                invites.append(inv)
+        return sorted(invites, key=lambda i: i.created_at, reverse=True)
+
+    def revoke(self, token_hash_prefix: str) -> tuple[bool, str]:
+        """Revoke by full hash or unique prefix."""
+        matches = [
+            p for p in self.invites_dir.glob("*.json")
+            if p.stem.startswith(token_hash_prefix)
+        ]
+        if not matches:
+            return False, "no matching invite"
+        if len(matches) > 1:
+            return False, f"ambiguous prefix: {len(matches)} matches"
+        matches[0].unlink()
+        return True, "revoked"
+
+
+@dataclass
 class StoredTask:
     """A task stored on the server with metadata."""
 
@@ -327,6 +526,7 @@ class UpstreamStorage:
     storage_path: Path
     _index: dict[str, int] = field(default_factory=dict)  # "instance/task_id" -> updated_at
     did_registry: DIDRegistry = field(init=False)
+    invites: InviteStore = field(init=False)
 
     def __post_init__(self) -> None:
         self.tasks_dir = self.storage_path / "tasks"
@@ -335,6 +535,7 @@ class UpstreamStorage:
         self._migrate_did_partitioned_tasks()
         self._load_index()
         self.did_registry = DIDRegistry(self.storage_path)
+        self.invites = InviteStore(self.storage_path)
 
     def _migrate_did_partitioned_tasks(self) -> None:
         """Flatten legacy tasks/{did_hash}/{instance}/ into tasks/{instance}/."""

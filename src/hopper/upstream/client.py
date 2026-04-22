@@ -179,13 +179,19 @@ class UpstreamClient:
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
 
-    def approve_did(self, target_did: str, namespace: str = "*") -> dict:
-        """Approve a DID for a namespace (or all if namespace='*'). Requires admin."""
+    def approve_did(
+        self, target_did: str, namespace: str = "*", role: str = "approved"
+    ) -> dict:
+        """Approve a DID for a namespace.
+
+        Admin may set any role and namespace. An approver may set role=approved
+        on their own namespace.
+        """
         try:
             response = self._make_request(
                 "POST",
                 "/admin/approve",
-                body={"did": target_did, "namespace": namespace},
+                body={"did": target_did, "namespace": namespace, "role": role},
             )
             response.raise_for_status()
             return response.json()
@@ -195,6 +201,92 @@ class UpstreamClient:
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized"))
             raise UpstreamError(f"Failed to approve: {e.response.status_code}")
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}")
+
+    def create_invite(
+        self,
+        namespace: str,
+        role: str = "approved",
+        expires_in_ms: int | None = None,
+        max_uses: int = 1,
+    ) -> dict:
+        """Create an invite token. Returns {'token': ..., 'invite': {...}}.
+
+        Admin can invite for any namespace/role. Approvers can invite role=approved
+        on their own namespace.
+        """
+        try:
+            response = self._make_request(
+                "POST",
+                "/invite/create",
+                body={
+                    "namespace": namespace,
+                    "role": role,
+                    "expires_in_ms": expires_in_ms,
+                    "max_uses": max_uses,
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
+            if e.response.status_code == 403:
+                raise NotAdminError(e.response.json().get("detail", "Not authorized"))
+            raise UpstreamError(f"Failed to create invite: {e.response.status_code}")
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}")
+
+    def redeem_invite(self, token: str) -> dict:
+        """Redeem an invite token for this client's DID."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/invite/redeem",
+                body={"token": token},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
+            if e.response.status_code in (403, 404):
+                raise NotAuthorizedError(e.response.json().get("detail", "redeem failed"))
+            raise UpstreamError(f"Failed to redeem: {e.response.status_code}")
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}")
+
+    def list_invites(self, namespace: str | None = None) -> dict:
+        """List invites. Admin sees all; approvers see invites for their namespaces."""
+        try:
+            path = f"/invite/list?namespace={namespace}" if namespace else "/invite/list"
+            response = self._make_request("GET", path)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
+            raise UpstreamError(f"Failed to list invites: {e.response.status_code}")
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}")
+
+    def revoke_invite(self, token_hash_prefix: str) -> dict:
+        """Revoke an invite by token hash prefix."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/invite/revoke",
+                body={"token_hash_prefix": token_hash_prefix},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed")
+            if e.response.status_code == 403:
+                raise NotAdminError(e.response.json().get("detail", "Not authorized"))
+            raise UpstreamError(f"Failed to revoke invite: {e.response.status_code}")
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}")
 

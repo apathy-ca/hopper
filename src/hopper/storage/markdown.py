@@ -114,10 +114,14 @@ class MarkdownStorage(StorageBackend):
         ]:
             path.mkdir(parents=True, exist_ok=True)
 
-        # Create default config if not exists
+        # Ensure config.yaml exists and has an up-to-date `instance:` block.
+        # The CLI profile config shares this file, so we merge rather than
+        # overwrite — otherwise `hopper init -n <name>` on an already-populated
+        # config would either clobber profiles or skip writing the instance id,
+        # and upstream sync would fall back to the storage directory name as
+        # the namespace.
         config_file = self.base_path / "config.yaml"
-        if not config_file.exists():
-            self._write_config(config_file)
+        self._write_config(config_file)
 
         # Create .gitignore for index
         gitignore = self.index_path / ".gitignore"
@@ -137,29 +141,41 @@ class MarkdownStorage(StorageBackend):
         return True
 
     def _write_config(self, config_file: Path) -> None:
-        """Write default config file."""
-        default_config = {
-            "instance": {
-                "id": self.config.instance_id,
-                "name": self.config.instance_name,
-                "scope": "personal",
-            },
-            "storage": {
-                "type": "markdown",
-                "path": str(self.base_path),
-            },
-            "sync": {
-                "enabled": self.config.sync_enabled,
-                "server_url": self.config.server_url,
-                "sync_patterns": self.config.sync_patterns,
-                "sync_episodes": self.config.sync_episodes,
-            },
-            "defaults": {
-                "priority": "medium",
-                "status": "pending",
-            },
+        """Write / merge storage config.
+
+        Merges into an existing config.yaml so that unrelated top-level keys
+        (e.g. the CLI's `active_profile` / `profiles:`) are preserved.
+        """
+        existing: dict[str, Any] = {}
+        if config_file.exists():
+            try:
+                loaded = yaml.safe_load(config_file.read_text()) or {}
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except yaml.YAMLError:
+                existing = {}
+
+        existing["instance"] = {
+            "id": self.config.instance_id,
+            "name": self.config.instance_name,
+            "scope": existing.get("instance", {}).get("scope", "personal"),
         }
-        config_file.write_text(yaml.dump(default_config, default_flow_style=False))
+        existing.setdefault("storage", {
+            "type": "markdown",
+            "path": str(self.base_path),
+        })
+        existing.setdefault("sync", {
+            "enabled": self.config.sync_enabled,
+            "server_url": self.config.server_url,
+            "sync_patterns": self.config.sync_patterns,
+            "sync_episodes": self.config.sync_episodes,
+        })
+        existing.setdefault("defaults", {
+            "priority": "medium",
+            "status": "pending",
+        })
+
+        config_file.write_text(yaml.dump(existing, default_flow_style=False, sort_keys=False))
 
     # =========================================================================
     # File Operations

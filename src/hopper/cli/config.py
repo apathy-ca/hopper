@@ -119,7 +119,19 @@ class Config(BaseSettings):
         """Save configuration to file."""
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Preserve unknown top-level keys (e.g. `instance:`, `storage:`, `sync:`
+        # written by MarkdownStorage) so they survive round-trips through
+        # `hopper config set` / auth commands that also use this file.
+        existing: dict = {}
+        if self.config_path.exists():
+            try:
+                with open(self.config_path) as f:
+                    existing = yaml.safe_load(f) or {}
+            except (OSError, yaml.YAMLError):
+                existing = {}
+
         data = {
+            **{k: v for k, v in existing.items() if k not in ("active_profile", "profiles")},
             "active_profile": self.active_profile,
             "profiles": {
                 name: {

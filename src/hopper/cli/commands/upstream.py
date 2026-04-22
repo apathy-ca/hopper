@@ -263,6 +263,58 @@ def status_upstream(ctx: Context) -> None:
             print_info("Last sync: never")
 
 
+@upstream.command(name="reset")
+@click.option("--instance", "-i", help="Instance to reset (defaults to current)")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+@click.pass_obj
+def reset_upstream(ctx: Context, instance: str | None, force: bool) -> None:
+    """Clear sync state, forcing a full re-sync on next run.
+
+    Use this when sync appears stuck (e.g. clock skew left the cursor in
+    the future, or state got corrupted). Safe: sync resolves conflicts by
+    comparing per-task updated_at timestamps.
+    """
+    import json
+
+    from hopper.cli.local_client import LocalClient
+
+    storage_path = ctx.get_storage_path()
+    if not storage_path:
+        print_error("Reset requires local mode.")
+        raise click.Abort()
+
+    instance_id = instance or LocalClient(storage_path).config.instance_id
+    state_path = storage_path / f".sync_state_{instance_id}"
+
+    if not state_path.exists():
+        print_info(f"No sync state to reset for instance '{instance_id}'.")
+        return
+
+    old_cursor = None
+    try:
+        with open(state_path) as f:
+            old_cursor = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    if not force:
+        click.confirm(
+            f"Delete sync state for instance '{instance_id}'? "
+            f"Next sync will re-push/pull all tasks.",
+            abort=True,
+        )
+
+    state_path.unlink()
+
+    if ctx.json_output:
+        print_json({"instance": instance_id, "previous": old_cursor})
+    else:
+        print_success(f"Reset sync state for instance '{instance_id}'.")
+        if old_cursor:
+            print_info(f"Previous cursor: {old_cursor}")
+        print_info("Run 'hopper upstream sync' to resync.")
+
+
 @upstream.command(name="whoami")
 @click.pass_obj
 def whoami(ctx: Context) -> None:
@@ -426,6 +478,13 @@ def admin_pending(ctx: Context, server: str | None, admin_key: str | None, names
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.option("--namespace", "-n", default=None, help="Approve for a specific namespace")
 @click.option("--all", "all_namespaces", is_flag=True, help="Approve for all namespaces")
+@click.option(
+    "--role",
+    "-r",
+    type=click.Choice(["approved", "approver"]),
+    default="approved",
+    help="'approved' (default) or 'approver' (can approve/invite others)",
+)
 @click.pass_obj
 def admin_approve(
     ctx: Context,
@@ -434,8 +493,13 @@ def admin_approve(
     admin_key: str | None,
     namespace: str | None,
     all_namespaces: bool,
+    role: str,
 ) -> None:
-    """Approve a pending DID for a namespace (or all with --all)."""
+    """Approve a pending DID for a namespace (or all with --all).
+
+    Use --role approver to grant approve/invite authority for that namespace.
+    Only admin can grant the approver role.
+    """
     from hopper.upstream.client import NotAdminError, UpstreamError
 
     client, _ = _get_admin_client(ctx, server, admin_key)
@@ -443,7 +507,7 @@ def admin_approve(
     ns = "*" if all_namespaces else (namespace or "*")
 
     try:
-        result = client.approve_did(did, namespace=ns)
+        result = client.approve_did(did, namespace=ns, role=role)
     except NotAdminError as e:
         print_error(str(e))
         raise click.Abort()
@@ -455,7 +519,8 @@ def admin_approve(
         print_json(result)
     else:
         scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
-        print_success(f"Approved {did} for {scope}")
+        label = "granted approver on" if role == "approver" else "approved for"
+        print_success(f"{did}: {label} {scope}")
 
 
 @admin.command(name="revoke")
@@ -494,3 +559,212 @@ def admin_revoke(
     else:
         scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
         print_success(f"Revoked {did} from {scope}")
+
+
+# --- Invite commands (peer approval) ---
+
+
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _parse_duration(s: str) -> int:
+    """Parse '7d', '24h', '30m', '1w' → seconds. Raise ValueError on bad input."""
+    s = s.strip().lower()
+    if not s:
+        raise ValueError("empty duration")
+    unit = s[-1]
+    if unit not in _DURATION_UNITS:
+        # Treat bare integers as seconds.
+        return int(s)
+    return int(s[:-1]) * _DURATION_UNITS[unit]
+
+
+@upstream.group(name="invite")
+def invite() -> None:
+    """Manage peer-approval invite tokens.
+
+    Invites let admins or approvers grant access to a namespace without
+    round-tripping through the server admin for each new DID.
+    """
+
+
+@invite.command(name="create")
+@click.option("--namespace", "-n", required=True, help="Instance namespace (e.g. Rosetta_Program)")
+@click.option(
+    "--role",
+    "-r",
+    type=click.Choice(["approved", "approver"]),
+    default="approved",
+    help="Role to grant on redeem (default: approved). 'approver' is admin-only.",
+)
+@click.option("--expires", "-e", default="7d", help="Expiry window, e.g. 7d, 24h, 30m. Use 'never' to disable.")
+@click.option("--uses", "-u", default=1, type=int, help="Max redemptions (default: 1)")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--key", "-k", type=click.Path(), help="Path to issuer DID key")
+@click.pass_obj
+def invite_create(
+    ctx: Context,
+    namespace: str,
+    role: str,
+    expires: str,
+    uses: int,
+    server: str | None,
+    key: str | None,
+) -> None:
+    """Create an invite token.
+
+    The token is printed ONCE and is not recoverable — pass it to the
+    recipient via a secure channel. They redeem with 'hopper upstream redeem'.
+    """
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    if expires.lower() == "never":
+        expires_in_ms: int | None = None
+    else:
+        try:
+            expires_in_ms = _parse_duration(expires) * 1000
+        except ValueError:
+            print_error(f"Invalid --expires value: {expires!r}")
+            raise click.Abort()
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.create_invite(
+            namespace=namespace, role=role, expires_in_ms=expires_in_ms, max_uses=uses
+        )
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort()
+
+    token = result["token"]
+    inv = result["invite"]
+
+    if ctx.json_output:
+        print_json(result)
+        return
+
+    print_success(f"Invite created for namespace '{namespace}' (role: {role})")
+    click.echo("")
+    click.echo(f"  Token:     {token}")
+    click.echo(f"  Uses:      {inv['uses']}/{inv['max_uses']}")
+    exp = inv.get("expires_at")
+    if exp:
+        from datetime import datetime, timezone
+        dt = datetime.fromtimestamp(exp / 1000, tz=timezone.utc)
+        click.echo(f"  Expires:   {dt.isoformat()}")
+    else:
+        click.echo(f"  Expires:   never")
+    click.echo("")
+    print_warning("This token is shown only once. Share it over a secure channel.")
+    click.echo("")
+    click.echo(f"Recipient runs:  hopper upstream redeem {token}")
+
+
+@invite.command(name="list")
+@click.option("--namespace", "-n", default=None, help="Filter to a specific namespace")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--key", "-k", type=click.Path(), help="Path to DID key")
+@click.pass_obj
+def invite_list(
+    ctx: Context,
+    namespace: str | None,
+    server: str | None,
+    key: str | None,
+) -> None:
+    """List invites you can see (admin: all, approver: your namespaces)."""
+    from hopper.upstream.client import UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.list_invites(namespace=namespace)
+    except UpstreamError as e:
+        print_error(str(e))
+        raise click.Abort()
+
+    invites = result.get("invites", [])
+
+    if ctx.json_output:
+        print_json(result)
+        return
+
+    if not invites:
+        print_info("No invites.")
+        return
+
+    from datetime import datetime, timezone
+    now_ms = int(__import__("time").time() * 1000)
+    for inv in invites:
+        exp = inv.get("expires_at")
+        status_bits = []
+        if inv["uses"] >= inv["max_uses"]:
+            status_bits.append("exhausted")
+        if exp and now_ms >= exp:
+            status_bits.append("expired")
+        status = ", ".join(status_bits) if status_bits else "active"
+
+        click.echo(f"  {inv['token_hash'][:12]}…  ns={inv['namespace']}  role={inv['role']}  uses={inv['uses']}/{inv['max_uses']}  [{status}]")
+        if exp:
+            dt = datetime.fromtimestamp(exp / 1000, tz=timezone.utc)
+            click.echo(f"    expires: {dt.isoformat()}")
+        click.echo(f"    issued_by: {inv['issued_by']}")
+
+
+@invite.command(name="revoke")
+@click.argument("token_hash_prefix")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--key", "-k", type=click.Path(), help="Path to DID key")
+@click.pass_obj
+def invite_revoke_cmd(
+    ctx: Context,
+    token_hash_prefix: str,
+    server: str | None,
+    key: str | None,
+) -> None:
+    """Revoke an invite by token hash (or unique prefix from 'invite list')."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.revoke_invite(token_hash_prefix)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort()
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Revoked invite {token_hash_prefix}")
+
+
+@upstream.command(name="redeem")
+@click.argument("token")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--key", "-k", type=click.Path(), help="Path to DID key (default: ~/.hopper/did.key)")
+@click.pass_obj
+def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) -> None:
+    """Redeem an invite token for this machine's DID.
+
+    Run this on the new machine after 'hopper upstream init'. Afterwards,
+    'hopper sync' will succeed for the invited namespace.
+    """
+    from hopper.upstream.client import NotAuthorizedError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.redeem_invite(token)
+    except NotAuthorizedError as e:
+        print_error(str(e))
+        raise click.Abort()
+    except UpstreamError as e:
+        print_error(str(e))
+        raise click.Abort()
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(result.get("message", "redeemed"))
+        print_info("Run 'hopper sync' to pull tasks.")
