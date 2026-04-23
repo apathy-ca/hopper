@@ -239,21 +239,23 @@ def update_agent_files(ctx: Context, force: bool) -> None:
         print_json(result)
         return
 
-    action_labels = {
-        "created": ("[green]created[/green]", True),
-        "appended": ("[green]appended[/green]", True),
-        "updated": ("[green]updated[/green]", True),
-        "skipped": ("[dim]skipped[/dim]", False),
-    }
-
     for filename, info in result.items():
         action = info.get("action", "unknown")
-        label, is_change = action_labels.get(action, (action, False))
-        reason = f" — {info['reason']}" if "reason" in info else ""
-        console.print(f"  {label}  {filename}{reason}")
+        if action in ("created", "appended"):
+            label = f"[green]{action}[/green]"
+            detail = f" [dim]→ v{info.get('to_version')}[/dim]"
+        elif action == "updated":
+            fv = info.get("from_version")
+            tv = info.get("to_version")
+            label = "[green]updated[/green]"
+            detail = f" [dim]v{fv} → v{tv}[/dim]" if fv else f" [dim]→ v{tv}[/dim]"
+        else:
+            label = "[dim]skipped[/dim]"
+            detail = f" [dim]— {info.get('reason', '')}[/dim]"
+        console.print(f"  {label}  {filename}{detail}")
 
     changed = sum(1 for info in result.values() if info.get("action") != "skipped")
     if changed:
         print_success(f"Updated {changed} file(s) in {target}")
     else:
-        print_info(f"Nothing to update in {target} (use --force to overwrite existing sections)")
+        print_info(f"Already up to date (v{info.get('version', '?')})")

@@ -159,7 +159,10 @@ hopper mcp config --stdout    # Show MCP config for claude_desktop_config.json
 """
 
 
-AGENTS_MD_SECTION = """## Hopper - Persistent Memory
+AGENTS_MD_VERSION = 1
+
+AGENTS_MD_SECTION = f"""## Hopper - Persistent Memory
+<!-- hopper-agent-files: v{AGENTS_MD_VERSION} -->
 
 This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent memory across AI agent sessions.
 
@@ -463,22 +466,37 @@ def _has_mcp_config(project_path: Path) -> bool:
     return False
 
 
+def _extract_agent_files_version(content: str) -> int | None:
+    """Extract the hopper-agent-files version from file content.
+
+    Looks for: <!-- hopper-agent-files: vN -->
+
+    Returns:
+        Version integer, or None if not present.
+    """
+    import re
+    match = re.search(r"<!--\s*hopper-agent-files:\s*v(\d+)\s*-->", content)
+    return int(match.group(1)) if match else None
+
+
 def write_agent_files(project_path: Path, force: bool = False) -> dict[str, Any]:
     """Write AGENTS.md and CLAUDE.md into the project root.
 
     If either file already exists:
-    - Without force: appends a Hopper section if not present, skips if already there.
-    - With force: replaces the existing Hopper section with the current version.
+    - Without force: appends if no Hopper section; skips if already at current version;
+      updates if an older version is detected.
+    - With force: always replaces the existing Hopper section.
 
     If neither exists, creates both.
 
     Args:
         project_path: Project root directory (where .hopper lives).
-        force: If True, update the Hopper section even if already present.
+        force: If True, update the Hopper section even if already at current version.
 
     Returns:
         Dict with keys "AGENTS.md" and "CLAUDE.md", each containing
-        "action": one of "created", "appended", "updated", "skipped".
+        "action": one of "created", "appended", "updated", "skipped",
+        and optional "from_version" / "to_version" keys.
     """
     section_marker = "## Hopper - Persistent Memory"
     result: dict[str, Any] = {}
@@ -488,23 +506,32 @@ def write_agent_files(project_path: Path, force: bool = False) -> dict[str, Any]
         if target.exists():
             content = target.read_text()
             if section_marker in content:
-                if force:
-                    # Replace everything from the marker to end-of-file
+                existing_version = _extract_agent_files_version(content)
+                needs_update = force or (existing_version is None) or (existing_version < AGENTS_MD_VERSION)
+
+                if needs_update:
                     pre_section = content[: content.index(section_marker)]
-                    # Strip trailing whitespace/separators before the marker
                     pre_section = pre_section.rstrip().rstrip("-").rstrip()
                     updated = f"{pre_section}\n\n---\n\n{AGENTS_MD_SECTION}"
                     target.write_text(updated)
-                    result[filename] = {"action": "updated"}
+                    result[filename] = {
+                        "action": "updated",
+                        "from_version": existing_version,
+                        "to_version": AGENTS_MD_VERSION,
+                    }
                 else:
-                    result[filename] = {"action": "skipped", "reason": "section already present (use --force to update)"}
+                    result[filename] = {
+                        "action": "skipped",
+                        "reason": f"already at v{AGENTS_MD_VERSION}",
+                        "version": existing_version,
+                    }
             else:
                 with open(target, "a") as f:
                     f.write(f"\n---\n\n{AGENTS_MD_SECTION}")
-                result[filename] = {"action": "appended"}
+                result[filename] = {"action": "appended", "to_version": AGENTS_MD_VERSION}
         else:
             target.write_text(f"# {project_path.name}\n\n{AGENTS_MD_SECTION}")
-            result[filename] = {"action": "created"}
+            result[filename] = {"action": "created", "to_version": AGENTS_MD_VERSION}
 
     return result
 
