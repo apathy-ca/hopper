@@ -86,17 +86,19 @@ class Context:
 )
 @click.pass_context
 def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool, server: bool) -> None:
-    """Hopper - Universal task queue for human-AI collaborative workflows.
+    """Hopper - Cross-agent persistent memory for human-AI workflows.
 
-    Hopper provides a powerful CLI for managing tasks, projects, and instances
-    across your development workflow.
+    Hopper gives every agent — opencode, Claude, Kilo Code, or human — a
+    shared, persistent memory layer. Tasks, learnings, decisions, and session
+    state survive across conversations and tool boundaries.
 
     Examples:
+        hopper context                          # Load session context
         hopper task add "Fix login bug"
         hopper task list --status open
-        hopper --server task add "Server task"
-        hopper project create my-project
-        hopper instance tree
+        hopper task status <id> in_progress --assign "opencode:my-task" -f
+        hopper task heartbeat <id>
+        hopper knowledge update-agent-files     # Update global agent config
     """
     # Load configuration
     cfg = load_config(config)
