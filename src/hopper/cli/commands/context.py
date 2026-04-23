@@ -73,8 +73,12 @@ def show(ctx: Context, learnings: bool, tasks: bool, limit: int) -> None:
                     result["learnings"] = items
                 if show_tasks:
                     items = client.list_tasks(status="open", limit=limit)
-                    # Filter out learnings from tasks view
-                    items = [t for t in items if "auto-learned" not in t.get("tags", [])]
+                    # Filter out learnings and memory records from tasks view
+                    items = [
+                        t for t in items
+                        if "auto-learned" not in t.get("tags", [])
+                        and "memory" not in t.get("tags", [])
+                    ]
                     result["tasks"] = items
                 print_json(result)
                 return
@@ -89,8 +93,12 @@ def show(ctx: Context, learnings: bool, tasks: bool, limit: int) -> None:
             # Show open tasks section
             if show_tasks:
                 task_items = client.list_tasks(status="open", limit=limit)
-                # Filter out learnings
-                task_items = [t for t in task_items if "auto-learned" not in t.get("tags", [])]
+                # Filter out learnings and memory records
+                task_items = [
+                    t for t in task_items
+                    if "auto-learned" not in t.get("tags", [])
+                    and "memory" not in t.get("tags", [])
+                ]
                 _print_tasks_section(task_items, limit)
 
             # Show northbound items (flagged for upstream)

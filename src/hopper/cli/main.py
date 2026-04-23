@@ -58,7 +58,7 @@ class Context:
         return get_storage_path(self.config, self._force_server)
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="hopper")
 @click.option(
     "--config",
@@ -114,6 +114,10 @@ def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool
             console.print(f"[dim]Mode: local ({storage_path})[/dim]")
         else:
             console.print(f"[dim]Mode: server ({cfg.current_profile.api.endpoint})[/dim]")
+
+    # Bare `hopper` with no subcommand → list tasks
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(ls_shortcut)
 
 
 # Import command groups
