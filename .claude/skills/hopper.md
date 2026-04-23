@@ -26,7 +26,7 @@ Quick task management for human-AI collaborative workflows.
 ### Update task status
 ```
 /hopper done <task-id>
-/hopper claim <task-id>
+/hopper claim <task-id> [--assign platform:task-name]
 /hopper block <task-id>
 ```
 
@@ -63,17 +63,17 @@ hopper task list [--status <s>] [--priority <p>]
 
 For `done`:
 ```bash
-hopper task status <task-id> done
+hopper task status <task-id> completed -f
 ```
 
 For `claim`:
 ```bash
-hopper task status <task-id> claimed
+hopper task status <task-id> in_progress --assign "<platform:task-name>" -f
 ```
 
 For `block`:
 ```bash
-hopper task status <task-id> blocked
+hopper task status <task-id> blocked -f
 ```
 
 For `get`:
@@ -88,7 +88,7 @@ hopper ls
 
 For `todo`:
 ```bash
-hopper task list --status pending
+hopper task list --status open
 ```
 
 **Output:**
