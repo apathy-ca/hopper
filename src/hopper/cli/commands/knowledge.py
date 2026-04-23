@@ -207,3 +207,53 @@ def refresh(ctx: Context) -> None:
 
     usage_file = write_hopper_usage(knowledge_path)
     print_success(f"Refreshed {usage_file}")
+
+
+@knowledge.command(name="update-agent-files")
+@click.option("--force", "-f", is_flag=True, help="Replace existing Hopper section with latest version.")
+@click.option("--path", "-p", "project_path", default=None, help="Project root to update (default: current directory).")
+@click.pass_obj
+def update_agent_files(ctx: Context, force: bool, project_path: str | None) -> None:
+    """Update AGENTS.md and CLAUDE.md with the latest Hopper section.
+
+    Use this to bring existing Hopper instances up to date after a Hopper
+    upgrade. Without --force, skips files that already have a Hopper section.
+    With --force, replaces the existing section with the current version.
+
+    Examples:
+        hopper knowledge update-agent-files           # Append if missing
+        hopper knowledge update-agent-files --force   # Update in place
+        hopper knowledge update-agent-files -f -p /path/to/project
+    """
+    from hopper.storage.knowledge import write_agent_files
+
+    target = Path(project_path) if project_path else Path.cwd()
+
+    if not target.exists():
+        print_error(f"Path not found: {target}")
+        raise click.Abort()
+
+    result = write_agent_files(target, force=force)
+
+    if ctx.json_output:
+        print_json(result)
+        return
+
+    action_labels = {
+        "created": ("[green]created[/green]", True),
+        "appended": ("[green]appended[/green]", True),
+        "updated": ("[green]updated[/green]", True),
+        "skipped": ("[dim]skipped[/dim]", False),
+    }
+
+    for filename, info in result.items():
+        action = info.get("action", "unknown")
+        label, is_change = action_labels.get(action, (action, False))
+        reason = f" — {info['reason']}" if "reason" in info else ""
+        console.print(f"  {label}  {filename}{reason}")
+
+    changed = sum(1 for info in result.values() if info.get("action") != "skipped")
+    if changed:
+        print_success(f"Updated {changed} file(s) in {target}")
+    else:
+        print_info(f"Nothing to update in {target} (use --force to overwrite existing sections)")

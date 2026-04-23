@@ -55,24 +55,25 @@ hopper task add "Test-first approach worked well" --tag feedback
 ### Listing & Filtering
 
 ```bash
-hopper task list                    # All open tasks
-hopper task list --status completed # Completed items
-hopper task list --tag learning     # Filter by tag
-hopper task list --priority high    # Filter by priority
+hopper task list                      # All open tasks
+hopper task list --status completed   # Completed items
+hopper task list --tag learning       # Filter by tag
+hopper task list --priority high      # Filter by priority
 ```
 
 ### Context View
 
 ```bash
-hopper context          # Show recent learnings + open tasks
-hopper context --tasks  # Just open tasks
+hopper context    # Show recent learnings + open tasks
 ```
 
 ### Completing Tasks
 
 ```bash
-hopper task done <task-id>      # Mark as completed
-hopper task update <id> --status in_progress
+hopper task status <task-id> completed -f     # Mark as completed
+hopper task status <task-id> in_progress -f   # Claim a task
+hopper task status <task-id> open -f          # Release a task
+hopper task status <task-id> blocked -f       # Mark as blocked
 ```
 
 ## Best Practices for Agents
@@ -167,18 +168,24 @@ This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent m
 ### Quick commands
 
 ```bash
-hopper task add "Note or task"   # Store something
-hopper task list                 # See open tasks
-hopper context                   # Recent learnings + open tasks
+hopper task add "Note or task"              # Store something
+hopper task list                            # See open tasks
+hopper task status <id> in_progress -f     # Claim a task
+hopper task status <id> completed -f       # Complete a task
+hopper task heartbeat <id>                  # Signal still working
+hopper context                              # Recent learnings + open tasks
 ```
 
-### What to store
+### Agent identity
 
-- Architecture decisions and rationale
-- User preferences discovered during the session
-- Project patterns (`Pattern: all API routes use /api/v1 prefix`)
-- Feedback on what worked / didn\'t
-- Session handoff notes before ending a conversation
+Identify yourself with `platform:task-name` when claiming work:
+- `opencode:my-task`, `claude:acm-rewrite`, `kilocode:prh-transfer`, `human:james`
+- Never use generic names like `main`.
+
+### Session lifecycle
+
+On start: `hopper task list` → check `in_progress` tasks → claim or create your task.
+During work: heartbeat every 10-15 min. On end: mark `completed` or release to `open`.
 
 ### Knowledge base
 
@@ -186,8 +193,9 @@ Agent knowledge is available in `.hopper/knowledge/` — coding standards, desig
 patterns, agent roles, and workflows relevant to this project type.
 
 ```bash
-hopper knowledge list   # See what\'s available
-hopper knowledge show   # View hopper usage guide
+hopper knowledge list                       # See what\'s available
+hopper knowledge show                       # View hopper usage guide
+hopper knowledge update-agent-files        # Re-sync AGENTS.md/CLAUDE.md to latest
 ```
 """
 
@@ -455,18 +463,22 @@ def _has_mcp_config(project_path: Path) -> bool:
     return False
 
 
-def write_agent_files(project_path: Path) -> dict[str, Any]:
+def write_agent_files(project_path: Path, force: bool = False) -> dict[str, Any]:
     """Write AGENTS.md and CLAUDE.md into the project root.
 
-    If either file already exists, appends a Hopper section (idempotent —
-    won't add the section twice). If neither exists, creates both.
+    If either file already exists:
+    - Without force: appends a Hopper section if not present, skips if already there.
+    - With force: replaces the existing Hopper section with the current version.
+
+    If neither exists, creates both.
 
     Args:
         project_path: Project root directory (where .hopper lives).
+        force: If True, update the Hopper section even if already present.
 
     Returns:
-        Dict with keys "agents_md" and "claude_md", each containing
-        "action": one of "created", "appended", "skipped".
+        Dict with keys "AGENTS.md" and "CLAUDE.md", each containing
+        "action": one of "created", "appended", "updated", "skipped".
     """
     section_marker = "## Hopper - Persistent Memory"
     result: dict[str, Any] = {}
@@ -476,7 +488,16 @@ def write_agent_files(project_path: Path) -> dict[str, Any]:
         if target.exists():
             content = target.read_text()
             if section_marker in content:
-                result[filename] = {"action": "skipped", "reason": "section already present"}
+                if force:
+                    # Replace everything from the marker to end-of-file
+                    pre_section = content[: content.index(section_marker)]
+                    # Strip trailing whitespace/separators before the marker
+                    pre_section = pre_section.rstrip().rstrip("-").rstrip()
+                    updated = f"{pre_section}\n\n---\n\n{AGENTS_MD_SECTION}"
+                    target.write_text(updated)
+                    result[filename] = {"action": "updated"}
+                else:
+                    result[filename] = {"action": "skipped", "reason": "section already present (use --force to update)"}
             else:
                 with open(target, "a") as f:
                     f.write(f"\n---\n\n{AGENTS_MD_SECTION}")
