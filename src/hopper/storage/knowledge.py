@@ -203,6 +203,149 @@ hopper knowledge update-agent-files        # Re-sync AGENTS.md/CLAUDE.md to late
 """
 
 
+HOPPER_SKILL_CONTENT = """\
+---
+name: hopper
+description: Interact with Hopper — the cross-agent persistent memory and task management CLI. Use this to read context, add tasks, claim work, record learnings, and manage session state.
+---
+
+## What I do
+
+Hopper is a CLI-based persistent memory system. It stores tasks, learnings, decisions, and session state in `.hopper/` as markdown files — no server required. All agents (opencode, claude, kilocode, human) share the same board.
+
+## When to use me
+
+- At session start — to load context and check what's in flight
+- When you discover something worth remembering
+- When claiming, updating, or completing a task
+- Before ending a session — to record state for the next agent
+
+## Core commands
+
+```bash
+# Session start
+hopper context                                # Recent learnings + open tasks
+hopper task list                              # Full task board
+hopper task get <id>                          # Details on a specific task
+
+# Claim work
+hopper task status <id> in_progress --assign "opencode:my-task" -f
+
+# Heartbeat (every 10-15 min of active work)
+hopper task heartbeat <id>
+hopper task heartbeat <id> --expect 2h        # Before long-running work
+
+# Complete or release
+hopper task status <id> completed -f
+hopper task update <id> --unassign && hopper task status <id> open -f
+
+# Add a task or learning
+hopper task add "Title" --priority high
+hopper task add "Learning: X works better than Y" --tag learning
+hopper task add "Decision: chose approach A because..." --tag decision
+
+# Find stale tasks from dead agents
+hopper task stale
+
+# Sync with upstream server
+hopper sync
+```
+
+## Agent identity format
+
+Always use `platform:task-name` when assigning:
+- `opencode:my-task`, `claude:acm-rewrite`, `kilocode:prh-transfer`, `human:james`
+- Never use generic names like `main`
+
+## Status values
+
+`open` | `in_progress` | `blocked` | `completed` | `cancelled`
+
+## Useful tags
+
+`learning`, `decision`, `preference`, `pattern`, `feedback`, `session`, `gpu-job`
+"""
+
+GLOBAL_AGENTS_MD_SECTION = """\
+## Hopper — Cross-Agent Memory
+
+Hopper is the persistent memory system used across all agents. It is available as a CLI (`hopper`) and stores tasks, learnings, and decisions in `.hopper/` as markdown files.
+
+**On every session start:**
+1. Run `hopper context` to load recent learnings and open tasks
+2. Check `in_progress` tasks before starting new work — another agent may already own it
+3. Claim your task: `hopper task status <id> in_progress --assign "platform:short-task-name" -f`
+
+**During work:**
+- Heartbeat every 10-15 min: `hopper task heartbeat <id>`
+- Record learnings as you go: `hopper task add "Learning: ..." --tag learning`
+
+**On session end:**
+- Mark completed: `hopper task status <id> completed -f`
+- Or release: `hopper task update <id> --unassign && hopper task status <id> open -f`
+
+**Agent identity:** always `platform:task-name` — e.g. `opencode:hopper-fixes`, never `opencode:main`.
+
+Load the `hopper` skill for the full CLI reference.
+"""
+
+GLOBAL_AGENTS_MD_MARKER = "## Hopper — Cross-Agent Memory"
+
+
+def write_global_agent_files() -> dict[str, Any]:
+    """Install Hopper skill and session protocol into global agent config dirs.
+
+    Writes to:
+    - ~/.config/opencode/skills/hopper/SKILL.md  (opencode native)
+    - ~/.claude/skills/hopper/SKILL.md            (Claude-compatible, also read by opencode)
+    - ~/.config/opencode/AGENTS.md               (appends Hopper section if missing)
+
+    Safe to call repeatedly — idempotent on all targets.
+
+    Returns:
+        Dict describing actions taken per file.
+    """
+    result: dict[str, Any] = {}
+    home = Path.home()
+
+    # Skill file locations
+    skill_locations = [
+        home / ".config" / "opencode" / "skills" / "hopper" / "SKILL.md",
+        home / ".claude" / "skills" / "hopper" / "SKILL.md",
+    ]
+
+    for skill_path in skill_locations:
+        skill_path.parent.mkdir(parents=True, exist_ok=True)
+        if skill_path.exists():
+            existing = skill_path.read_text()
+            if existing.strip() == HOPPER_SKILL_CONTENT.strip():
+                result[str(skill_path)] = {"action": "skipped", "reason": "already current"}
+            else:
+                skill_path.write_text(HOPPER_SKILL_CONTENT)
+                result[str(skill_path)] = {"action": "updated"}
+        else:
+            skill_path.write_text(HOPPER_SKILL_CONTENT)
+            result[str(skill_path)] = {"action": "created"}
+
+    # Global AGENTS.md — opencode reads ~/.config/opencode/AGENTS.md
+    global_agents = home / ".config" / "opencode" / "AGENTS.md"
+    global_agents.parent.mkdir(parents=True, exist_ok=True)
+
+    if global_agents.exists():
+        content = global_agents.read_text()
+        if GLOBAL_AGENTS_MD_MARKER in content:
+            result[str(global_agents)] = {"action": "skipped", "reason": "section already present"}
+        else:
+            with open(global_agents, "a") as f:
+                f.write(f"\n---\n\n{GLOBAL_AGENTS_MD_SECTION}")
+            result[str(global_agents)] = {"action": "appended"}
+    else:
+        global_agents.write_text(f"# Agent Rules\n\n{GLOBAL_AGENTS_MD_SECTION}")
+        result[str(global_agents)] = {"action": "created"}
+
+    return result
+
+
 def _is_git_url(source: str) -> bool:
     """Check if source is a Git URL."""
     return source.startswith(("https://", "git@", "ssh://", "git://"))

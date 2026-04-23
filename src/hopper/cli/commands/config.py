@@ -106,6 +106,7 @@ def _init_local_mode(
     from hopper.storage.knowledge import (
         initialize_knowledge,
         write_agent_files,
+        write_global_agent_files,
         DEFAULT_KNOWLEDGE_SOURCE,
     )
 
@@ -192,6 +193,16 @@ def _init_local_mode(
         elif action == "appended":
             print_success(f"Added Hopper section to {filename}")
         # "skipped" means it was already there — no output needed
+
+    # Install global skill + session protocol into ~/.config/opencode/ and ~/.claude/
+    global_results = write_global_agent_files()
+    global_changes = [r for r in global_results.values() if r.get("action") not in ("skipped",)]
+    if global_changes:
+        print_success("Installed Hopper skill and session protocol globally")
+        for path, info in global_results.items():
+            action = info.get("action")
+            if action != "skipped":
+                console.print(f"  [dim]{action}[/dim]  {path}")
 
     console.print("\n[bold green]Hopper initialized![/bold green]")
     console.print("[dim]Try: hopper task add 'My first task'[/dim]\n")
