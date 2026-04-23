@@ -11,9 +11,12 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .protocol import SyncTask
+
+if TYPE_CHECKING:
+    from .shadow import RevisionShadowWriter
 
 
 class DIDStatus(str, Enum):
@@ -527,6 +530,7 @@ class UpstreamStorage:
     _index: dict[str, int] = field(default_factory=dict)  # "instance/task_id" -> updated_at
     did_registry: DIDRegistry = field(init=False)
     invites: InviteStore = field(init=False)
+    shadow_writer: "RevisionShadowWriter | None" = field(default=None)
 
     def __post_init__(self) -> None:
         self.tasks_dir = self.storage_path / "tasks"
@@ -665,10 +669,11 @@ class UpstreamStorage:
         path = self._task_path(instance, task_id)
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        task_payload = task.model_dump(mode="json")
         with open(path, "w") as f:
             json.dump(
                 {
-                    "task": task.model_dump(mode="json"),
+                    "task": task_payload,
                     "received_at": stored.received_at,
                     "from_did": stored.from_did,
                 },
@@ -679,6 +684,11 @@ class UpstreamStorage:
 
         self._index[key] = incoming_ts
         self._save_index()
+
+        # Phase 4a shadow write (fail-soft; JSON above is authoritative)
+        if self.shadow_writer is not None:
+            self.shadow_writer.record_write(task_payload, from_did, stored.received_at)
+
         return True, "accepted"
 
     def list_since(self, since_ms: int, instance: str) -> list[SyncTask]:

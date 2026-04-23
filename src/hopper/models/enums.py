@@ -106,3 +106,45 @@ class InstanceType(str, Enum):
     PERSISTENT = "persistent"
     EPHEMERAL = "ephemeral"
     TEMPORARY = "temporary"
+
+
+class RecordType(str, Enum):
+    """Record type discriminator.
+
+    - INBOX: default for untriaged captures (from `hopper note ...`).
+      Triage agents move inbox items to terminal kinds.
+    - TASK: record with a status lifecycle.
+    - IDEA: no lifecycle, may never be "done."
+    - NOTE: terminal, append-only context.
+    - MEMORY: agent knowledge, first-class across agents (attributed by
+      author DID). Not tied to Claude's auto-memory; that system stays
+      untouched here and can bridge in later via MCP.
+    - REFERENCE: pointer to external resource (doc, dashboard, ticket).
+    - LOG: immutable event record (publishes, GPU state transitions).
+
+    Payload stays JSON so types can evolve without schema migrations.
+    """
+
+    INBOX = "inbox"
+    TASK = "task"
+    IDEA = "idea"
+    NOTE = "note"
+    MEMORY = "memory"
+    REFERENCE = "reference"
+    LOG = "log"
+
+
+class RevisionAction(str, Enum):
+    """Action recorded on a revision.
+
+    create/update/tombstone are applied directly. propose is a pending change
+    that does not advance the record's current_revision until followed by an
+    apply. reject marks a propose as refused.
+    """
+
+    CREATE = "create"
+    UPDATE = "update"
+    TOMBSTONE = "tombstone"
+    PROPOSE = "propose"
+    APPLY = "apply"
+    REJECT = "reject"

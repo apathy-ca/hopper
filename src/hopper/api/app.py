@@ -44,8 +44,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from hopper.upstream.server import configure_storage
     upstream_path = _get_upstream_storage_path()
     upstream_path.mkdir(parents=True, exist_ok=True)
-    configure_storage(upstream_path)
+    shadow_sqlite_url = os.getenv("HOPPER_SHADOW_SQLITE_URL") or None
+    configure_storage(upstream_path, shadow_sqlite_url=shadow_sqlite_url)
     logger.info(f"Upstream storage: {upstream_path}")
+    if shadow_sqlite_url:
+        logger.info(f"Revision shadow SQLite: {shadow_sqlite_url}")
 
     logger.info("Starting Hopper API")
     async with get_streamable_session_manager().run():

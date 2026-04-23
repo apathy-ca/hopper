@@ -123,6 +123,7 @@ from hopper.cli.commands.knowledge import knowledge
 from hopper.cli.commands.learning import learning
 from hopper.cli.commands.project import project
 from hopper.cli.commands.server import server
+from hopper.cli.commands.kinds import register as register_kinds
 from hopper.cli.commands.task import add_shortcut, ls_shortcut, task
 from hopper.cli.commands.upstream import upstream
 from hopper.cli.mcp_commands import mcp
@@ -149,6 +150,9 @@ cli.add_command(server)
 # Register shortcuts
 cli.add_command(add_shortcut)
 cli.add_command(ls_shortcut)
+
+# Register per-kind command groups (Phase 4c)
+register_kinds(cli)
 
 
 def main():

@@ -80,6 +80,8 @@ class LocalClient:
                 raise LocalClientError(f"Parent task not found: {parent_id}")
             parent_id = resolved
 
+        from hopper.location import resolve_location
+
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
             description=data.get("description"),
@@ -89,6 +91,7 @@ class LocalClient:
             status=data.get("status", "pending"),
             assigned_to=data.get("assigned_to"),
             parent_id=parent_id,
+            source=data.get("source") or resolve_location(transport="cli"),
         )
         task.instance = self.config.instance_id
         self.task_store.create(task)

@@ -12,6 +12,8 @@ from .enums import (
     HopperScope,
     InstanceStatus,
     InstanceType,
+    RecordType,
+    RevisionAction,
     TaskPriority,
     TaskSource,
     TaskStatus,
@@ -19,7 +21,10 @@ from .enums import (
 )
 from .external_mapping import ExternalMapping
 from .hopper_instance import HopperInstance
+from .ids import new_ulid
 from .project import Project
+from .record import Record
+from .revision import Revision
 from .routing_decision import RoutingDecision
 from .task import Task
 from .task_delegation import DelegationStatus, DelegationType, TaskDelegation
@@ -30,6 +35,8 @@ __all__ = [
     "TimestampMixin",
     "Task",
     "Project",
+    "Record",
+    "Revision",
     "RoutingDecision",
     "TaskFeedback",
     "ExternalMapping",
@@ -37,6 +44,7 @@ __all__ = [
     "TaskDelegation",
     "DelegationType",
     "DelegationStatus",
+    "new_ulid",
     # Enums
     "TaskStatus",
     "TaskPriority",
@@ -48,4 +56,6 @@ __all__ = [
     "VelocityRequirement",
     "ExternalPlatform",
     "TaskSource",
+    "RecordType",
+    "RevisionAction",
 ]

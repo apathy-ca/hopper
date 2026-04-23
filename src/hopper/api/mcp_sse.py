@@ -259,33 +259,126 @@ mcp = FastMCP("hopper")
 # =============================================================================
 
 
+_VALID_KINDS = ("inbox", "task", "idea", "note", "memory", "reference", "log")
+
+
 @mcp.tool()
 def hopper_create_task(
     title: str,
     description: str = "",
     priority: str = "medium",
     tags: list[str] | None = None,
+    kind: str = "task",
+    location: str | None = None,
 ) -> dict:
-    """Create a new task in Hopper.
+    """Create a new record in Hopper.
 
-    Use this to track work items, TODOs, learnings, or any persistent notes
-    that should survive across sessions.
+    Records have a 'kind' that shapes how they should be treated:
+      - task: work with a status lifecycle (what most agents create)
+      - idea: seed or concept, no lifecycle
+      - note: durable context, append-only
+      - memory: agent knowledge (prefer hopper_create_memory for richer fields)
+      - reference: pointer to an external resource
+      - log: immutable event record
+      - inbox: untriaged capture (triage agent moves to a terminal kind)
+
+    Call hopper_instructions() for the full type guide.
 
     Args:
-        title: Task title (required) - a concise summary of the task
-        description: Detailed task description or notes
-        priority: Task priority - one of: low, medium, high, urgent
-        tags: List of tags for categorization and filtering
+        title: Concise summary (required)
+        description: Detailed body or notes
+        priority: low | medium | high | urgent (default medium)
+        tags: Free-form tags for search and filtering
+        kind: Record kind, one of inbox, task, idea, note, memory, reference, log
+        location: Author location — your execution context. Examples:
+            "phone-claude", "web-chat", "waypoint-skill", "rosetta-agent".
+            Omit to accept the default ("mcp"). Pass something specific
+            when you know where you are so the write is attributed
+            richly in revision history.
     """
+    if kind not in _VALID_KINDS:
+        return {
+            "status": "error",
+            "message": f"Invalid kind '{kind}'. Use one of: {', '.join(_VALID_KINDS)}",
+        }
     try:
+        from hopper.location import resolve_location
+
+        tag_list = list(tags or [])
+        if kind != "task" and kind not in tag_list:
+            tag_list.insert(0, kind)
+
         with _get_client() as client:
             result = client.create_task({
                 "title": title,
                 "description": description,
                 "priority": priority,
-                "tags": tags or [],
+                "tags": tag_list,
+                "source": resolve_location(override=location, transport="mcp"),
             })
             return {"status": "created", "task": result}
+    except LocalClientError as e:
+        return {"status": "error", "message": e.message}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def hopper_create_memory(
+    title: str,
+    content: str,
+    subject: str,
+    scope: str = "shared-with-user",
+    provenance: str | None = None,
+    priority: str = "medium",
+    tags: list[str] | None = None,
+    location: str | None = None,
+) -> dict:
+    """Create a memory record — first-class agent knowledge.
+
+    Memory is first-class across agents in Hopper: Claude, Rosetta,
+    audit-agent, and future agents all share this store. Every memory
+    is attributed by author DID so "what does each agent know" is a
+    real, queryable question. Unlike Claude's vendor-specific auto-memory,
+    this is cross-agent and revisioned.
+
+    Args:
+        title: Short memory title (e.g. "User prefers terse responses")
+        content: Full memory body, prose or structured
+        subject: What the memory is about. Use one of the conventions:
+            "user:preferences", "user:<topic>",
+            "project:<project>", "agent:<agent-name>", "self"
+        scope: Who can read this memory:
+            "private" — only the author agent should use it
+            "shared-with-user" — surface to the human in conversations
+            "shared-across-agents" — any agent can rely on it
+        provenance: How the memory was learned. Free-form, but prefer:
+            "conversation YYYY-MM-DD", "observation", "inference from <id>"
+        priority: low | medium | high | urgent (default medium)
+        tags: Additional tags (the 'memory' tag is added automatically)
+        location: Author location — see hopper_create_task for guidance.
+    """
+    try:
+        from hopper.location import resolve_location
+
+        preamble: list[str] = [f"Subject: {subject}", f"Scope: {scope}"]
+        if provenance:
+            preamble.append(f"Provenance: {provenance}")
+        description = "\n".join(preamble) + "\n\n" + content
+
+        tag_list = list(tags or [])
+        if "memory" not in tag_list:
+            tag_list.insert(0, "memory")
+
+        with _get_client() as client:
+            result = client.create_task({
+                "title": title,
+                "description": description,
+                "priority": priority,
+                "tags": tag_list,
+                "source": resolve_location(override=location, transport="mcp"),
+            })
+            return {"status": "created", "memory": result}
     except LocalClientError as e:
         return {"status": "error", "message": e.message}
     except Exception as e:
@@ -849,47 +942,126 @@ def hopper_instructions() -> str:
     _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
     instance_line = f"Active instance: **{instance_name}**" if instance_name else "Active instance: **default** (token has no instance scope)"
 
-    return f"""# Hopper — Persistent Task & Memory Store
+    return f"""# Hopper — Persistent Record Store for AI Agents
 
-Hopper is a long-term task store for AI agents. Tasks persist across sessions.
+Hopper is a long-term store shared across agents (Claude, Rosetta-agent,
+audit-agent, and future agents). Records persist across sessions and are
+queryable by type, author, and location.
 
 ## Your session
 
 {instance_line}
 
-This is set by your authentication token and applies to all tool calls in this session.
-Use hopper_switch_instance("name") only if you need to explicitly change it.
+This is set by your authentication token and applies to all tool calls
+in this session. Use hopper_switch_instance("name") only if you need to
+explicitly change it.
 
-## Core workflow
+## Record types
+
+Records have a `kind` that shapes how they behave. Pick the right one at
+capture time when you can — a triage agent will move `inbox` items to a
+terminal kind otherwise.
+
+  task       Work item with a status lifecycle. Has an owner, a status
+             (open/in_progress/blocked/completed), and heartbeats when
+             being worked. Default kind for hopper_create_task.
+
+  idea       A seed or concept. No status lifecycle — ideas may never
+             be "done." Use for "something worth writing about later"
+             or "what if we built X." Do NOT use `task` for these; it
+             pollutes task lists with items that will never complete.
+
+  note       Durable context, append-only. Architecture decisions,
+             session handoff notes, design rationale that should
+             survive sessions. Not actionable.
+
+  memory     Agent knowledge (use hopper_create_memory for richer
+             fields). Cross-agent: what YOU learned is readable by
+             other agents. First-class in Hopper — do not silo memory
+             in your own vendor-specific store when it could be shared.
+
+  reference  Pointer to an external resource: a dashboard URL, a doc,
+             a ticket. Cheap to create, useful for "where was that thing."
+
+  log        Immutable event record. Published a post, triggered a
+             deploy, GPU state transitioned. Write, never update.
+
+  inbox      Untriaged capture. Default when you're unsure. A triage
+             agent will move it to a terminal kind later.
+
+Create with:
+  hopper_create_task(title=..., kind="idea")       # or task/note/log/etc.
+  hopper_create_memory(title=..., content=...,
+                        subject="user:preferences",
+                        scope="shared-with-user")
+
+## Core task workflow
 
 Check what's open before starting work:
   hopper_list_tasks(status="open", limit=20)
 
 Claim a task when you start it:
-  hopper_update_task_status(task_id, "in_progress", assigned_to="claude:<task-name>")
+  hopper_update_task_status(task_id, "in_progress",
+                             assigned_to="claude:<task-name>")
 
 Send heartbeats every 10-15 min during long work:
   hopper_heartbeat(task_id)
 
 Complete or release when done:
   hopper_update_task_status(task_id, "completed")
-  — or to release without finishing: hopper_update_task(task_id, assigned_to=None, status="open")
+  — or to release without finishing:
+  hopper_update_task(task_id, assigned_to=None, status="open")
 
-## Creating tasks
+## Author location — identify WHERE you are
 
-  hopper_create_task(title="...", priority="high", tags=["backend"])
+Every write carries a `location` that becomes part of the revision
+history. Prior art was just "cli" or "mcp" — not useful. Pass a specific
+token that identifies your execution context:
 
-Priority: critical > high > medium > low. Tags are free-form.
+  phone-claude         Claude Desktop on phone
+  web-chat             claude.ai / web chat surface
+  waypoint-skill       /hopper skill inside the Waypoint project
+  rosetta-agent        Rosetta's GPU task controller
+  audit-agent@ember    Hopper's own audit agent on ember
+  jay-laptop-cli       CLI from jay's laptop
+  ember-cli            CLI on the ember server
+
+Pass the `location` argument on any creation tool call. If omitted, the
+server records a generic "mcp" token, which is lossy. Err on the side
+of being specific.
+
+## Memory — how to capture agent knowledge
+
+Use hopper_create_memory, not hopper_create_task, for things you've
+learned:
+
+  - User preferences ("User prefers terse responses")
+  - Project context ("Waypoint's CLAUDE.md requires ember-specific build step")
+  - Observations about other agents ("Rosetta-agent queues peak at 03:00")
+  - Inferences that took work to derive
+
+subject: identify the target of the memory. Conventions:
+  user:preferences, user:<topic>, project:<slug>,
+  agent:<agent-name>, self
+
+scope:
+  private                 only the author agent should act on this
+  shared-with-user        surface to the human in conversations (default)
+  shared-across-agents    any agent can rely on it (for widely-useful facts)
+
+provenance: how you learned it ("conversation 2026-04-22", "observation",
+"inference from memory-id abc123").
 
 ## Searching
 
   hopper_search_tasks("keyword")
   hopper_list_tasks(status="open", priority="high")
-  hopper_list_tasks(tags=["gpu"])
+  hopper_list_tasks(tags=["memory"])       # all memories
+  hopper_list_tasks(tags=["idea"])         # all ideas
 
 ## Instances
 
-Each token is scoped to a Hopper instance (a project namespace).
+Each token is scoped to a Hopper instance (project namespace).
   hopper_list_instances()        — see available instances
   hopper_switch_instance("name") — switch context for subsequent calls
 
@@ -908,14 +1080,18 @@ Never use generic names like "claude:main".
 
 ## Stale task detection
 
-  hopper_list_stale_tasks()  — finds tasks with no heartbeat in 30+ min
+  hopper_list_stale_tasks()  — tasks with no heartbeat in 30+ min
 
-## Task schema fields
+## Record schema fields (surface)
 
-  id, title, status, priority, description, tags, instance, source
+  id, title, status, priority, description, tags, instance
+  source (== author location, e.g. "ember-cli", "phone-claude")
   depends_on, parent_id, assigned_to, owner, requester
   external_id, external_url, external_platform, context
   created_at, updated_at, last_heartbeat, expected_heartbeat
+
+Revision history (author_did, author_location per write) is tracked
+internally when the server is running with the SQLite shadow enabled.
 """
 
 
