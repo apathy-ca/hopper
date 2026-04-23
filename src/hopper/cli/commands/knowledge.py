@@ -211,23 +211,23 @@ def refresh(ctx: Context) -> None:
 
 @knowledge.command(name="update-agent-files")
 @click.option("--force", "-f", is_flag=True, help="Replace existing Hopper section with latest version.")
-@click.option("--path", "-p", "project_path", default=None, help="Project root to update (default: current directory).")
 @click.pass_obj
-def update_agent_files(ctx: Context, force: bool, project_path: str | None) -> None:
+def update_agent_files(ctx: Context, force: bool) -> None:
     """Update AGENTS.md and CLAUDE.md with the latest Hopper section.
 
-    Use this to bring existing Hopper instances up to date after a Hopper
-    upgrade. Without --force, skips files that already have a Hopper section.
-    With --force, replaces the existing section with the current version.
+    Run this inside a project that has a .hopper/ directory to bring its
+    agent files up to date after a Hopper upgrade. Without --force, skips
+    files that already have a Hopper section. With --force, replaces the
+    existing section with the current version.
 
     Examples:
         hopper knowledge update-agent-files           # Append if missing
         hopper knowledge update-agent-files --force   # Update in place
-        hopper knowledge update-agent-files -f -p /path/to/project
     """
     from hopper.storage.knowledge import write_agent_files
 
-    target = Path(project_path) if project_path else Path.cwd()
+    embedded = detect_embedded_hopper()
+    target = embedded.parent if embedded else Path.cwd()
 
     if not target.exists():
         print_error(f"Path not found: {target}")
