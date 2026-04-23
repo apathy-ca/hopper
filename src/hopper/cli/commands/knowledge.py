@@ -224,7 +224,7 @@ def update_agent_files(ctx: Context, force: bool) -> None:
         hopper knowledge update-agent-files           # Append if missing
         hopper knowledge update-agent-files --force   # Update in place
     """
-    from hopper.storage.knowledge import write_agent_files
+    from hopper.storage.knowledge import write_agent_files, write_global_agent_files
 
     embedded = detect_embedded_hopper()
     target = embedded.parent if embedded else Path.cwd()
@@ -236,7 +236,8 @@ def update_agent_files(ctx: Context, force: bool) -> None:
     result = write_agent_files(target, force=force)
 
     if ctx.json_output:
-        print_json(result)
+        global_result = write_global_agent_files()
+        print_json({"project": result, "global": global_result})
         return
 
     for filename, info in result.items():
@@ -259,3 +260,12 @@ def update_agent_files(ctx: Context, force: bool) -> None:
         print_success(f"Updated {changed} file(s) in {target}")
     else:
         print_info(f"Already up to date (v{info.get('version', '?')})")
+
+    # Also update global skill and AGENTS.md
+    global_result = write_global_agent_files()
+    global_changed = [p for p, r in global_result.items() if r.get("action") != "skipped"]
+    if global_changed:
+        print_success("Updated global agent files:")
+        for path in global_changed:
+            action = global_result[path].get("action")
+            console.print(f"  [green]{action}[/green]  {path}")
