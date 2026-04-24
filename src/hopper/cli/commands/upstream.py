@@ -264,7 +264,10 @@ def status_upstream(ctx: Context) -> None:
                 pass
 
     if storage_path:
-        state_path = storage_path / ".sync_state"
+        from hopper.cli.local_client import LocalClient
+
+        instance_id = LocalClient(storage_path).config.instance_id
+        state_path = storage_path / f".sync_state_{instance_id}"
         if state_path.exists():
             try:
                 with open(state_path) as f:

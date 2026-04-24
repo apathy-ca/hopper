@@ -5,7 +5,7 @@ Defines the wire format for sync requests and responses.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -128,7 +128,7 @@ def datetime_to_ms(dt: datetime | None) -> int:
 
 
 def ms_to_datetime(ms: int) -> datetime | None:
-    """Convert milliseconds since epoch to datetime."""
+    """Convert milliseconds since epoch to UTC-aware datetime."""
     if ms == 0:
         return None
-    return datetime.fromtimestamp(ms / 1000)
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)

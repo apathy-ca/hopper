@@ -15,6 +15,24 @@ def _utc_now() -> datetime:
     """Get current UTC time (timezone-aware)."""
     return datetime.now(timezone.utc)
 
+
+def _parse_datetime(value: str | datetime | None) -> datetime | None:
+    """Parse a datetime value, ensuring it is UTC-aware.
+
+    Naive ISO strings (no timezone suffix) are assumed to be UTC, matching
+    the storage convention used by _utc_now().
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
 from .base import TaskStore
 from .markdown import MarkdownDocument, MarkdownStorage
 
@@ -159,8 +177,8 @@ class LocalTask:
             instance=fm.get("instance", "local"),
             source=fm.get("source", "cli"),
             depends_on=fm.get("depends_on", []),
-            created_at=datetime.fromisoformat(created) if isinstance(created, str) else created,
-            updated_at=datetime.fromisoformat(updated) if isinstance(updated, str) else updated,
+            created_at=_parse_datetime(created),
+            updated_at=_parse_datetime(updated),
             external_id=fm.get("external_id"),
             external_url=fm.get("external_url"),
             external_platform=fm.get("external_platform"),
@@ -168,16 +186,8 @@ class LocalTask:
             requester=fm.get("requester"),
             owner=fm.get("owner"),
             assigned_to=fm.get("assigned_to"),
-            last_heartbeat=(
-                datetime.fromisoformat(fm["last_heartbeat"])
-                if isinstance(fm.get("last_heartbeat"), str)
-                else fm.get("last_heartbeat")
-            ),
-            expected_heartbeat=(
-                datetime.fromisoformat(fm["expected_heartbeat"])
-                if isinstance(fm.get("expected_heartbeat"), str)
-                else fm.get("expected_heartbeat")
-            ),
+            last_heartbeat=_parse_datetime(fm.get("last_heartbeat")),
+            expected_heartbeat=_parse_datetime(fm.get("expected_heartbeat")),
             parent_id=fm.get("parent_id"),
             deleted=bool(fm.get("deleted", False)),
         )

@@ -82,9 +82,14 @@ class SyncResult:
 
 
 def _datetime_to_ms(dt: datetime | None) -> int:
-    """Convert datetime to milliseconds since epoch."""
+    """Convert datetime to milliseconds since epoch.
+
+    Naive datetimes are assumed to be UTC, matching the storage convention.
+    """
     if dt is None:
         return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
     return int(dt.timestamp() * 1000)
 
 
@@ -208,8 +213,6 @@ def sync_with_upstream(
     state_path: Path,
     instance: str = "local",
 ) -> SyncResult:
-    # Per-instance state file so switching instances doesn't skip tasks
-    state_path = state_path.parent / f"{state_path.name}_{instance}"
     """Perform a full sync with upstream server.
 
     1. Load sync state (last sync timestamp)
@@ -221,11 +224,14 @@ def sync_with_upstream(
     Args:
         task_store: Local task storage
         client: Upstream client
-        state_path: Path to sync state file
+        state_path: Path to sync state file (base path; instance suffix appended)
+        instance: Instance ID used to qualify the sync state file name
 
     Returns:
         SyncResult with pushed/pulled/conflict counts
     """
+    # Per-instance state file so switching instances doesn't skip tasks
+    state_path = state_path.parent / f"{state_path.name}_{instance}"
     result = SyncResult()
 
     # Load sync state
