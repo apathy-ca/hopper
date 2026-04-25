@@ -239,10 +239,10 @@ hopper task heartbeat <id> --expect 2h        # Before long-running work
 hopper task status <id> completed -f
 hopper task update <id> --unassign && hopper task status <id> open -f
 
-# Add a task or learning
-hopper task add "Title" --priority high
-hopper task add "Learning: X works better than Y" --tag learning
-hopper task add "Decision: chose approach A because..." --tag decision
+# Add a task or learning (always use --non-interactive to avoid prompts)
+hopper task add "Title" --priority high --non-interactive
+hopper task add "Learning: X works better than Y" --tag learning --non-interactive
+hopper task add "Decision: chose approach A because..." --tag decision --non-interactive
 
 # Find stale tasks from dead agents
 hopper task stale
