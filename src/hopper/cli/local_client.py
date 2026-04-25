@@ -13,9 +13,33 @@ from hopper.storage import (
     EpisodeMarkdownStore,
     PatternMarkdownStore,
     FeedbackMarkdownStore,
+    SQLiteStorage,
+    TaskSQLiteStore,
+    EpisodeSQLiteStore,
+    PatternSQLiteStore,
+    FeedbackSQLiteStore,
 )
 from hopper.storage.tasks import LocalTask
 from hopper.storage.memory import LocalPattern, LocalFeedback
+from hopper.storage.revision_writer import AuthorContext
+from hopper.storage.sqlite import SQLiteStorage
+
+
+def _read_storage_type(storage_path: Path) -> str:
+    """Read storage.type from config.yaml in the hopper directory.
+
+    Returns 'sqlite' or 'markdown' (default).
+    """
+    config_file = storage_path / "config.yaml"
+    if not config_file.exists():
+        return "markdown"
+    try:
+        import yaml
+        with open(config_file) as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("storage", {}).get("type", "markdown")
+    except Exception:
+        return "markdown"
 
 
 class LocalClientError(Exception):
@@ -44,15 +68,29 @@ class LocalClient:
         self.storage_path = storage_path
         self.config = StorageConfig.local(storage_path)
 
-        # Initialize storage backend
-        self.storage = MarkdownStorage(self.config)
-        self.storage.initialize()
+        storage_type = _read_storage_type(storage_path)
 
-        # Initialize stores
-        self.task_store = TaskMarkdownStore(self.storage)
-        self.episode_store = EpisodeMarkdownStore(self.storage)
-        self.pattern_store = PatternMarkdownStore(self.storage)
-        self.feedback_store = FeedbackMarkdownStore(self.storage)
+        if storage_type == "sqlite":
+            # SQLite backend — task store is SQL; episode/pattern delegate to
+            # markdown files until their SQL tables are built (Phase 4c+).
+            sqlite_storage = SQLiteStorage(self.config)
+            sqlite_storage.initialize()
+            self.storage = sqlite_storage  # type: ignore[assignment]
+            self.task_store = TaskSQLiteStore(sqlite_storage)
+            # Episode and pattern stores still need a MarkdownStorage for now
+            _md_storage = MarkdownStorage(self.config)
+            _md_storage.initialize()
+            self.episode_store = EpisodeSQLiteStore(_md_storage)
+            self.pattern_store = PatternSQLiteStore(_md_storage)
+            self.feedback_store = FeedbackSQLiteStore(sqlite_storage)
+        else:
+            # Default: markdown backend
+            self.storage = MarkdownStorage(self.config)
+            self.storage.initialize()
+            self.task_store = TaskMarkdownStore(self.storage)
+            self.episode_store = EpisodeMarkdownStore(self.storage)
+            self.pattern_store = PatternMarkdownStore(self.storage)
+            self.feedback_store = FeedbackMarkdownStore(self.storage)
 
     def __enter__(self) -> "LocalClient":
         """Context manager entry."""
@@ -60,11 +98,55 @@ class LocalClient:
 
     def __exit__(self, *args: Any) -> None:
         """Context manager exit."""
-        pass  # No cleanup needed for local storage
+        self.close()
 
     def close(self) -> None:
-        """Close the client (no-op for local)."""
-        pass
+        """Close the client, releasing any DB connections."""
+        if isinstance(self.storage, SQLiteStorage):
+            self.storage.dispose()
+
+    def _author_context(
+        self,
+        author_did: str | None = None,
+        author_location: str | None = None,
+    ) -> AuthorContext | None:
+        """Build an AuthorContext for revision tracking.
+
+        Returns None when not on the SQLite backend (markdown doesn't record
+        revisions) or when identity cannot be resolved.
+
+        Identity resolution order for DID:
+          1. Explicit author_did arg (from CLI --author-did / MCP field)
+          2. HOPPER_DID env var
+          3. Local did.key file at config.path/did.key (or ~/.hopper/did.key)
+
+        Location resolution: delegates to resolve_location().
+        """
+        if not isinstance(self.storage, SQLiteStorage):
+            return None  # markdown backend — no revisions
+
+        import os
+        from hopper.location import resolve_location
+
+        # --- DID resolution ---
+        did = author_did or os.getenv("HOPPER_DID")
+        if not did and self.storage_path:
+            key_path = self.storage_path / "did.key"
+            if key_path.exists():
+                try:
+                    from hopper.upstream.did import DIDKey
+                    did = DIDKey.load(key_path).did
+                except Exception:
+                    pass
+        if not did:
+            # No DID available — still record the write with an unknown sentinel
+            # so the revision row is not null. Agents must supply a real DID.
+            did = "did:key:unknown-local"
+
+        # --- Location resolution ---
+        location = resolve_location(override=author_location)
+
+        return AuthorContext(did=did, location=location)
 
     # =========================================================================
     # Task API methods
@@ -82,6 +164,7 @@ class LocalClient:
 
         from hopper.location import resolve_location
 
+        location = data.get("source") or resolve_location(transport="cli")
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
             description=data.get("description"),
@@ -91,10 +174,15 @@ class LocalClient:
             status=data.get("status", "pending"),
             assigned_to=data.get("assigned_to"),
             parent_id=parent_id,
-            source=data.get("source") or resolve_location(transport="cli"),
+            source=location,
+            kind=data.get("kind", "task"),
         )
         task.instance = self.config.instance_id
-        self.task_store.create(task)
+        author = self._author_context(
+            author_did=data.get("author_did"),
+            author_location=location,
+        )
+        self.task_store.create(task, author=author)
         return self._task_to_dict(task)
 
     # Sort ranks: lower number = higher in the list
@@ -236,6 +324,8 @@ class LocalClient:
         Returns:
             Created task as dict
         """
+        from hopper.location import resolve_location
+        location = data.get("source") or resolve_location(transport="cli")
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
             description=brief,
@@ -243,9 +333,14 @@ class LocalClient:
             tags=data.get("tags", []),
             project=data.get("project_id"),
             status=data.get("status", "open"),
+            source=location,
         )
         task.instance = self.config.instance_id
-        self.task_store.create(task)
+        author = self._author_context(
+            author_did=data.get("author_did"),
+            author_location=location,
+        )
+        self.task_store.create(task, author=author)
         return self._task_to_dict(task)
 
     def get_task(self, task_id: str) -> dict[str, Any]:
@@ -353,12 +448,17 @@ class LocalClient:
             else:
                 task.parent_id = None
 
-        self.task_store.save(task)
+        author = self._author_context(
+            author_did=data.get("author_did"),
+            author_location=data.get("author_location"),
+        )
+        self.task_store.save(task, author=author)
         return self._task_to_dict(task)
 
-    def delete_task(self, task_id: str) -> None:
+    def delete_task(self, task_id: str, author_did: str | None = None) -> None:
         """Soft-delete task so the deletion propagates via sync."""
-        if not self.task_store.mark_deleted(task_id):
+        author = self._author_context(author_did=author_did)
+        if not self.task_store.mark_deleted(task_id, author=author):
             raise LocalClientError(f"Task not found: {task_id}")
 
     def search_tasks(self, query: str, **params: Any) -> list[dict[str, Any]]:
@@ -399,7 +499,8 @@ class LocalClient:
             task.expected_heartbeat = now + timedelta(minutes=expect_minutes)
         else:
             task.expected_heartbeat = None
-        self.task_store.save(task)
+        author = self._author_context()
+        self.task_store.save(task, author=author)
         return self._task_to_dict(task)
 
     def list_stale_tasks(self, minutes: int = 30) -> list[dict[str, Any]]:
@@ -434,6 +535,178 @@ class LocalClient:
                 # No expectation set — use default threshold
                 stale.append(task)
         return [self._task_to_dict(t) for t in stale]
+
+    def propose_task_update(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Submit a proposed update to a task without applying it immediately.
+
+        The task's current state is unchanged.  The proposal appears in
+        ``list_pending_revisions()`` and must be applied or rejected
+        explicitly (or matched by an auto-apply rule).
+
+        Only available on the SQLite backend.
+        """
+        if not isinstance(self.storage, SQLiteStorage):
+            raise LocalClientError("Proposals require SQLite backend (storage.type: sqlite)")
+
+        task = self.task_store.get(task_id)
+        if task is None:
+            raise LocalClientError(f"Task not found: {task_id}")
+
+        # Build the proposed payload (apply proposed fields to a copy)
+        import copy
+        proposed = copy.copy(task)
+        if "title" in data:
+            proposed.title = data["title"]
+        if "description" in data:
+            proposed.description = data["description"]
+        if "priority" in data:
+            proposed.priority = data["priority"]
+        if "status" in data:
+            proposed.status = data["status"]
+        if "tags" in data:
+            proposed.tags = data["tags"]
+        if "add_tags" in data:
+            for t in data["add_tags"]:
+                if t not in proposed.tags:
+                    proposed.tags.append(t)
+        if "remove_tags" in data:
+            proposed.tags = [t for t in proposed.tags if t not in data["remove_tags"]]
+
+        author = self._author_context(
+            author_did=data.get("author_did"),
+            author_location=data.get("author_location"),
+        )
+        if author is None:
+            raise LocalClientError("Proposals require author identity (SQLite backend)")
+
+        from hopper.storage.revision_writer import propose_revision
+        with self.storage.session() as session:
+            rev_id = propose_revision(session, proposed.to_frontmatter(), author,
+                                      instance_id=task.instance or "local")
+            session.commit()
+
+        return {"revision_id": rev_id, "task_id": task_id, "status": "proposed"}
+
+    def list_pending_revisions(self, record_id: str | None = None,
+                               limit: int = 100) -> list[dict[str, Any]]:
+        """List all pending (propose) revisions awaiting apply/reject.
+
+        Only available on the SQLite backend.
+        """
+        if not isinstance(self.storage, SQLiteStorage):
+            return []
+
+        from sqlalchemy import select, not_, exists
+        from hopper.models import Revision
+        from sqlalchemy.orm import aliased
+
+        with self.storage.session() as session:
+            # A proposal is "pending" only when no subsequent apply/reject
+            # revision exists that references it via parent_revision_id.
+            Followup = aliased(Revision)
+            pending_filter = not_(
+                exists(
+                    select(Followup.id).where(
+                        Followup.parent_revision_id == Revision.id,
+                        Followup.action.in_(["apply", "reject"]),
+                    )
+                )
+            )
+
+            stmt = (
+                select(Revision)
+                .where(Revision.action == "propose")
+                .where(pending_filter)
+                .order_by(Revision.created_at.desc())
+                .limit(limit)
+            )
+            if record_id:
+                resolved = self.task_store.resolve_id(record_id)
+                stmt = stmt.where(Revision.record_id == (resolved or record_id))
+            rows = session.execute(stmt).scalars().all()
+            return [
+                {
+                    "id": r.id,
+                    "record_id": r.record_id,
+                    "action": r.action,
+                    "author_did": r.author_did,
+                    "author_location": r.author_location,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ]
+
+    def apply_revision(self, revision_id: str, author_did: str | None = None) -> dict[str, Any]:
+        """Apply a pending proposal revision.
+
+        Only available on the SQLite backend.
+        """
+        if not isinstance(self.storage, SQLiteStorage):
+            raise LocalClientError("apply_revision requires SQLite backend")
+
+        author = self._author_context(author_did=author_did)
+        if author is None:
+            raise LocalClientError("apply_revision requires author identity")
+
+        from hopper.storage.revision_writer import apply_revision as _apply
+        with self.storage.session() as session:
+            apply_rev_id = _apply(session, revision_id, author)
+            session.commit()
+        return {"applied_revision_id": apply_rev_id, "proposal_id": revision_id}
+
+    def reject_revision(self, revision_id: str, reason: str | None = None,
+                        author_did: str | None = None) -> dict[str, Any]:
+        """Reject a pending proposal revision.
+
+        Only available on the SQLite backend.
+        """
+        if not isinstance(self.storage, SQLiteStorage):
+            raise LocalClientError("reject_revision requires SQLite backend")
+
+        author = self._author_context(author_did=author_did)
+        if author is None:
+            raise LocalClientError("reject_revision requires author identity")
+
+        from hopper.storage.revision_writer import reject_revision as _reject
+        with self.storage.session() as session:
+            reject_rev_id = _reject(session, revision_id, author, reason=reason)
+            session.commit()
+        return {"rejected_revision_id": reject_rev_id, "proposal_id": revision_id}
+
+    def get_task_history(self, task_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Return revision history for a task, oldest-first.
+
+        Only meaningful on the SQLite backend — returns empty list on markdown.
+        """
+        if not isinstance(self.storage, SQLiteStorage):
+            return []
+
+        resolved = self.task_store.resolve_id(task_id)
+        if resolved is None:
+            raise LocalClientError(f"Task not found: {task_id}")
+
+        from sqlalchemy import select, text
+        from hopper.models import Revision
+
+        with self.storage.session() as session:
+            stmt = (
+                select(Revision)
+                .where(Revision.record_id == resolved)
+                .order_by(Revision.created_at.asc())
+                .limit(limit)
+            )
+            rows = session.execute(stmt).scalars().all()
+            return [
+                {
+                    "id": r.id,
+                    "action": r.action,
+                    "author_did": r.author_did,
+                    "author_location": r.author_location,
+                    "schema_version": r.schema_version,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ]
 
     def get_task_children(self, task_id: str) -> list[dict[str, Any]]:
         """Get children of a task with rollup summary."""

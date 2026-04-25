@@ -53,6 +53,17 @@ def get_task_tools() -> list[Tool]:
                             "will be automatically routed based on content."
                         ),
                     },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["task", "idea", "note", "memory", "inbox", "log", "reference"],
+                        "description": "Record kind (default: task)",
+                        "default": "task",
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "Author location context (e.g. 'phone-claude', 'ember-cli'). "
+                                       "Inferred from HOPPER_LOCATION env var if not supplied.",
+                    },
                 },
                 "required": ["title"],
             },
@@ -189,15 +200,16 @@ async def create_task(
     Returns:
         Created task information including ID and routing details
     """
+    from hopper.location import resolve_location
+
+    location = args.get("location") or resolve_location(transport="mcp")
     task_data = {
         "title": args["title"],
         "description": args.get("description", ""),
         "priority": args.get("priority", default_priority),
         "tags": args.get("tags", []),
-        "metadata": {
-            "source": "mcp",
-            "context": context,
-        },
+        "source": location,
+        "kind": args.get("kind", "task"),
     }
 
     if "project" in args:

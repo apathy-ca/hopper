@@ -68,6 +68,8 @@ class LocalTask:
     parent_id: str | None = None
     # Soft delete — propagated via sync
     deleted: bool = False
+    # Record kind (Phase 4c): task | idea | note | memory | log | reference | inbox
+    kind: str = "task"
 
     @classmethod
     def _generate_id(cls) -> str:
@@ -93,6 +95,7 @@ class LocalTask:
         assigned_to: str | None = None,
         expected_heartbeat: datetime | None = None,
         parent_id: str | None = None,
+        kind: str = "task",
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> "LocalTask":
         """Create a new task with generated ID."""
@@ -118,6 +121,7 @@ class LocalTask:
             parent_id=parent_id,
             created_at=now,
             updated_at=now,
+            kind=kind,
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -158,6 +162,8 @@ class LocalTask:
             data["parent_id"] = self.parent_id
         if self.deleted:
             data["deleted"] = True
+        if self.kind and self.kind != "task":
+            data["kind"] = self.kind
         return data
 
     @classmethod
@@ -190,6 +196,7 @@ class LocalTask:
             expected_heartbeat=_parse_datetime(fm.get("expected_heartbeat")),
             parent_id=fm.get("parent_id"),
             deleted=bool(fm.get("deleted", False)),
+            kind=fm.get("kind", "task"),
         )
 
 
@@ -246,8 +253,12 @@ class TaskMarkdownStore:
             return None
         return task
 
-    def create(self, task: LocalTask) -> None:
-        """Save a new task, regenerating ID on collision."""
+    def create(self, task: LocalTask, **kwargs: Any) -> None:
+        """Save a new task, regenerating ID on collision.
+
+        kwargs are accepted and ignored for interface compatibility with
+        TaskSQLiteStore (which accepts author= for revision tracking).
+        """
         file_path = self._task_path(task.id)
         attempts = 0
         while file_path.exists() and attempts < 5:
@@ -256,7 +267,7 @@ class TaskMarkdownStore:
             attempts += 1
         self.save(task)
 
-    def save(self, task: LocalTask) -> None:
+    def save(self, task: LocalTask, **kwargs: Any) -> None:
         """Save task to markdown file (create or update)."""
         task.updated_at = _utc_now()
 
@@ -269,7 +280,7 @@ class TaskMarkdownStore:
         self.storage.write_document(file_path, doc)
         self.storage.update_index(task.id, doc.frontmatter, file_path)
 
-    def delete(self, task_id: str) -> bool:
+    def delete(self, task_id: str, **kwargs: Any) -> bool:
         """Hard-delete task file. Used when applying a remote deletion. Returns True if deleted."""
         resolved = self.resolve_id(task_id)
         if resolved is None:
@@ -281,7 +292,7 @@ class TaskMarkdownStore:
             return True
         return False
 
-    def mark_deleted(self, task_id: str) -> bool:
+    def mark_deleted(self, task_id: str, **kwargs: Any) -> bool:
         """Soft-delete task (sets deleted=True, saves). Syncs the deletion to other instances.
 
         Idempotent — re-marking an already-deleted task is a no-op and still returns True.

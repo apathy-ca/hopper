@@ -54,6 +54,8 @@ def _make_group(kind: str) -> click.Group:
     @click.option("--project", help="Project ID or name")
     @click.option("--parent", help="Parent record ID")
     @click.option("--non-interactive", is_flag=True)
+    @click.option("--author-did", envvar="HOPPER_DID", hidden=True)
+    @click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True)
     @click.pass_context
     def add_cmd(
         ctx: click.Context,
@@ -64,6 +66,8 @@ def _make_group(kind: str) -> click.Group:
         project: str | None,
         parent: str | None,
         non_interactive: bool,
+        author_did: str | None,
+        author_location: str | None,
     ) -> None:
         tags = (kind,) + tuple(t for t in tag if t != kind)
         ctx.invoke(
@@ -78,6 +82,9 @@ def _make_group(kind: str) -> click.Group:
             non_interactive=non_interactive,
             assign=None,
             parent=parent,
+            author_did=author_did,
+            author_location=author_location,
+            kind=kind,
         )
 
     @group.command(name="list")
@@ -199,6 +206,9 @@ def _make_memory_group() -> click.Group:
             non_interactive=non_interactive,
             assign=None,
             parent=None,
+            author_did=None,
+            author_location=None,
+            kind="memory",
         )
 
     return base

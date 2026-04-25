@@ -130,6 +130,7 @@ from hopper.cli.commands.learning import learning
 from hopper.cli.commands.project import project
 from hopper.cli.commands.server import server
 from hopper.cli.commands.kinds import register as register_kinds
+from hopper.cli.commands.revision import revision
 from hopper.cli.commands.task import add_shortcut, ls_shortcut, task
 from hopper.cli.commands.upstream import upstream
 from hopper.cli.mcp_commands import mcp
@@ -143,6 +144,7 @@ cli.add_command(knowledge)
 cli.add_command(context)
 cli.add_command(github)
 cli.add_command(upstream)
+cli.add_command(revision)
 cli.add_command(mcp)
 
 # Shortcut: `hopper sync` → `hopper upstream sync`

@@ -4,7 +4,7 @@ Task model for Hopper.
 
 from typing import Any, Optional
 
-from sqlalchemy import Float, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -60,6 +60,17 @@ class Task(Base, TimestampMixin):
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
 
+    # Agent/heartbeat tracking
+    assigned_to: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_heartbeat: Mapped[Any | None] = mapped_column(DateTime, nullable=True)
+    expected_heartbeat: Mapped[Any | None] = mapped_column(DateTime, nullable=True)
+
+    # Task hierarchy
+    parent_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # Soft delete
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Routing
     routing_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     routing_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -86,6 +97,8 @@ class Task(Base, TimestampMixin):
         Index("idx_tasks_project", "project"),
         Index("idx_tasks_status", "status"),
         Index("idx_tasks_created_at", "created_at"),
+        Index("idx_tasks_parent_id", "parent_id"),
+        Index("idx_tasks_assigned_to", "assigned_to"),
         # GIN index for JSONB tags (PostgreSQL only)
         # Index("idx_tasks_tags", "tags", postgresql_using="gin"),
     )

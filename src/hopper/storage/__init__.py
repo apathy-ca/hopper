@@ -15,6 +15,9 @@ from .memory import (
     PatternMarkdownStore,
     FeedbackMarkdownStore,
 )
+from .sqlite import SQLiteStorage
+from .sqlite_tasks import TaskSQLiteStore
+from .sqlite_memory import EpisodeSQLiteStore, PatternSQLiteStore, FeedbackSQLiteStore
 from .knowledge import (
     initialize_knowledge,
     write_hopper_usage,
@@ -39,6 +42,12 @@ __all__ = [
     "EpisodeMarkdownStore",
     "PatternMarkdownStore",
     "FeedbackMarkdownStore",
+    # SQLite
+    "SQLiteStorage",
+    "TaskSQLiteStore",
+    "EpisodeSQLiteStore",
+    "PatternSQLiteStore",
+    "FeedbackSQLiteStore",
     # Knowledge
     "initialize_knowledge",
     "write_hopper_usage",

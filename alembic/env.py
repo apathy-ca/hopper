@@ -64,17 +64,7 @@ def compare_type(context, inspected_column, metadata_column, inspected_type, met
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
+    """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -83,6 +73,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_name=include_name,
         compare_type=compare_type,
+        render_as_batch=True,
     )
 
     with context.begin_transaction():
@@ -90,12 +81,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
+    """Run migrations in 'online' mode."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -108,6 +94,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             include_name=include_name,
             compare_type=compare_type,
+            render_as_batch=True,
         )
 
         with context.begin_transaction():

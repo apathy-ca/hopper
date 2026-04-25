@@ -3,6 +3,7 @@
 ---
 
 ## Hopper - Persistent Memory
+<!-- hopper-agent-files: v1 -->
 
 This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent memory across AI agent sessions.
 

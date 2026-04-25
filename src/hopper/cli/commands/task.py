@@ -63,6 +63,9 @@ def task() -> None:
     "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:acm-rewrite', 'human:james')"
 )
 @click.option("--parent", help="Parent task ID (creates a child task)")
+@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author (agents must supply this)")
+@click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context for this write")
+@click.option("--kind", hidden=True, default="task", help="Record kind (task/idea/note/memory/…)")
 @click.pass_obj
 def add_task(
     ctx: Context,
@@ -76,6 +79,9 @@ def add_task(
     non_interactive: bool,
     assign: str | None,
     parent: str | None,
+    author_did: str | None,
+    author_location: str | None,
+    kind: str,
 ) -> None:
     """Create a new task.
 
@@ -133,6 +139,12 @@ def add_task(
         task_data["assigned_to"] = assign
     if parent:
         task_data["parent_id"] = parent
+    if author_did:
+        task_data["author_did"] = author_did
+    if author_location:
+        task_data["author_location"] = author_location
+    if kind and kind != "task":
+        task_data["kind"] = kind
 
     # Create task — use brief path when a full brief is provided
     try:
@@ -280,6 +292,8 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
 @click.option("--parent", help="Set parent task ID")
 @click.option("--unparent", is_flag=True, help="Remove from parent")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
+@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
+@click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
 @click.pass_obj
 def update_task(
     ctx: Context,
@@ -294,6 +308,8 @@ def update_task(
     parent: str | None,
     unparent: bool,
     interactive: bool,
+    author_did: str | None,
+    author_location: str | None,
 ) -> None:
     """Update a task.
 
@@ -350,6 +366,11 @@ def update_task(
         update_data["parent_id"] = parent
     elif unparent:
         update_data["parent_id"] = None
+
+    if author_did:
+        update_data["author_did"] = author_did
+    if author_location:
+        update_data["author_location"] = author_location
 
     if not update_data:
         print_error("No updates specified")
@@ -787,6 +808,80 @@ def stale_tasks(ctx: Context, minutes: int, compact: bool) -> None:
 
     except ClientError as e:
         print_error(f"Failed to check stale tasks: {e.message}")
+        raise click.Abort()
+
+
+@task.command(name="history")
+@click.argument("task_id")
+@click.option("--limit", type=int, default=50, help="Max revisions to show (default: 50)")
+@click.pass_obj
+def task_history(ctx: Context, task_id: str, limit: int) -> None:
+    """Show revision history for a task.
+
+    Displays each revision with its action, author DID, location context,
+    and timestamp. Only available on the SQLite backend.
+
+    Examples:
+        hopper task history abc12345
+        hopper task history abc12345 --limit 10
+    """
+    try:
+        with ctx.get_client() as client:
+            if not hasattr(client, "get_task_history"):
+                print_error("History requires local mode")
+                raise click.Abort()
+            revisions = client.get_task_history(task_id, limit=limit)
+
+        if ctx.json_output:
+            print_json(revisions)
+            return
+
+        if not revisions:
+            print_info(f"No revision history for {task_id} (SQLite backend required, or no writes yet)")
+            return
+
+        from rich import box
+        from rich.table import Table
+
+        table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
+        table.add_column("When", style="dim", min_width=12)
+        table.add_column("Action", min_width=8)
+        table.add_column("Location", min_width=14)
+        table.add_column("Author DID", min_width=20)
+        table.add_column("Rev ID", style="dim", min_width=10)
+
+        from hopper.cli.output import format_datetime
+
+        _ACTION_STYLE = {
+            "create": "green",
+            "update": "cyan",
+            "tombstone": "red",
+            "propose": "yellow",
+            "apply": "green",
+            "reject": "red",
+        }
+
+        for rev in revisions:
+            action = rev.get("action", "?")
+            style = _ACTION_STYLE.get(action, "white")
+            did = rev.get("author_did") or "—"
+            # Abbreviate long DIDs for readability
+            if did and len(did) > 28:
+                did = did[:12] + "…" + did[-8:]
+            table.add_row(
+                format_datetime(rev.get("created_at")),
+                f"[{style}]{action}[/]",
+                rev.get("author_location") or "—",
+                did,
+                (rev.get("id") or "")[:10],
+            )
+
+        console.print(f"\n[bold cyan]Revision history: {task_id}[/bold cyan]\n")
+        console.print(table)
+        console.print(f"\n[dim]{len(revisions)} revision(s)[/dim]\n")
+
+    except ClientError as e:
+        print_error(f"Failed to get history: {e.message}")
         raise click.Abort()
 
 
