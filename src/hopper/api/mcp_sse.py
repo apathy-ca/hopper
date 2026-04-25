@@ -37,6 +37,11 @@ import os
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hopper.upstream.protocol import SyncTask
+    from hopper.upstream.storage import UpstreamStorage
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +77,16 @@ def _upstream_storage_path() -> Path:
 
 
 class UpstreamNamespaceClient:
-    """Read/write tasks directly from the upstream-data JSON store.
+    """MCP-facing client that delegates to UpstreamStorage.
 
-    Avoids requiring a local .hopper mirror for server-side instances.
-    Tasks are stored as JSON at upstream-data/tasks/{namespace}/{id}.json.
+    Provides the dict-based interface that MCP tool functions expect while
+    routing all reads and writes through the canonical UpstreamStorage,
+    keeping the sync index consistent.
     """
 
-    def __init__(self, namespace: str):
+    def __init__(self, namespace: str, storage: "UpstreamStorage"):
         self._ns = namespace
-        self._dir = _upstream_storage_path() / "tasks" / namespace
-        self._dir.mkdir(parents=True, exist_ok=True)
+        self._storage = storage
 
     def __enter__(self):
         return self
@@ -89,46 +94,45 @@ class UpstreamNamespaceClient:
     def __exit__(self, *_):
         pass
 
-    def _read_all(self, include_deleted: bool = False) -> list[dict]:
-        tasks = []
-        for f in self._dir.glob("*.json"):
-            try:
-                import json as _json
-                rec = _json.loads(f.read_text())
-                t = rec.get("task", rec)
-                if not include_deleted and t.get("deleted"):
-                    continue
-                tasks.append(t)
-            except Exception:
-                pass
+    def _did(self) -> str:
+        """Return the DID for the current MCP session, or a sentinel."""
+        return _session_did.get() or "mcp:anonymous"
+
+    @staticmethod
+    def _sync_task_to_dict(st: "SyncTask") -> dict:
+        return st.model_dump(mode="json")
+
+    def _dict_to_sync_task(self, d: dict) -> "SyncTask":
+        from hopper.upstream.protocol import SyncTask
+        return SyncTask(**d)
+
+    def _all_tasks(self, include_deleted: bool = False) -> list[dict]:
+        sync_tasks = self._storage.list_all(self._ns)
+        tasks = [self._sync_task_to_dict(st) for st in sync_tasks]
+        if not include_deleted:
+            tasks = [t for t in tasks if not t.get("deleted")]
         return tasks
 
-    def _read_one(self, task_id: str) -> dict | None:
-        import json as _json
-        # Exact match first
-        exact = self._dir / f"{task_id}.json"
-        if exact.exists():
-            rec = _json.loads(exact.read_text())
-            return rec.get("task", rec)
-        # Prefix match
-        matches = [f for f in self._dir.glob(f"{task_id}*.json")]
+    def _get_one(self, task_id: str) -> dict | None:
+        stored = self._storage.get(self._ns, task_id)
+        if stored:
+            return self._sync_task_to_dict(stored.task)
+        # Prefix match — walk the index for this namespace
+        prefix = f"{self._ns}/{task_id}"
+        matches = [k for k in self._storage._index if k.startswith(prefix)]
         if len(matches) == 1:
-            rec = _json.loads(matches[0].read_text())
-            return rec.get("task", rec)
+            _, full_id = matches[0].split("/", 1)
+            stored = self._storage.get(self._ns, full_id)
+            if stored:
+                return self._sync_task_to_dict(stored.task)
         return None
 
-    def _write_one(self, task: dict) -> None:
-        import json as _json, time as _time
-        path = self._dir / f"{task['id']}.json"
-        existing = {}
-        if path.exists():
-            existing = _json.loads(path.read_text())
-        existing["task"] = task
-        existing.setdefault("received_at", int(_time.time() * 1000))
-        path.write_text(_json.dumps(existing, indent=2, default=str))
+    def _put(self, task_dict: dict) -> None:
+        st = self._dict_to_sync_task(task_dict)
+        self._storage.put(st, from_did=self._did())
 
     def list_tasks(self, status=None, priority=None, tags=None, limit=50, **_) -> list[dict]:
-        tasks = self._read_all()
+        tasks = self._all_tasks()
         if status:
             tasks = [t for t in tasks if t.get("status") == status]
         if priority:
@@ -140,7 +144,7 @@ class UpstreamNamespaceClient:
         return tasks[:limit]
 
     def get_task(self, task_id: str) -> dict:
-        t = self._read_one(task_id)
+        t = self._get_one(task_id)
         if not t:
             raise Exception(f"Task not found: {task_id}")
         return t
@@ -164,7 +168,7 @@ class UpstreamNamespaceClient:
             "parent_id": None,
             "deleted": False,
         }
-        self._write_one(task)
+        self._put(task)
         return task
 
     def update_task(self, task_id: str, data: dict) -> dict:
@@ -178,7 +182,7 @@ class UpstreamNamespaceClient:
             if k not in ("add_tags", "remove_tags"):
                 task[k] = v
         task["updated_at"] = _dt.datetime.utcnow().isoformat() + "Z"
-        self._write_one(task)
+        self._put(task)
         return task
 
     def delete_task(self, task_id: str) -> None:
@@ -186,7 +190,7 @@ class UpstreamNamespaceClient:
 
     def search_tasks(self, query: str, status=None, limit=20, **_) -> list[dict]:
         q = query.lower()
-        tasks = [t for t in self._read_all()
+        tasks = [t for t in self._all_tasks()
                  if q in (t.get("title") or "").lower() or q in (t.get("description") or "").lower()]
         if status:
             tasks = [t for t in tasks if t.get("status") == status]
@@ -204,7 +208,7 @@ class UpstreamNamespaceClient:
         import datetime as _dt
         threshold = _dt.datetime.utcnow() - _dt.timedelta(minutes=minutes)
         stale = []
-        for t in self._read_all():
+        for t in self._all_tasks():
             if not t.get("assigned_to"):
                 continue
             hb = t.get("last_heartbeat")
@@ -213,7 +217,7 @@ class UpstreamNamespaceClient:
         return stale
 
     def get_task_children(self, task_id: str) -> list[dict]:
-        return [t for t in self._read_all() if t.get("parent_id") == task_id]
+        return [t for t in self._all_tasks() if t.get("parent_id") == task_id]
 
     def get_task_with_rollup(self, task_id: str) -> dict:
         task = self.get_task(task_id)
@@ -235,7 +239,7 @@ def _get_client():
     """Get the appropriate client for the current session's instance.
 
     Instance resolution is server-side only:
-    1. Named instance → upstream-data namespace (canonical server store)
+    1. Named instance → UpstreamNamespaceClient backed by UpstreamStorage
     2. Fallback → server's default LocalClient (~/.hopper)
 
     instance_path from client tokens is intentionally ignored — the server
@@ -244,9 +248,13 @@ def _get_client():
     sid = _session_id.get()
     _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
     if instance_name:
-        ns_dir = _upstream_storage_path() / "tasks" / instance_name
-        if ns_dir.exists():
-            return UpstreamNamespaceClient(instance_name)
+        from hopper.upstream.server import get_storage
+        try:
+            storage = get_storage()
+        except Exception:
+            storage = None
+        if storage is not None:
+            return UpstreamNamespaceClient(instance_name, storage)
     return LocalClient()
 
 

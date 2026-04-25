@@ -635,7 +635,7 @@ class UpstreamStorage:
                 return StoredTask(
                     task=SyncTask(**data["task"]),
                     received_at=data["received_at"],
-                    from_did=data["from_did"],
+                    from_did=data.get("from_did", "unknown"),
                 )
         except (json.JSONDecodeError, OSError, KeyError):
             return None
