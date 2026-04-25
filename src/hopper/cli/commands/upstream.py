@@ -6,8 +6,10 @@ from pathlib import Path
 
 import click
 
+from hopper.cli.local_client import LocalClient
 from hopper.cli.main import Context
 from hopper.cli.output import print_error, print_info, print_json, print_success, print_warning
+from hopper.storage.base import StorageConfig
 
 
 @click.group(name="upstream")
@@ -94,7 +96,6 @@ def set_server(ctx: Context, url: str) -> None:
 @click.pass_obj
 def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
     """Sync tasks with upstream server."""
-    from hopper.cli.local_client import LocalClient
     from hopper.upstream.client import UpstreamClient, UpstreamError
     from hopper.upstream.did import load_did_key
     from hopper.upstream.sync import sync_with_upstream
@@ -264,9 +265,7 @@ def status_upstream(ctx: Context) -> None:
                 pass
 
     if storage_path:
-        from hopper.cli.local_client import LocalClient
-
-        instance_id = LocalClient(storage_path).config.instance_id
+        instance_id = StorageConfig.local(storage_path).instance_id
         state_path = storage_path / f".sync_state_{instance_id}"
         if state_path.exists():
             try:
@@ -291,9 +290,9 @@ def status_upstream(ctx: Context) -> None:
         print_info(f"Key path: {key_path_str or '(not configured)'}")
 
         if last_sync:
-            from datetime import datetime
+            from datetime import datetime, timezone
 
-            dt = datetime.fromtimestamp(last_sync / 1000)
+            dt = datetime.fromtimestamp(last_sync / 1000, tz=timezone.utc)
             print_info(f"Last sync: {dt.isoformat()}")
         else:
             print_info("Last sync: never")
@@ -312,14 +311,12 @@ def reset_upstream(ctx: Context, instance: str | None, force: bool) -> None:
     """
     import json
 
-    from hopper.cli.local_client import LocalClient
-
     storage_path = ctx.get_storage_path()
     if not storage_path:
         print_error("Reset requires local mode.")
         raise click.Abort()
 
-    instance_id = instance or LocalClient(storage_path).config.instance_id
+    instance_id = instance or StorageConfig.local(storage_path).instance_id
     state_path = storage_path / f".sync_state_{instance_id}"
 
     if not state_path.exists():
