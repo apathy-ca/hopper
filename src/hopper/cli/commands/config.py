@@ -205,7 +205,8 @@ def _init_local_mode(
                 console.print(f"  [dim]{action}[/dim]  {path}")
 
     console.print("\n[bold green]Hopper initialized![/bold green]")
-    console.print("[dim]Try: hopper task add 'My first task'[/dim]\n")
+    console.print("[dim]Try: hopper task add 'My first task'[/dim]")
+    console.print("[dim]Run: hopper knowledge update-agent-files  # sync AGENTS.md/CLAUDE.md[/dim]\n")
 
 
 def _init_server_mode(

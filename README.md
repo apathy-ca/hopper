@@ -19,6 +19,14 @@ hopper init
 
 That's it. You now have a `.hopper/` directory for persistent storage.
 
+Then sync your agent config files:
+
+```bash
+hopper knowledge update-agent-files
+```
+
+This writes the Hopper section into `AGENTS.md` and `CLAUDE.md` so AI agents in your project know how to use Hopper. Re-run after upgrading Hopper to pick up any changes.
+
 <details>
 <summary>Manual install</summary>
 

@@ -121,6 +121,7 @@ def list_knowledge(ctx: Context) -> None:
 
     if not knowledge_path.exists():
         print_info("No knowledge directory found. Run 'hopper init' or 'hopper knowledge sync'.")
+        print_info("Then run 'hopper knowledge update-agent-files' to sync AGENTS.md/CLAUDE.md.")
         return
 
     # List files
