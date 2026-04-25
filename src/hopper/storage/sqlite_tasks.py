@@ -203,12 +203,16 @@ class TaskSQLiteStore:
                                instance_id=task.instance or "local")
             session.commit()
 
-    def save(self, task: LocalTask, author: AuthorContext | None = None) -> None:
+    def save(self, task: LocalTask, author: AuthorContext | None = None, preserve_timestamp: bool = False) -> None:
         """Upsert a task (create or update).
 
         If author is provided, a Revision row is appended in the same transaction.
+        If preserve_timestamp is True, keep the task's existing updated_at instead of
+        stamping now. Used by sync when applying remote tasks so pulled tasks don't
+        appear locally-modified on the next sync round.
         """
-        task.updated_at = _utc_now()
+        if not preserve_timestamp:
+            task.updated_at = _utc_now()
         with self._storage.session() as session:
             existing = session.get(Task, task.id)
             row = _local_to_orm(task, existing)

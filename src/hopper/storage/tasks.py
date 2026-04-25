@@ -267,9 +267,17 @@ class TaskMarkdownStore:
             attempts += 1
         self.save(task)
 
-    def save(self, task: LocalTask, **kwargs: Any) -> None:
-        """Save task to markdown file (create or update)."""
-        task.updated_at = _utc_now()
+    def save(self, task: LocalTask, preserve_timestamp: bool = False, **kwargs: Any) -> None:
+        """Save task to markdown file (create or update).
+
+        Args:
+            task: Task to save.
+            preserve_timestamp: If True, keep the task's existing updated_at instead of
+                stamping now. Used by sync when applying remote tasks so pulled tasks
+                don't appear locally-modified on the next sync round.
+        """
+        if not preserve_timestamp:
+            task.updated_at = _utc_now()
 
         doc = MarkdownDocument(
             frontmatter=task.to_frontmatter(),

@@ -175,7 +175,7 @@ def _apply_sync_task_to_local(
         existing.last_heartbeat = sync_task.last_heartbeat
         existing.expected_heartbeat = sync_task.expected_heartbeat
         existing.parent_id = sync_task.parent_id
-        task_store.save(existing)
+        task_store.save(existing, preserve_timestamp=True)
     else:
         # Create new task with the remote ID
         new_task = LocalTask(
@@ -202,7 +202,7 @@ def _apply_sync_task_to_local(
             expected_heartbeat=sync_task.expected_heartbeat,
             parent_id=sync_task.parent_id,
         )
-        task_store.save(new_task)
+        task_store.save(new_task, preserve_timestamp=True)
 
     return sync_task.id
 
