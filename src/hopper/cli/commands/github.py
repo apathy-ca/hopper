@@ -113,6 +113,8 @@ def list_issues(ctx: Context, repo: str, state: str, limit: int) -> None:
 @click.option("--state", "-s", default="open", type=click.Choice(["open", "closed", "all"]))
 @click.option("--project", "-p", help="Hopper project ID to assign tasks to")
 @click.option("--max", "max_issues", default=100, help="Maximum issues to import")
+@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
+@click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
 @click.pass_obj
 def import_issues(
     ctx: Context,
@@ -122,6 +124,8 @@ def import_issues(
     state: str,
     project: str | None,
     max_issues: int,
+    author_did: str | None,
+    author_location: str | None,
 ) -> None:
     """Import GitHub issues as Hopper tasks.
 
@@ -157,10 +161,11 @@ def import_issues(
     storage_path = get_storage_path(ctx.config, force_local=True)
     local_client = LocalClient(storage_path)
     task_store = local_client.task_store
+    author = local_client._author_context(author_did=author_did, author_location=author_location)
 
     # Create sync service
     client = GitHubClient(token)
-    sync = GitHubSyncService(client, task_store)
+    sync = GitHubSyncService(client, task_store, author=author)
 
     try:
         if issue:
@@ -216,8 +221,10 @@ def import_issues(
 @github.command(name="export")
 @click.argument("task_id")
 @click.option("--repo", "-r", required=True, help="Target repository (owner/repo)")
+@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
+@click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
 @click.pass_obj
-def export_task(ctx: Context, task_id: str, repo: str) -> None:
+def export_task(ctx: Context, task_id: str, repo: str, author_did: str | None, author_location: str | None) -> None:
     """Export a Hopper task as a GitHub issue.
 
     TASK_ID is the Hopper task ID to export.
@@ -242,10 +249,11 @@ def export_task(ctx: Context, task_id: str, repo: str) -> None:
     storage_path = get_storage_path(ctx.config, force_local=True)
     local_client = LocalClient(storage_path)
     task_store = local_client.task_store
+    author = local_client._author_context(author_did=author_did, author_location=author_location)
 
     # Create sync service
     client = GitHubClient(token)
-    sync = GitHubSyncService(client, task_store)
+    sync = GitHubSyncService(client, task_store, author=author)
 
     try:
         result = sync.export_task(task_id, owner, repo_name)

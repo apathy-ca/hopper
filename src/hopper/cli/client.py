@@ -174,7 +174,7 @@ class HopperClient:
         """Update task."""
         return self.patch(f"/api/v1/tasks/{task_id}", json=data)
 
-    def delete_task(self, task_id: str) -> None:
+    def delete_task(self, task_id: str, author_did: str | None = None) -> None:
         """Delete task."""
         return self.delete(f"/api/v1/tasks/{task_id}")
 

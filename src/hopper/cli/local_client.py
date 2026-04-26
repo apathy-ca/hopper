@@ -139,9 +139,7 @@ class LocalClient:
                 except Exception:
                     pass
         if not did:
-            # No DID available — still record the write with an unknown sentinel
-            # so the revision row is not null. Agents must supply a real DID.
-            did = "did:key:unknown-local"
+            raise LocalClientError("No DID available. Agents must supply --author-did or HOPPER_DID. Humans should 'hopper init'.")
 
         # --- Location resolution ---
         location = resolve_location(override=author_location)

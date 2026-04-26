@@ -50,15 +50,17 @@ class ExportResult:
 class GitHubSyncService:
     """Service for syncing between GitHub and Hopper."""
 
-    def __init__(self, client: GitHubClient, task_store: "TaskMarkdownStore"):
+    def __init__(self, client: GitHubClient, task_store: "TaskMarkdownStore", author: "AuthorContext | None" = None):
         """Initialize sync service.
 
         Args:
             client: GitHub API client
             task_store: Hopper task store
+            author: Author context for revisions
         """
         self.client = client
         self.task_store = task_store
+        self.author = author
         self.mapper = GitHubMapper()
 
     def import_issue(
@@ -97,7 +99,7 @@ class GitHubSyncService:
         from hopper.storage.tasks import LocalTask
 
         task = LocalTask.create(**task_data)
-        self.task_store.create(task)
+        self.task_store.create(task, author=self.author)
 
         return task.id
 
@@ -209,13 +211,13 @@ class GitHubSyncService:
             task.external_id = str(issue.number)
             task.external_url = issue.html_url
             task.external_platform = "github"
-            self.task_store.save(task)
+            self.task_store.save(task, author=self.author)
 
-        return ExportResult(
-            issue_number=issue.number,
-            issue_url=issue.html_url,
-            success=True,
-        )
+            return ExportResult(
+                issue_number=issue.number,
+                issue_url=issue.html_url,
+                success=True,
+            )
 
     def sync_status_to_github(
         self,

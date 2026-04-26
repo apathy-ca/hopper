@@ -76,8 +76,10 @@ class RevisionShadowWriter:
             logger.warning("shadow write skipped: task payload has no id")
             return
 
+        # Phase 4b: Ensure non-null DID and location
+        from_did = from_did or "unknown"
         instance_id = task_payload.get("instance") or "local"
-        author_location = task_payload.get("source")  # 'cli' / 'mcp' / ...
+        author_location = task_payload.get("source") or "unknown"
         received_at = datetime.fromtimestamp(received_at_ms / 1000, tz=timezone.utc)
         received_at_naive = received_at.replace(tzinfo=None)
 

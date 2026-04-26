@@ -399,8 +399,18 @@ def update_task(
 )
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
 @click.option("--assign", "-a", help="Assign to an agent or user while changing status")
+@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
+@click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
 @click.pass_obj
-def change_status(ctx: Context, task_id: str, new_status: str, force: bool, assign: str | None) -> None:
+def change_status(
+    ctx: Context,
+    task_id: str,
+    new_status: str,
+    force: bool,
+    assign: str | None,
+    author_did: str | None,
+    author_location: str | None,
+) -> None:
     """Change task status.
 
     Examples:
@@ -418,6 +428,10 @@ def change_status(ctx: Context, task_id: str, new_status: str, force: bool, assi
     update_data: dict[str, object] = {"status": new_status}
     if assign:
         update_data["assigned_to"] = assign
+    if author_did:
+        update_data["author_did"] = author_did
+    if author_location:
+        update_data["author_location"] = author_location
 
     try:
         with ctx.get_client() as client:
@@ -439,8 +453,9 @@ def change_status(ctx: Context, task_id: str, new_status: str, force: bool, assi
 @task.command(name="delete")
 @click.argument("task_id")
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
 @click.pass_obj
-def delete_task(ctx: Context, task_id: str, force: bool) -> None:
+def delete_task(ctx: Context, task_id: str, force: bool, author_did: str | None) -> None:
     """Delete a task.
 
     Examples:
@@ -463,10 +478,9 @@ def delete_task(ctx: Context, task_id: str, force: bool) -> None:
     # Delete task
     try:
         with ctx.get_client() as client:
-            client.delete_task(task_id)
-
-        print_success(f"Deleted task: {task_id}")
-
+            # Need to pass author_did directly if the client supports it
+            client.delete_task(task_id, author_did=author_did)
+        print_success(f"Deleted task {task_id}")
     except ClientError as e:
         print_error(f"Failed to delete task: {e.message}")
         raise click.Abort()

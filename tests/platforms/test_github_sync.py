@@ -107,7 +107,7 @@ class TestGitHubSyncService:
 
             assert task_id == "task-123"
             mock_client.get_issue.assert_called_once_with("owner", "repo", 42)
-            mock_task_store.create.assert_called_once_with(mock_task)
+            mock_task_store.create.assert_called_once_with(mock_task, author=None)
 
     def test_import_issue_skip_existing(self, sync_service, mock_client, mock_task_store, sample_issue):
         """Test skipping already imported issue."""
