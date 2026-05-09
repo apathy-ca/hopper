@@ -9,22 +9,14 @@ INSTALL_DIR="${HOPPER_INSTALL_DIR:-$HOME/.hopper-install}"
 
 echo "Installing Hopper..."
 
-# Check Python version
-if ! command -v python3 &> /dev/null; then
-    echo "Error: Python 3 is required but not installed."
+# Check uv
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is required but not installed."
+    echo "Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
     exit 1
 fi
 
-PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-
-if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]); then
-    echo "Error: Python 3.11+ required. Found Python $PYTHON_VERSION"
-    exit 1
-fi
-
-echo "✓ Python $PYTHON_VERSION"
+echo "✓ uv $(uv --version)"
 
 # Clone or update repo
 if [ -d "$INSTALL_DIR" ]; then
@@ -37,9 +29,9 @@ else
     cd "$INSTALL_DIR"
 fi
 
-# Install with pip
+# Install with uv
 echo "Installing package..."
-pip install -q -e .
+uv pip install -q -e .
 
 # Verify installation
 if command -v hopper &> /dev/null; then
@@ -58,7 +50,7 @@ if command -v hopper &> /dev/null; then
 else
     echo ""
     echo "Installed, but 'hopper' not in PATH."
-    echo "You may need to add pip's bin directory to your PATH."
+    echo "You may need to add uv's bin directory to your PATH."
     echo ""
     echo "Try: export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
