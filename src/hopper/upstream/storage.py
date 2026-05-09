@@ -606,6 +606,12 @@ class UpstreamStorage:
             json.dump(self._index, f)
 
     def _rebuild_index(self) -> None:
+        """Rebuild the index from stored task files.
+
+        The index stores server-received time (received_at), not client-reported
+        updated_at, so the pull cursor is on a clock the server controls.
+        Falls back to updated_at for older files that predate this convention.
+        """
         self._index = {}
         for task_file in self.tasks_dir.glob("*/*.json"):
             try:
@@ -613,13 +619,22 @@ class UpstreamStorage:
                     data = json.load(f)
                 instance = data.get("task", {}).get("instance", "local")
                 task_id = data.get("task", {}).get("id")
-                updated_at = data.get("task", {}).get("updated_at")
-                if task_id and updated_at:
-                    if isinstance(updated_at, str):
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-                        updated_at = int(dt.timestamp() * 1000)
-                    self._index[self._index_key(instance, task_id)] = updated_at
+                if not task_id:
+                    continue
+                # Prefer server-side received_at; fall back to updated_at for
+                # files written by older server versions.
+                index_ts = data.get("received_at")
+                if not index_ts:
+                    updated_at = data.get("task", {}).get("updated_at")
+                    if updated_at:
+                        if isinstance(updated_at, str):
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                            index_ts = int(dt.timestamp() * 1000)
+                        else:
+                            index_ts = updated_at
+                if index_ts:
+                    self._index[self._index_key(instance, task_id)] = index_ts
             except (json.JSONDecodeError, OSError, KeyError):
                 continue
         self._save_index()
@@ -643,13 +658,17 @@ class UpstreamStorage:
     def put(self, task: SyncTask, from_did: str) -> tuple[bool, str]:
         """Store a task, returns (accepted, reason).
 
-        Uses last-write-wins. Any approved DID can write to any instance.
+        Uses last-write-wins based on client-reported updated_at for conflict
+        detection (so the best-intentioned write wins), but indexes on
+        server-side received_at so that list_since() uses a clock the server
+        controls.  This makes the pull cursor immune to client clock skew.
         """
         task_id = task.id
         instance = task.instance or "local"
         now = int(time.time() * 1000)
         key = self._index_key(instance, task_id)
 
+        # Parse client-reported timestamp for conflict detection only.
         if task.updated_at:
             if isinstance(task.updated_at, str):
                 from datetime import datetime
@@ -661,9 +680,19 @@ class UpstreamStorage:
             incoming_ts = now
 
         if key in self._index:
-            stored_ts = self._index[key]
-            if incoming_ts <= stored_ts:
-                return False, f"conflict: server has newer version ({stored_ts} >= {incoming_ts})"
+            # _index stores received_at; we need the stored task's updated_at
+            # for conflict resolution.  Load it from disk.
+            stored_task = self.get(instance, task_id)
+            if stored_task is not None and stored_task.task.updated_at:
+                stored_updated_at = stored_task.task.updated_at
+                if isinstance(stored_updated_at, str):
+                    from datetime import datetime
+                    stored_updated_at = datetime.fromisoformat(
+                        stored_updated_at.replace("Z", "+00:00")
+                    )
+                stored_ts = int(stored_updated_at.timestamp() * 1000)
+                if incoming_ts <= stored_ts:
+                    return False, f"conflict: server has newer version ({stored_ts} >= {incoming_ts})"
 
         stored = StoredTask(task=task, received_at=now, from_did=from_did)
         path = self._task_path(instance, task_id)
@@ -682,7 +711,10 @@ class UpstreamStorage:
                 default=str,
             )
 
-        self._index[key] = incoming_ts
+        # Index on server-received time, not client-reported updated_at.
+        # This keeps list_since() on a clock the server controls, eliminating
+        # client clock-skew from the pull cursor entirely.
+        self._index[key] = now
         self._save_index()
 
         # Phase 4a shadow write (fail-soft; JSON above is authoritative)
