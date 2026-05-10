@@ -36,6 +36,7 @@ class AdminResponse(BaseModel):
 
     success: bool
     message: str
+    namespace: str | None = None
 
 
 class DIDListResponse(BaseModel):
@@ -432,6 +433,7 @@ async def invite_redeem(
     return AdminResponse(
         success=True,
         message=f"redeemed: {invite.role.value} on '{invite.namespace}'",
+        namespace=invite.namespace,
     )
 
 

@@ -56,40 +56,31 @@ hopper upstream admin approve <DID_FROM_WHOAMI> \
 After this, that workstation can issue invites for `<NAMESPACE>` without the
 admin key.
 
-### 3. On the new host — redeem
+### 3. On the new host — redeem (from the project directory)
 
-```bash
-hopper upstream redeem <TOKEN>
-# → ✓ redeemed: approved on '<NAMESPACE>'
-```
-
-### 4. Initialize the project instance
+Run this from inside the project directory that has a `.hopper/` folder:
 
 ```bash
 cd ~/path/to/<project>
-hopper init --name <NAMESPACE> --auto-detect
+hopper upstream redeem <TOKEN>
+# → ✓ redeemed: approved on '<NAMESPACE>'
+# → ℹ Instance id set to '<NAMESPACE>' in .hopper/config.yaml
 ```
 
-### 5. Verify instance.id before first sync
+Redeem automatically:
+- Sets the upstream server URL in your global config
+- Writes the correct `instance.id` to the project's `.hopper/config.yaml`
 
-Open `.hopper/config.yaml` and confirm `instance.id` matches `<NAMESPACE>`
-**verbatim** (case-sensitive). Mismatched ids silently shard — sync reports
-healthy but pulls zero tasks.
+If you redeem outside a project directory, you'll see a reminder to run
+`hopper init --name <NAMESPACE>` instead.
 
-```bash
-grep -E "^  (id|name):" .hopper/config.yaml
-```
-
-### 6. First sync
+### 4. First sync
 
 ```bash
 hopper upstream status      # sanity: server, DID, enabled
 hopper upstream sync -v     # should show pushed/pulled counts
 hopper task list
 ```
-
-If `sync -v` says "already up to date" and `task list` is empty, you have the
-sharding bug — re-check step 5.
 
 ## Host → DID → role ledger
 
@@ -108,7 +99,9 @@ Keep this current. Update when a host is added, reimaged, or revoked.
   from the admin host (step 2a).
 - **`DID authentication failed`** — the command is using a key the server doesn't
   recognize (wrong key file, wrong server URL, or host was never registered).
-- **Sync succeeds but pulls nothing** — `instance.id` mismatch. See step 5.
+- **Sync succeeds but pulls nothing** — `instance.id` mismatch. Open `.hopper/config.yaml`
+  and confirm `id:` matches the namespace **verbatim** (case-sensitive). This can happen
+  if you redeemed outside the project directory and set the id manually.
 - **Admin key on the wrong box** — `admin.key` lives only on the admin host
   (ember). Don't copy it. Grant approver to your workstation DID instead and do
   day-to-day invites from there.

@@ -679,6 +679,7 @@ def invite_create(
 
     print_success(f"Invite created for namespace '{namespace}' (role: {role})")
     click.echo("")
+    click.echo(f"  Server:    {client.server_url}")
     click.echo(f"  Token:     {token}")
     click.echo(f"  Uses:      {inv['uses']}/{inv['max_uses']}")
     exp = inv.get("expires_at")
@@ -691,7 +692,7 @@ def invite_create(
     click.echo("")
     print_warning("This token is shown only once. Share it over a secure channel.")
     click.echo("")
-    click.echo(f"Recipient runs:  hopper upstream redeem {token}")
+    click.echo(f"Recipient runs:  hopper upstream redeem --server {client.server_url} {token}")
 
 
 @invite.command(name="list")
@@ -796,8 +797,29 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
         print_error(str(e))
         raise click.Abort()
 
+    namespace = result.get("namespace")
+
+    # Persist the server URL and namespace into local config so the caller
+    # doesn't have to run set-server or hopper init separately.
+    config = ctx.config
+    profile = config.current_profile
+    if profile.upstream.server != client.server_url:
+        profile.upstream.server = client.server_url
+        profile.upstream.enabled = True
+        config.save()
+
+    storage_path = ctx.get_storage_path() if namespace else None
+    if namespace and storage_path:
+        from hopper.storage.markdown import MarkdownStorage
+        storage = MarkdownStorage(StorageConfig.embedded(storage_path, instance_name=namespace))
+        storage.initialize()
+
     if ctx.json_output:
         print_json(result)
     else:
         print_success(result.get("message", "redeemed"))
+        if namespace and storage_path:
+            print_info(f"Instance id set to '{namespace}' in {storage_path}/config.yaml")
+        elif namespace:
+            print_info(f"Namespace: {namespace} — run 'hopper init --name {namespace}' to configure this project.")
         print_info("Run 'hopper sync' to pull tasks.")
