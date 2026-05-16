@@ -31,6 +31,9 @@ dependencies = [
     "pydantic-settings>=2.1.0",
     # Local storage
     "pyyaml>=6.0.1",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "aiosqlite>=0.19.0",
     # HTTP client (server-mode CLI, MCP bridge, GitHub platform)
     "httpx>=0.25.0",
     # MCP server (primary use case for Claude Desktop / Claude Code)
@@ -45,10 +48,7 @@ server = [
     # HTTP server
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
-    # Database ORM and migrations
-    "sqlalchemy>=2.0.0",
-    "alembic>=1.12.0",
-    "aiosqlite>=0.19.0",
+    # Database (Postgres driver for server mode)
     "psycopg2-binary>=2.9.9",
     # Auth / security middleware
     "python-jose[cryptography]>=3.3.0",
@@ -127,8 +127,6 @@ module = [
     "opensearch_py",
     "anthropic",
     "fastapi",
-    "sqlalchemy",
-    "alembic",
     "redis",
     "jose",
     "passlib",
