@@ -731,6 +731,13 @@ def hopper_switch_instance(instance_name: str) -> dict:
     ns_dir = _upstream_storage_path() / "tasks" / instance_name
     if ns_dir.exists():
         _session_instances[sid] = (None, instance_name)
+        # Persist for next session
+        if did:
+            try:
+                from hopper.upstream.server import get_storage
+                get_storage().did_registry.update_last_instance(did, instance_name)
+            except Exception:
+                pass  # Best effort
         return {"status": "switched", "instance": instance_name, "source": "upstream"}
 
     # Fall back to a registered hpr_ token with a local path
@@ -756,6 +763,13 @@ def hopper_switch_instance(instance_name: str) -> dict:
         return {"status": "error", "message": f"Instance path does not exist on server: {new_path}"}
 
     _session_instances[sid] = (new_path, instance_name)
+    # Persist for next session
+    if did:
+        try:
+            from hopper.upstream.server import get_storage
+            get_storage().did_registry.update_last_instance(did, instance_name)
+        except Exception:
+            pass  # Best effort
     return {"status": "switched", "instance": instance_name, "path": str(new_path)}
 
 
@@ -1175,7 +1189,15 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
                 {"error": f"DID not authorized: {did}"},
                 status_code=403,
             ), None, None, None
-        return None, did, None, None
+        # Restore last instance for this DID
+        last_instance = None
+        try:
+            from hopper.upstream.server import get_storage
+            storage = get_storage()
+            last_instance = storage.did_registry.get_last_instance(did)
+        except Exception:
+            pass  # Storage not configured or DID not found
+        return None, did, None, last_instance
 
     # Try Bearer token
     if auth_header.startswith("Bearer "):
@@ -1270,6 +1292,13 @@ def create_sse_server():
 
         sid = str(uuid.uuid4())
         _session_instances[sid] = (instance_path, instance_name)
+        # Persist the instance for this DID (for future reconnections)
+        if auth_id and instance_name:
+            try:
+                from hopper.upstream.server import get_storage
+                get_storage().did_registry.update_last_instance(auth_id, instance_name)
+            except Exception:
+                pass  # Best effort
         sid_token = _session_id.set(sid)
         did_token = _session_did.set(auth_id)
         try:
@@ -1371,6 +1400,13 @@ class _StreamableHTTPASGIHandler:
         # On first touch for a session, record the authenticated instance
         if sid not in _session_instances:
             _session_instances[sid] = (instance_path, instance_name)
+            # Persist the instance for this DID (for future reconnections)
+            if auth_id and instance_name:
+                try:
+                    from hopper.upstream.server import get_storage
+                    get_storage().did_registry.update_last_instance(auth_id, instance_name)
+                except Exception:
+                    pass  # Best effort - storage may not be configured
 
         sid_token = _session_id.set(sid)
         did_token = _session_did.set(auth_id)

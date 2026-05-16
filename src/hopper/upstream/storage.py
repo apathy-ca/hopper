@@ -48,6 +48,8 @@ class DIDRecord:
     created_at: int
     namespaces: dict[str, NamespaceApproval] = field(default_factory=dict)
     # "*" key means approved for all namespaces
+    last_instance: str | None = None  # Last Hopper instance this DID connected to
+    last_instance_at: int | None = None  # Timestamp (ms) when last_instance was set
 
 
 @dataclass
@@ -120,22 +122,22 @@ class DIDRegistry:
 
     def _save_record(self, record: DIDRecord) -> None:
         with open(self._did_path(record.did), "w") as f:
-            json.dump(
-                {
-                    "did": record.did,
-                    "created_at": record.created_at,
-                    "namespaces": {
-                        ns: {
-                            "status": a.status.value,
-                            "approved_by": a.approved_by,
-                            "approved_at": a.approved_at,
-                        }
-                        for ns, a in record.namespaces.items()
-                    },
+            data = {
+                "did": record.did,
+                "created_at": record.created_at,
+                "namespaces": {
+                    ns: {
+                        "status": a.status.value,
+                        "approved_by": a.approved_by,
+                        "approved_at": a.approved_at,
+                    }
+                    for ns, a in record.namespaces.items()
                 },
-                f,
-                indent=2,
-            )
+            }
+            if record.last_instance is not None:
+                data["last_instance"] = record.last_instance
+                data["last_instance_at"] = record.last_instance_at
+            json.dump(data, f, indent=2)
 
     def _load_record(self, did: str) -> DIDRecord | None:
         path = self._did_path(did)
@@ -153,7 +155,13 @@ class DIDRegistry:
                         approved_by=data.get("approved_by"),
                         approved_at=data.get("approved_at"),
                     )
-                return DIDRecord(did=data["did"], created_at=data["created_at"], namespaces=ns_map)
+                return DIDRecord(
+                    did=data["did"],
+                    created_at=data["created_at"],
+                    namespaces=ns_map,
+                    last_instance=data.get("last_instance"),
+                    last_instance_at=data.get("last_instance_at"),
+                )
             namespaces = {
                 ns: NamespaceApproval(
                     status=DIDStatus(a["status"]),
@@ -162,7 +170,13 @@ class DIDRegistry:
                 )
                 for ns, a in data.get("namespaces", {}).items()
             }
-            return DIDRecord(did=data["did"], created_at=data["created_at"], namespaces=namespaces)
+            return DIDRecord(
+                did=data["did"],
+                created_at=data["created_at"],
+                namespaces=namespaces,
+                last_instance=data.get("last_instance"),
+                last_instance_at=data.get("last_instance_at"),
+            )
         except (json.JSONDecodeError, OSError, KeyError):
             return None
 
@@ -341,6 +355,22 @@ class DIDRegistry:
                     if record:
                         result.append(record)
         return result
+
+    def get_last_instance(self, did: str) -> str | None:
+        """Get the last Hopper instance this DID connected to."""
+        record = self._load_record(did)
+        return record.last_instance if record else None
+
+    def update_last_instance(self, did: str, instance: str) -> None:
+        """Update the last Hopper instance this DID connected to.
+
+        Creates a minimal DID record if one doesn't exist.
+        """
+        now = int(time.time() * 1000)
+        record = self._load_record(did) or DIDRecord(did=did, created_at=now)
+        record.last_instance = instance
+        record.last_instance_at = now
+        self._save_record(record)
 
 
 @dataclass
