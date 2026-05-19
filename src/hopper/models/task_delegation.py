@@ -7,7 +7,7 @@ Tracks the full delegation chain as tasks flow through the instance hierarchy.
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -102,6 +102,11 @@ class TaskDelegation(Base, TimestampMixin):
 
     # Audit
     delegated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Composite index for queries filtering by target instance and status together
+    __table_args__ = (
+        Index("idx_delegations_target_status", "target_instance_id", "status"),
+    )
 
     # Relationships
     task: Mapped["Task"] = relationship(

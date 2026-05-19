@@ -558,6 +558,8 @@ class UpstreamStorage:
 
     storage_path: Path
     _index: dict[str, int] = field(default_factory=dict)  # "instance/task_id" -> updated_at
+    # Sorted list of (timestamp, key) for efficient range queries
+    _index_by_time: list[tuple[int, str]] = field(default_factory=list)
     did_registry: DIDRegistry = field(init=False)
     invites: InviteStore = field(init=False)
     shadow_writer: "RevisionShadowWriter | None" = field(default=None)
@@ -625,11 +627,21 @@ class UpstreamStorage:
                     self._rebuild_index()
                 elif any("/" not in k for k in self._index):
                     self._rebuild_index()
+                else:
+                    # Build sorted index from loaded data
+                    self._rebuild_sorted_index()
             except (json.JSONDecodeError, OSError):
                 self._index = {}
                 self._rebuild_index()
         else:
             self._rebuild_index()
+
+    def _rebuild_sorted_index(self) -> None:
+        """Rebuild the sorted timestamp index from the main index."""
+        self._index_by_time = sorted(
+            ((ts, key) for key, ts in self._index.items()),
+            key=lambda x: x[0],
+        )
 
     def _save_index(self) -> None:
         with open(self.index_path, "w") as f:
@@ -668,6 +680,7 @@ class UpstreamStorage:
             except (json.JSONDecodeError, OSError, KeyError):
                 continue
         self._save_index()
+        self._rebuild_sorted_index()
 
     def get(self, instance: str, task_id: str) -> StoredTask | None:
         """Get a task by instance and ID."""
@@ -744,8 +757,19 @@ class UpstreamStorage:
         # Index on server-received time, not client-reported updated_at.
         # This keeps list_since() on a clock the server controls, eliminating
         # client clock-skew from the pull cursor entirely.
+        old_ts = self._index.get(key)
         self._index[key] = now
         self._save_index()
+
+        # Maintain sorted index: remove old entry if exists, insert new one
+        if old_ts is not None:
+            # Remove old entry (linear scan, but updates are infrequent)
+            self._index_by_time = [
+                (ts, k) for ts, k in self._index_by_time if k != key
+            ]
+        # Insert in sorted position using bisect
+        import bisect
+        bisect.insort(self._index_by_time, (now, key))
 
         # Phase 4a shadow write (fail-soft; JSON above is authoritative)
         if self.shadow_writer is not None:
@@ -754,15 +778,31 @@ class UpstreamStorage:
         return True, "accepted"
 
     def list_since(self, since_ms: int, instance: str) -> list[SyncTask]:
-        """List tasks for an instance updated since a timestamp."""
+        """List tasks for an instance updated since a timestamp.
+
+        Uses binary search on sorted timestamp index for O(log n) lookup,
+        then batch-loads matching tasks to avoid N+1 disk reads.
+        """
+        import bisect
+
         prefix = instance + "/"
+
+        # Binary search to find starting position (first entry > since_ms)
+        # bisect_right finds insertion point for (since_ms,) which gives us
+        # the first entry with timestamp > since_ms
+        start_idx = bisect.bisect_right(self._index_by_time, (since_ms, ""))
+
+        # Collect matching task IDs (only those for this instance)
+        task_ids = []
+        for i in range(start_idx, len(self._index_by_time)):
+            _, key = self._index_by_time[i]
+            if key.startswith(prefix):
+                _, task_id = key.split("/", 1)
+                task_ids.append(task_id)
+
+        # Batch load all matching tasks
         tasks = []
-        for key, updated_at in self._index.items():
-            if not key.startswith(prefix):
-                continue
-            if updated_at <= since_ms:
-                continue
-            _, task_id = key.split("/", 1)
+        for task_id in task_ids:
             stored = self.get(instance, task_id)
             if stored:
                 tasks.append(stored.task)
@@ -780,6 +820,10 @@ class UpstreamStorage:
             path.unlink()
             self._index.pop(key, None)
             self._save_index()
+            # Remove from sorted index
+            self._index_by_time = [
+                (ts, k) for ts, k in self._index_by_time if k != key
+            ]
             return True
         return False
 

@@ -405,6 +405,43 @@ class TaskMarkdownStore:
         """Count tasks matching filters."""
         return len(self.list(**filters))
 
+    def list_since(self, since_ms: int, include_deleted: bool = False) -> list[LocalTask]:
+        """List tasks updated since a timestamp (ms since epoch).
+
+        Uses the index to filter by timestamp before loading from disk,
+        avoiding full table scans for incremental sync operations.
+        """
+        index = self.storage.get_index()
+        tasks_index = index.get("tasks", {})
+
+        # Filter task IDs by updated_at in index
+        matching_ids = []
+        for task_id, task_meta in tasks_index.items():
+            updated_at_str = task_meta.get("updated_at")
+            if not updated_at_str:
+                # No timestamp in index, include it to be safe
+                matching_ids.append(task_id)
+                continue
+
+            # Parse ISO timestamp to ms
+            updated_dt = _parse_datetime(updated_at_str)
+            if updated_dt is None:
+                matching_ids.append(task_id)
+                continue
+
+            updated_ms = int(updated_dt.timestamp() * 1000)
+            if updated_ms > since_ms:
+                matching_ids.append(task_id)
+
+        # Load only matching tasks
+        tasks = []
+        for task_id in matching_ids:
+            task = self.get(task_id, include_deleted=include_deleted)
+            if task:
+                tasks.append(task)
+
+        return tasks
+
     def get_children(self, parent_id: str) -> list[LocalTask]:
         """Get all direct children of a task."""
         # Resolve prefix

@@ -243,13 +243,9 @@ def sync_with_upstream(
     sync_start_ms = int(time.time() * 1000)
 
     # Collect local tasks modified since last sync (including soft-deleted)
-    all_tasks = task_store.list(include_deleted=True)
-    local_changes = []
-
-    for task in all_tasks:
-        task_ts = _datetime_to_ms(task.updated_at)
-        if task_ts > state.last_sync:
-            local_changes.append(_local_task_to_sync_task(task))
+    # Uses index-based filtering to avoid loading all tasks
+    changed_tasks = task_store.list_since(state.last_sync, include_deleted=True)
+    local_changes = [_local_task_to_sync_task(task) for task in changed_tasks]
 
     # Sync with server
     try:

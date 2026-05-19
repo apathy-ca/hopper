@@ -97,8 +97,14 @@ class Task(Base, TimestampMixin):
         Index("idx_tasks_project", "project"),
         Index("idx_tasks_status", "status"),
         Index("idx_tasks_created_at", "created_at"),
+        Index("idx_tasks_updated_at", "updated_at"),
         Index("idx_tasks_parent_id", "parent_id"),
         Index("idx_tasks_assigned_to", "assigned_to"),
+        Index("idx_tasks_instance_id", "instance_id"),
+        Index("idx_tasks_requester", "requester"),
+        Index("idx_tasks_owner", "owner"),
+        Index("idx_tasks_deleted", "deleted"),
+        Index("idx_tasks_external", "external_id", "external_platform"),
         # GIN index for JSONB tags (PostgreSQL only)
         # Index("idx_tasks_tags", "tags", postgresql_using="gin"),
     )

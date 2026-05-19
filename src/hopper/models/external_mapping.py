@@ -3,7 +3,7 @@ External Mapping model for Hopper.
 """
 
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -24,6 +24,12 @@ class ExternalMapping(Base):
 
     # Relationships
     task: Mapped["Task"] = relationship("Task", back_populates="external_mappings")
+
+    # Indexes for efficient lookups by external_id
+    __table_args__ = (
+        Index("idx_external_mappings_external_id", "external_id"),
+        Index("idx_external_mappings_external_id_platform", "external_id", "platform"),
+    )
 
     def __repr__(self) -> str:
         return f"<ExternalMapping(task_id={self.task_id}, platform={self.platform})>"
