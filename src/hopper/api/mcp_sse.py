@@ -1339,6 +1339,10 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 # Module-level session manager — started by the main app lifespan (see app.py)
 _streamable_session_manager: StreamableHTTPSessionManager | None = None
+# Stateless fallback — used for stale-session reconnects so valid requests succeed
+# without 400/404. Each request gets its own ephemeral transport; no session ID
+# is required or returned, so the client can keep using whatever ID it has.
+_stateless_session_manager: StreamableHTTPSessionManager | None = None
 
 
 def get_streamable_session_manager() -> StreamableHTTPSessionManager:
@@ -1351,6 +1355,18 @@ def get_streamable_session_manager() -> StreamableHTTPSessionManager:
             stateless=False,
         )
     return _streamable_session_manager
+
+
+def get_stateless_session_manager() -> StreamableHTTPSessionManager:
+    """Return the stateless session manager used for stale-session reconnect fallback."""
+    global _stateless_session_manager
+    if _stateless_session_manager is None:
+        _stateless_session_manager = StreamableHTTPSessionManager(
+            app=mcp._mcp_server,
+            json_response=True,
+            stateless=True,
+        )
+    return _stateless_session_manager
 
 
 _SSE_KEEPALIVE_INTERVAL = 1500  # seconds — fires before nginx's 3600s proxy_read_timeout
@@ -1379,32 +1395,29 @@ class _StreamableHTTPASGIHandler:
             await auth_error(scope, receive, send)
             return
 
-        # Extract or allocate a session ID for context-var based instance routing.
-        # If the client sends a stale session ID (expired after server restart or
-        # timeout) AND the request is an initialize, strip the session ID so the
-        # MCP manager creates a fresh session. For non-initialize requests with a
-        # stale session ID, pass through unchanged so MCP returns 404 — clients
-        # that handle 404 will reinitialize; those that don't would break on 400
-        # anyway. Stripping on non-initialize causes 400 "Missing session ID".
+        # Session routing. Three cases:
+        # 1. Known session ID → normal stateful path.
+        # 2. No session ID (fresh initialize) → normal stateful path (manager
+        #    creates a new session).
+        # 3. Unknown/stale session ID → route through the stateless manager so
+        #    the request succeeds without 400 or 404. The stateless manager
+        #    creates an ephemeral transport per request; since all hopper tools
+        #    are side-effect-free with respect to session state, this is safe.
+        #    We do NOT strip the session ID here — the stateless manager ignores
+        #    it, and leaving it in the scope means initialize requests also work
+        #    (the stateless transport returns no session ID, so the client will
+        #    get a clean response and can establish a new stateful session on
+        #    its next initialize).
         sm = get_streamable_session_manager()
         raw_sid = request.headers.get(MCP_SESSION_ID_HEADER)
-        if raw_sid and raw_sid not in sm._server_instances:
+        _use_stateless = raw_sid is not None and raw_sid not in sm._server_instances
+        if _use_stateless:
             try:
                 import json as _json
-                _method = _json.loads(body).get("method", "")
+                _method = _json.loads(body).get("method", "unknown")
             except Exception:
-                _method = ""
-            if _method == "initialize":
-                logger.info("MCP session %s not found — reconnecting as new session", raw_sid)
-                scope = dict(scope)
-                _sid_header_bytes = MCP_SESSION_ID_HEADER.lower().encode()
-                scope["headers"] = [
-                    (k, v) for k, v in scope.get("headers", [])
-                    if k.lower() != _sid_header_bytes
-                ]
-                raw_sid = None
-            else:
-                logger.info("MCP session %s not found, method=%s — returning 404 to trigger reinitialize", raw_sid, _method)
+                _method = "unknown"
+            logger.info("MCP session %s not found, method=%s — handling statelessly", raw_sid, _method)
 
         sid = raw_sid or str(uuid.uuid4())
 
@@ -1457,10 +1470,11 @@ class _StreamableHTTPASGIHandler:
                     break
 
         import anyio
+        active_sm = get_stateless_session_manager() if _use_stateless else sm
         try:
             async with anyio.create_task_group() as tg:
                 tg.start_soon(keepalive_loop)
-                await sm.handle_request(scope, replay_receive, tracked_send)
+                await active_sm.handle_request(scope, replay_receive, tracked_send)
                 tg.cancel_scope.cancel()
         finally:
             _session_id.reset(sid_token)
