@@ -1380,20 +1380,31 @@ class _StreamableHTTPASGIHandler:
             return
 
         # Extract or allocate a session ID for context-var based instance routing.
-        # If the client sends a session ID that no longer exists in the session manager
-        # (expired after server restart or timeout), strip it so the manager creates a
-        # fresh session instead of returning a 404 that Claude Web won't recover from.
+        # If the client sends a stale session ID (expired after server restart or
+        # timeout) AND the request is an initialize, strip the session ID so the
+        # MCP manager creates a fresh session. For non-initialize requests with a
+        # stale session ID, pass through unchanged so MCP returns 404 — clients
+        # that handle 404 will reinitialize; those that don't would break on 400
+        # anyway. Stripping on non-initialize causes 400 "Missing session ID".
         sm = get_streamable_session_manager()
         raw_sid = request.headers.get(MCP_SESSION_ID_HEADER)
         if raw_sid and raw_sid not in sm._server_instances:
-            logger.info("MCP session %s not found — reconnecting as new session", raw_sid)
-            scope = dict(scope)
-            _sid_header_bytes = MCP_SESSION_ID_HEADER.lower().encode()
-            scope["headers"] = [
-                (k, v) for k, v in scope.get("headers", [])
-                if k.lower() != _sid_header_bytes
-            ]
-            raw_sid = None
+            try:
+                import json as _json
+                _method = _json.loads(body).get("method", "")
+            except Exception:
+                _method = ""
+            if _method == "initialize":
+                logger.info("MCP session %s not found — reconnecting as new session", raw_sid)
+                scope = dict(scope)
+                _sid_header_bytes = MCP_SESSION_ID_HEADER.lower().encode()
+                scope["headers"] = [
+                    (k, v) for k, v in scope.get("headers", [])
+                    if k.lower() != _sid_header_bytes
+                ]
+                raw_sid = None
+            else:
+                logger.info("MCP session %s not found, method=%s — returning 404 to trigger reinitialize", raw_sid, _method)
 
         sid = raw_sid or str(uuid.uuid4())
 
