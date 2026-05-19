@@ -239,19 +239,20 @@ def test() -> None:
 
 
 def _get_did_key():
-    """Load or generate DID key for MCP authentication."""
+    """Load DID key for MCP authentication."""
     from hopper.upstream.did import DIDKey
 
     did_key_path = Path.home() / ".hopper" / "did.key"
 
     if did_key_path.exists():
         return DIDKey.load(did_key_path)
-    else:
-        # Generate new DID
-        did_key = DIDKey.generate()
-        did_key.save(did_key_path)
-        print_info(f"Generated new DID: {did_key.did}")
-        return did_key
+
+    raise click.ClickException(
+        f"No DID key found at {did_key_path}.\n"
+        "Run 'hopper upstream init' to generate one.\n"
+        "If this host is ephemeral, store the key outside the home directory and\n"
+        "set did_key_path in your Hopper config to point to it."
+    )
 
 
 def _get_default_server() -> str:

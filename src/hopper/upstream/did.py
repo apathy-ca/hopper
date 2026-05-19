@@ -135,10 +135,21 @@ class DIDKey:
 
     def save(self, path: Path) -> None:
         """Save the private key to a file."""
+        import os
+        import tempfile
+
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(self.to_bytes())
-        # Set restrictive permissions
-        path.chmod(0o600)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".did-key-")
+        try:
+            os.chmod(fd, 0o600)
+            os.write(fd, self.to_bytes())
+            os.fsync(fd)
+            os.close(fd)
+            os.replace(tmp, path)
+        except Exception:
+            os.close(fd)
+            os.unlink(tmp)
+            raise
 
     @classmethod
     def load(cls, path: Path) -> DIDKey:
