@@ -92,3 +92,73 @@ class TestUpstreamStatus:
 
         assert result.exit_code == 0
         assert "Last sync: never" in result.output
+
+
+class TestSyncStatus:
+    """`hopper sync status` reports the real upstream state from .sync_state."""
+
+    def _prep_storage(self, upstream_ctx: Context, instance_id: str) -> Path:
+        storage_path = upstream_ctx.config.current_profile.local.path
+        assert storage_path is not None
+        storage_path.mkdir(parents=True, exist_ok=True)
+        (storage_path / "tasks").mkdir(exist_ok=True)
+        (storage_path / "config.yaml").write_text(
+            f"instance:\n  id: {instance_id}\n  name: {instance_id}\n",
+            encoding="utf-8",
+        )
+        return storage_path
+
+    def test_sync_status_reports_upstream_from_sync_state(
+        self,
+        runner: CliRunner,
+        upstream_ctx: Context,
+    ) -> None:
+        instance_id = "test-instance"
+        storage_path = self._prep_storage(upstream_ctx, instance_id)
+
+        last_sync = 1_700_000_000_000
+        with (storage_path / f".sync_state_{instance_id}").open("w", encoding="utf-8") as f:
+            json.dump({"last_sync": last_sync, "last_server_time": last_sync}, f)
+
+        result = runner.invoke(cli, ["sync", "status"], obj=upstream_ctx)
+
+        assert result.exit_code == 0
+        assert "Server: https://upstream.example.com" in result.output
+        assert "Last sync: 2023-11-14T22:13:20+00:00" in result.output
+
+    def test_sync_status_json_includes_state_path_and_server_time(
+        self,
+        runner: CliRunner,
+        upstream_ctx: Context,
+    ) -> None:
+        instance_id = "test-instance"
+        storage_path = self._prep_storage(upstream_ctx, instance_id)
+
+        last_sync = 1_700_000_000_000
+        with (storage_path / f".sync_state_{instance_id}").open("w", encoding="utf-8") as f:
+            json.dump({"last_sync": last_sync, "last_server_time": last_sync}, f)
+
+        result = runner.invoke(cli, ["--json", "sync", "status"], obj=upstream_ctx)
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["server"] == "https://upstream.example.com"
+        assert data["last_sync"] == last_sync
+        assert data["last_server_time"] == last_sync
+        assert data["instance_id"] == instance_id
+        assert data["state_path"].endswith(f".sync_state_{instance_id}")
+
+    def test_sync_status_reports_not_configured(
+        self,
+        runner: CliRunner,
+        upstream_ctx: Context,
+    ) -> None:
+        # No DID key path configured -> upstream is not fully configured.
+        self._prep_storage(upstream_ctx, "test-instance")
+
+        result = runner.invoke(cli, ["--json", "sync", "status"], obj=upstream_ctx)
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["configured"] is False
+        assert data["last_sync"] in (None, 0)

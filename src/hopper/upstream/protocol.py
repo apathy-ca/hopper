@@ -37,6 +37,15 @@ class SyncTask(BaseModel):
     expected_heartbeat: datetime | None = None
     parent_id: str | None = None
     deleted: bool = False  # Tombstone marker
+    # Record kind/type and structured memory fields. Optional for backward
+    # compatibility: older clients/servers that omit them still validate.
+    # `kind=None` is treated as "task" by the server's revision_writer
+    # (RecordType(None) falls back to TASK), so the record type is preserved
+    # for memories while plain tasks are unaffected.
+    kind: str | None = None
+    subject: str | None = None
+    scope: str | None = None
+    provenance: str | None = None
 
     class Config:
         from_attributes = True
@@ -68,6 +77,10 @@ class SyncTask(BaseModel):
             expected_heartbeat=task.expected_heartbeat,
             parent_id=task.parent_id,
             deleted=False,
+            kind=getattr(task, "kind", None),
+            subject=getattr(task, "subject", None),
+            scope=getattr(task, "scope", None),
+            provenance=getattr(task, "provenance", None),
         )
 
 

@@ -31,7 +31,7 @@ ClientError = (APIError, LocalClientError)
 def context(ctx: click.Context) -> None:
     """Session context - view and manage relevant items.
 
-    Shows recent learnings, open tasks, and important context for
+    Shows relevant memory, open tasks, and important context for
     starting or resuming work. Use subcommands to edit or manage items.
 
     Examples:
@@ -45,64 +45,57 @@ def context(ctx: click.Context) -> None:
 
 
 @context.command(name="show")
-@click.option("--learnings", "-l", is_flag=True, help="Show only learnings")
+@click.option("--memory", "-m", is_flag=True, help="Show only memory")
 @click.option("--tasks", "-t", is_flag=True, help="Show only open tasks")
 @click.option("--limit", "-n", type=int, default=10, help="Max items per section")
 @click.pass_obj
-def show(ctx: Context, learnings: bool, tasks: bool, limit: int) -> None:
+def show(ctx: Context, memory: bool, tasks: bool, limit: int) -> None:
     """Show session context.
 
-    Displays recent learnings, open tasks, and other relevant context
-    for starting or resuming a work session.
+    Displays relevant memory (agent knowledge), open tasks, and other
+    context for starting or resuming a work session. Memory is the
+    headline; tasks are secondary.
 
     Examples:
         hopper context show
-        hopper context show --learnings
+        hopper context show --memory
         hopper context show --tasks --limit 5
     """
     # If neither flag set, show both
-    show_learnings = learnings or not tasks
-    show_tasks = tasks or not learnings
+    show_memory = memory or not tasks
+    show_tasks = tasks or not memory
 
     try:
         with ctx.get_client() as client:
             if ctx.json_output:
                 result = {}
-                if show_learnings:
-                    items = client.list_tasks(tags="auto-learned", limit=limit)
-                    result["learnings"] = items
+                if show_memory:
+                    result["memory"] = client.list_tasks(kind="memory", limit=limit)
                 if show_tasks:
-                    items = client.list_tasks(status="open", limit=limit)
-                    # Filter out learnings and memory records from tasks view
-                    items = [
-                        t for t in items
-                        if "auto-learned" not in t.get("tags", [])
-                        and "memory" not in t.get("tags", [])
-                    ]
-                    result["tasks"] = items
+                    # Open Tasks shows only kind=task — non-task kinds
+                    # (memory, job, idea, …) are segmented out by type.
+                    result["tasks"] = client.list_tasks(
+                        status="open", kind="task", limit=limit
+                    )
                 print_json(result)
                 return
 
             console.print()
 
-            # Show learnings section
-            if show_learnings:
-                learning_items = client.list_tasks(tags="auto-learned", limit=limit)
-                _print_learnings_section(learning_items, limit)
+            # Show memory section (the knowledge layer)
+            if show_memory:
+                memory_items = client.list_tasks(kind="memory", limit=limit)
+                _print_memory_section(memory_items, limit)
 
-            # Show open tasks section
+            # Show open tasks section — only kind=task
             if show_tasks:
-                task_items = client.list_tasks(status="open", limit=limit)
-                # Filter out learnings and memory records
-                task_items = [
-                    t for t in task_items
-                    if "auto-learned" not in t.get("tags", [])
-                    and "memory" not in t.get("tags", [])
-                ]
+                task_items = client.list_tasks(
+                    status="open", kind="task", limit=limit
+                )
                 _print_tasks_section(task_items, limit)
 
             # Show northbound items (flagged for upstream)
-            if show_learnings:
+            if show_memory:
                 northbound = client.list_tasks(tags="northbound", limit=5)
                 if northbound:
                     _print_northbound_section(northbound)
@@ -265,32 +258,24 @@ def dismiss(ctx: Context, task_id: str, force: bool) -> None:
 # ============================================================================
 
 
-def _print_learnings_section(items: list[dict], limit: int) -> None:
-    """Print learnings section."""
-    console.print("[bold cyan]Recent Learnings[/bold cyan]")
+def _print_memory_section(items: list[dict], limit: int) -> None:
+    """Print memory section (agent knowledge)."""
+    console.print("[bold cyan]Memory[/bold cyan]")
     console.print()
 
     if not items:
-        console.print("  [dim]No learnings captured yet[/dim]")
+        console.print("  [dim]No memory captured yet[/dim]")
         console.print()
         return
 
     for item in items[:limit]:
         task_id = item.get("id", "")[:8]
         title = item.get("title", "Untitled")
-        tags = item.get("tags", [])
-        created = format_datetime(item.get("created_at"))
-
-        # Highlight northbound items
-        if "northbound" in tags:
-            tag_str = "[yellow]northbound[/yellow]"
-        else:
-            other_tags = [t for t in tags if t != "auto-learned"]
-            tag_str = ", ".join(other_tags[:3]) if other_tags else ""
+        subject = item.get("subject")
 
         console.print(f"  [dim]{task_id}[/dim] {title}")
-        if tag_str:
-            console.print(f"         [dim]{tag_str}[/dim]")
+        if subject:
+            console.print(f"         [dim]{subject}[/dim]")
 
     console.print()
 

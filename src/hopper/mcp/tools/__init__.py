@@ -27,6 +27,7 @@ from .task_tools import (
     create_task,
     get_task,
     get_task_tools,
+    list_memory,
     list_tasks,
     update_task,
     update_task_status,
@@ -39,6 +40,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     # Task tools
     "hopper_create_task": create_task,
     "hopper_list_tasks": list_tasks,
+    "hopper_list_memory": list_memory,
     "hopper_get_task": get_task,
     "hopper_update_task": update_task,
     "hopper_update_task_status": update_task_status,
@@ -96,7 +98,7 @@ async def call_tool(
     # Special handling for create_task which needs context and config
     if name == "hopper_create_task" and config:
         return await handler(client, arguments, context, config.default_priority)
-    elif name == "hopper_list_tasks" and config:
+    elif name in ("hopper_list_tasks", "hopper_list_memory") and config:
         return await handler(client, arguments, config.default_task_limit)
     else:
         return await handler(client, arguments)
@@ -114,6 +116,7 @@ __all__ = [
     # Individual handlers (for direct use if needed)
     "create_task",
     "list_tasks",
+    "list_memory",
     "get_task",
     "update_task",
     "update_task_status",

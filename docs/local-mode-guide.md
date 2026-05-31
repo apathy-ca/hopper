@@ -195,22 +195,33 @@ Local mode has some limitations compared to server mode:
 - **No multi-user**: Single-user access only
 - **No vector search**: Pattern matching uses keyword-based search
 
-## Northbound Sync (Future)
+## Server Sync (Upstream)
 
-Local instances can optionally sync patterns and anonymized statistics to a server instance:
+Local instances sync tasks (and other records) to a Hopper server through the
+**upstream** subsystem — a DID-authenticated record/revision exchange. This is
+configured via the `upstream:` mechanism, **not** any `sync:` block in
+`config.yaml`:
 
-```yaml
-sync:
-  enabled: true
-  server_url: https://hopper.example.com
-  sync_patterns: true
-  sync_episodes: false  # Privacy: off by default
+```bash
+hopper upstream init --server https://hopper.example.com  # generate DID + set server
+hopper sync                                               # push/pull with the server
+hopper sync status                                        # show the REAL sync state
 ```
 
-This enables:
-- Pattern aggregation across instances
-- Global learning improvements
-- Backup of routing intelligence
+`hopper sync status` is the source of truth: it reports the configured upstream
+server, your DID, and the last-sync time read from
+`.hopper/.sync_state_<instance_id>`.
+
+> **Note:** older configs may contain a legacy `sync:` block
+> (`enabled`/`server_url`/`sync_patterns`/`sync_episodes`). That block configured
+> the old learning-engine and **never** controlled server sync — it is no longer
+> written on `hopper init` and can be ignored or removed. Use `hopper sync status`
+> to see whether server sync is actually configured.
+
+Upstream sync enables:
+- Task/record sharing across instances and agents
+- DID-attributed, cross-agent knowledge
+- Backup of your task and memory records
 
 ## Git Integration
 

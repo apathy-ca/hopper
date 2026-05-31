@@ -144,17 +144,23 @@ class RevisionShadowWriter:
         if found is not None:
             return
         now = datetime.utcnow()
+        # These columns are SQLEnum(..., native_enum=False), which SQLAlchemy
+        # stores and reads back by enum NAME (e.g. "RUNNING", "PERSISTENT"), not
+        # value. instance_type is NOT NULL with only a Python-side default, so a
+        # raw INSERT must supply it explicitly or the write fails. Use names for
+        # all three enum columns so the row round-trips through the ORM.
         session.execute(
             text(
                 "INSERT INTO hopper_instances "
-                "(id, name, scope, status, created_at, updated_at) "
-                "VALUES (:id, :name, :scope, :status, :now, :now)"
+                "(id, name, scope, status, instance_type, created_at, updated_at) "
+                "VALUES (:id, :name, :scope, :status, :instance_type, :now, :now)"
             ),
             {
                 "id": instance_id,
                 "name": instance_id,
                 "scope": "PERSONAL",
-                "status": "running",
+                "status": "RUNNING",
+                "instance_type": "PERSISTENT",
                 "now": now,
             },
         )

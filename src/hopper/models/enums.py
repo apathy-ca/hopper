@@ -121,6 +121,8 @@ class RecordType(str, Enum):
       untouched here and can bridge in later via MCP.
     - REFERENCE: pointer to external resource (doc, dashboard, ticket).
     - LOG: immutable event record (publishes, GPU state transitions).
+    - JOB: a unit of compute work (e.g. GPU job). A valued use case, but
+      kept out of default task/context/memory views via its own kind.
 
     Payload stays JSON so types can evolve without schema migrations.
     """
@@ -132,6 +134,7 @@ class RecordType(str, Enum):
     MEMORY = "memory"
     REFERENCE = "reference"
     LOG = "log"
+    JOB = "job"
 
 
 class RevisionAction(str, Enum):

@@ -131,12 +131,23 @@ class UpstreamNamespaceClient:
         st = self._dict_to_sync_task(task_dict)
         self._storage.put(st, from_did=self._did())
 
-    def list_tasks(self, status=None, priority=None, tags=None, limit=50, **_) -> list[dict]:
+    def list_tasks(self, status=None, priority=None, tags=None, kind=None, limit=50, **_) -> list[dict]:
         tasks = self._all_tasks()
         if status:
             tasks = [t for t in tasks if t.get("status") == status]
         if priority:
             tasks = [t for t in tasks if t.get("priority") == priority]
+        if kind:
+            # Kind is first-class: SyncTask carries a real `kind` field that
+            # round-trips through UpstreamStorage. Records with no kind (older
+            # data) are treated as "task". For non-task kinds, also accept the
+            # legacy kind-tag so memories/ideas created before the kind field
+            # existed (and not yet migrated) remain findable.
+            tasks = [
+                t for t in tasks
+                if (t.get("kind") or "task") == kind
+                or (kind != "task" and kind in (t.get("tags") or []))
+            ]
         if tags:
             tag_set = set(tags.split(",")) if isinstance(tags, str) else set(tags)
             tasks = [t for t in tasks if tag_set & set(t.get("tags") or [])]
@@ -153,6 +164,7 @@ class UpstreamNamespaceClient:
         import uuid as _uuid, datetime as _dt
         task_id = "t" + _uuid.uuid4().hex[:8]
         now = _dt.datetime.utcnow().isoformat() + "Z"
+        kind = data.get("kind", "task")
         task = {
             "id": task_id,
             "title": data.get("title", ""),
@@ -160,14 +172,21 @@ class UpstreamNamespaceClient:
             "priority": data.get("priority", "medium"),
             "description": data.get("description"),
             "tags": data.get("tags", []),
+            "kind": kind,
+            "subject": data.get("subject"),
+            "scope": data.get("scope"),
+            "provenance": data.get("provenance"),
             "instance": self._ns,
-            "source": "mcp",
+            "source": data.get("source", "mcp"),
             "created_at": now,
             "updated_at": now,
             "assigned_to": None,
             "parent_id": None,
             "deleted": False,
         }
+        # kind/subject/scope/provenance are real fields on SyncTask, so they
+        # persist through UpstreamStorage and round-trip on read — no kind-tag
+        # injection (the legacy tag approach this work removes).
         self._put(task)
         return task
 
@@ -235,18 +254,100 @@ class UpstreamNamespaceClient:
     def create_pattern(self, data) -> dict: return data
 
 
+def _did_has_upstream_association(did: str | None) -> bool:
+    """Return True if this DID is known to be scoped to an upstream instance.
+
+    A DID is considered "multi-instance / upstream-associated" when either:
+      * the durable DID registry records a last_instance for it, or
+      * it has at least one registered hpr_ token carrying an instance name.
+
+    For such DIDs we must NEVER silently serve the server's own LocalClient
+    ("local" instance) — doing so returns the WRONG instance's data. Plain
+    local/anonymous sessions (no DID, no association) are unaffected and keep
+    falling back to LocalClient.
+    """
+    if not did:
+        return False
+    # 1. Durable registry affinity.
+    try:
+        from hopper.upstream.server import get_storage
+        if get_storage().did_registry.get_last_instance(did):
+            return True
+    except Exception:
+        pass
+    # 2. Registered hpr_ tokens that carry an instance scope.
+    try:
+        from hopper.api.mcp_tokens import get_token_store
+        tokens = get_token_store().list_tokens(did=did)
+        if any(t.get("instance") for t in tokens):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _resolve_instance_name(sid: str | None, did: str | None) -> str | None:
+    """Resolve the active instance name for a session.
+
+    Fast path: the in-memory per-process session cache. On a miss (e.g. a
+    request routed to a uvicorn worker that did not handle the SSE connect /
+    switch_instance, or a stale-session reroute that never populated the cache)
+    we fall back to the DURABLE source of truth: the DID registry's
+    last_instance, which is shared across workers and restarts. A successful
+    registry resolution repopulates the cache and is logged as a warning so
+    silent scope-loss is observable in server logs.
+
+    Returns None only when no instance can be determined.
+    """
+    if sid:
+        _, instance_name = _session_instances.get(sid, (None, None))
+        if instance_name:
+            return instance_name
+
+    # Cache miss — recover scope from the durable DID->instance affinity.
+    if did:
+        try:
+            from hopper.upstream.server import get_storage
+            recovered = get_storage().did_registry.get_last_instance(did)
+        except Exception:
+            recovered = None
+        if recovered:
+            logger.warning(
+                "MCP session %s for DID %s missed the in-memory instance cache; "
+                "recovered instance '%s' from DID registry (cross-worker/reconnect). "
+                "Repopulating session cache.",
+                sid, did, recovered,
+            )
+            if sid:
+                _session_instances[sid] = (None, recovered)
+            return recovered
+
+    return None
+
+
 def _get_client():
     """Get the appropriate client for the current session's instance.
 
     Instance resolution is server-side only:
-    1. Named instance → UpstreamNamespaceClient backed by UpstreamStorage
-    2. Fallback → server's default LocalClient (~/.hopper)
+    1. Named instance (session cache, or recovered from the DID registry on a
+       cache miss) → UpstreamNamespaceClient backed by UpstreamStorage.
+    2. Genuinely local/anonymous session (no DID, no upstream association)
+       → server's default LocalClient (~/.hopper).
+
+    TRUST RULE: if the session has an authenticated DID that is associated with
+    an upstream instance but we still cannot resolve a concrete instance, we do
+    NOT silently fall back to LocalClient (which would return the WRONG, "local"
+    instance's data). Instead we raise LocalClientError, which every tool
+    already translates into a clear, recoverable error telling the caller to
+    run hopper_switch_instance.
 
     instance_path from client tokens is intentionally ignored — the server
     never accesses arbitrary filesystem paths supplied by clients.
     """
     sid = _session_id.get()
-    _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
+    did = _session_did.get()
+
+    instance_name = _resolve_instance_name(sid, did)
     if instance_name:
         from hopper.upstream.server import get_storage
         try:
@@ -255,6 +356,23 @@ def _get_client():
             storage = None
         if storage is not None:
             return UpstreamNamespaceClient(instance_name, storage)
+
+    # No instance resolved. Refuse to serve the wrong scope for DIDs that are
+    # known to be upstream/multi-instance scoped.
+    if _did_has_upstream_association(did):
+        logger.warning(
+            "MCP session %s for DID %s has an upstream instance association but "
+            "no instance could be resolved; refusing silent fallback to local data.",
+            sid, did,
+        )
+        raise LocalClientError(
+            "No Hopper instance is selected for this session. Your identity is "
+            "scoped to an upstream instance, so serving the server's local data "
+            "would return the wrong records. Call hopper_switch_instance(\"<name>\") "
+            "to select your instance (e.g. the one you last used), then retry."
+        )
+
+    # Genuinely local / anonymous: LocalClient remains the correct default.
     return LocalClient()
 
 
@@ -312,16 +430,13 @@ def hopper_create_task(
     try:
         from hopper.location import resolve_location
 
-        tag_list = list(tags or [])
-        if kind != "task" and kind not in tag_list:
-            tag_list.insert(0, kind)
-
         with _get_client() as client:
             result = client.create_task({
                 "title": title,
                 "description": description,
                 "priority": priority,
-                "tags": tag_list,
+                "tags": list(tags or []),
+                "kind": kind,
                 "source": resolve_location(override=location, transport="mcp"),
             })
             return {"status": "created", "task": result}
@@ -363,30 +478,66 @@ def hopper_create_memory(
         provenance: How the memory was learned. Free-form, but prefer:
             "conversation YYYY-MM-DD", "observation", "inference from <id>"
         priority: low | medium | high | urgent (default medium)
-        tags: Additional tags (the 'memory' tag is added automatically)
+        tags: Additional tags (free-form; kind="memory" is set automatically)
         location: Author location — see hopper_create_task for guidance.
     """
     try:
         from hopper.location import resolve_location
 
-        preamble: list[str] = [f"Subject: {subject}", f"Scope: {scope}"]
-        if provenance:
-            preamble.append(f"Provenance: {provenance}")
-        description = "\n".join(preamble) + "\n\n" + content
-
-        tag_list = list(tags or [])
-        if "memory" not in tag_list:
-            tag_list.insert(0, "memory")
-
         with _get_client() as client:
             result = client.create_task({
                 "title": title,
-                "description": description,
+                "description": content,
                 "priority": priority,
-                "tags": tag_list,
+                "tags": list(tags or []),
+                "kind": "memory",
+                "subject": subject,
+                "scope": scope,
+                "provenance": provenance,
                 "source": resolve_location(override=location, transport="mcp"),
             })
             return {"status": "created", "memory": result}
+    except LocalClientError as e:
+        return {"status": "error", "message": e.message}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def hopper_list_memory(
+    subject: str | None = None,
+    scope: str | None = None,
+    tags: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """List memory records — first-class agent knowledge.
+
+    This is the kind-based retrieval path for memory (it filters kind="memory",
+    NOT the legacy tags=["memory"] approach). Use it at the start of a session
+    to recall what you and other agents have learned.
+
+    Args:
+        subject: Optional filter on the memory subject (e.g. "user:preferences",
+                 "project:<slug>"). Matched against the structured subject field.
+        scope: Optional filter on scope (private, shared-with-user, shared-across-agents)
+        tags: Comma-separated tags to additionally filter by
+        limit: Maximum number of memories to return (default 50)
+    """
+    try:
+        with _get_client() as client:
+            params = {"limit": limit, "kind": "memory"}
+            if tags:
+                params["tags"] = tags
+            memories = client.list_tasks(**params)
+            if subject:
+                memories = [m for m in memories if m.get("subject") == subject]
+            if scope:
+                memories = [m for m in memories if m.get("scope") == scope]
+            return {
+                "status": "success",
+                "memories": memories,
+                "count": len(memories),
+            }
     except LocalClientError as e:
         return {"status": "error", "message": e.message}
     except Exception as e:
@@ -398,17 +549,27 @@ def hopper_list_tasks(
     status: str | None = None,
     priority: str | None = None,
     tags: str | None = None,
+    kind: str | None = None,
+    all_kinds: bool = False,
     limit: int = 50,
 ) -> dict:
-    """List tasks from Hopper with optional filters.
+    """List records from Hopper, defaulting to kind="task".
 
-    Returns tasks sorted by status (in_progress first, then pending, completed last)
-    and then by priority within each status group.
+    By default this shows only kind="task" — memories, jobs, ideas, notes and
+    other non-task kinds are excluded so the task list stays focused. Pass
+    kind="memory" (or any kind) to view a specific kind, or all_kinds=true to
+    see everything. To browse agent knowledge, prefer hopper_list_memory.
+
+    Returns tasks sorted by status (in_progress first, then pending, completed
+    last) and then by priority within each status group.
 
     Args:
         status: Filter by status - one of: open, pending, in_progress, blocked, completed, cancelled
         priority: Filter by priority - one of: low, medium, high, urgent
         tags: Comma-separated list of tags to filter by
+        kind: Filter by record kind (task, memory, job, idea, note, reference, inbox, log).
+              Defaults to "task" when omitted.
+        all_kinds: If true, return every kind (disables the default kind="task" filter)
         limit: Maximum number of tasks to return (default 50)
     """
     try:
@@ -420,6 +581,13 @@ def hopper_list_tasks(
                 params["priority"] = priority
             if tags:
                 params["tags"] = tags
+            # Default segmentation: task-oriented views show only kind=task.
+            # An explicit kind selects a different kind; all_kinds disables the
+            # filter entirely so nothing is hidden.
+            if kind:
+                params["kind"] = kind
+            elif not all_kinds:
+                params["kind"] = "task"
 
             tasks = client.list_tasks(**params)
             return {
@@ -961,8 +1129,21 @@ def hopper_instructions() -> str:
     patterns, learning feedback, and agent identity conventions.
     """
     sid = _session_id.get()
-    _, instance_name = _session_instances.get(sid, (None, None)) if sid else (None, None)
-    instance_line = f"Active instance: **{instance_name}**" if instance_name else "Active instance: **default** (token has no instance scope)"
+    did = _session_did.get()
+    # Resolve consistently with _get_client(): on a session-cache miss, recover
+    # the instance from the durable DID registry rather than misreporting the
+    # active scope as "default".
+    instance_name = _resolve_instance_name(sid, did)
+    if instance_name:
+        instance_line = f"Active instance: **{instance_name}**"
+    elif _did_has_upstream_association(did):
+        instance_line = (
+            "Active instance: **none selected** — your identity is scoped to an "
+            "upstream instance. Call hopper_switch_instance(\"<name>\") before "
+            "reading or writing, or tools will return a 'no instance selected' error."
+        )
+    else:
+        instance_line = "Active instance: **default** (token has no instance scope)"
 
     return f"""# Hopper — Persistent Record Store for AI Agents
 
@@ -1074,12 +1255,26 @@ scope:
 provenance: how you learned it ("conversation 2026-04-22", "observation",
 "inference from memory-id abc123").
 
+subject/scope/provenance are stored as STRUCTURED fields on the memory
+record (a real kind="memory"), not as preamble text. Retrieve memory by
+kind, not by a magic tag:
+
+  hopper_list_memory()                              # all memories
+  hopper_list_memory(subject="user:preferences")    # by subject
+  hopper_list_memory(scope="shared-across-agents")  # by scope
+
 ## Searching
 
   hopper_search_tasks("keyword")
-  hopper_list_tasks(status="open", priority="high")
-  hopper_list_tasks(tags=["memory"])       # all memories
-  hopper_list_tasks(tags=["idea"])         # all ideas
+  hopper_list_tasks(status="open", priority="high")  # kind=task by default
+  hopper_list_memory()                     # all memories (kind-based)
+  hopper_list_tasks(kind="memory")         # equivalent, via the kind filter
+  hopper_list_tasks(kind="idea")           # all ideas
+  hopper_list_tasks(all_kinds=True)        # every kind, nothing hidden
+
+hopper_list_tasks defaults to kind="task": memories, jobs, ideas and other
+non-task kinds are segmented out so the task list stays focused. Use the
+kind= argument or all_kinds=True to reach them.
 
 ## Instances
 

@@ -89,6 +89,12 @@ class TaskCreate(BaseModel):
     depends_on: list[str] = Field(default_factory=list, description="Task IDs this depends on")
     blocks: list[str] = Field(default_factory=list, description="Task IDs this blocks")
 
+    # First-class record kind + structured memory fields
+    kind: str = Field(default="task", description="Record kind (see RecordType)")
+    subject: str | None = Field(None, description="Memory subject")
+    scope: str | None = Field(None, description="Memory scope")
+    provenance: str | None = Field(None, description="Memory provenance")
+
     model_config = ConfigDict(use_enum_values=True)
 
 
@@ -176,6 +182,15 @@ class TaskResponse(BaseModel):
     # Dependencies
     depends_on: list[str] = []
     blocks: list[str] = []
+
+    # First-class record kind + structured memory fields.
+    # Defaults guarantee legacy Task ORM rows (which lack these attributes)
+    # still validate via model_validate(...) under from_attributes: a missing
+    # attribute falls back to the field default rather than raising.
+    kind: str = "task"
+    subject: str | None = None
+    scope: str | None = None
+    provenance: str | None = None
 
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 

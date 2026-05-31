@@ -18,7 +18,12 @@ import pytest
 
 from hopper.upstream.protocol import SyncResponse, SyncTask
 from hopper.upstream.storage import UpstreamStorage
-from hopper.upstream.sync import SyncState, sync_with_upstream
+from hopper.upstream.sync import (
+    SyncState,
+    _apply_sync_task_to_local,
+    _local_task_to_sync_task,
+    sync_with_upstream,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -229,3 +234,142 @@ class TestServerIndexOnReceivedAt:
             f"rebuilt index entry {index_ts} should be server time [{before}, {after}], "
             f"not client's updated_at {now_ms - 30_000}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: kind/type + structured memory fields survive every sync hop
+# ---------------------------------------------------------------------------
+
+
+class TestKindAndMemoryFieldRoundTrip:
+    """kind/type + structured memory fields (subject/scope/provenance) must
+    survive every sync hop: client serialize -> wire model -> server store
+    (revision.payload) -> server read -> pull back -> client apply.
+
+    Regression for the dropped-field bug: SyncTask did not declare these
+    fields, so Pydantic silently dropped them on validation/dump and the
+    server's revision_writer always derived record_type="task".
+    """
+
+    MEMORY_FIELDS = dict(
+        kind="memory",
+        subject="auth flow",
+        scope="project:hopper",
+        provenance="claude:acm-rewrite",
+    )
+
+    @staticmethod
+    def _markdown_store(tmp_path: Path) -> Any:
+        from hopper.storage import MarkdownStorage, StorageConfig, TaskMarkdownStore
+
+        config = StorageConfig.local(tmp_path)
+        storage = MarkdownStorage(config)
+        storage.initialize()
+        return TaskMarkdownStore(storage)
+
+    def test_protocol_serialize_deserialize_preserves_fields(self) -> None:
+        """model_dump -> model_validate round-trips all four fields (the wire)."""
+        now = datetime.now(timezone.utc)
+        task = SyncTask(
+            id="mem-1",
+            title="A memory",
+            status="open",
+            instance="test-instance",
+            created_at=now,
+            updated_at=now,
+            **self.MEMORY_FIELDS,
+        )
+
+        wire = task.model_dump(mode="json")
+        # Fields must be present on the wire payload, not silently dropped.
+        assert wire["kind"] == "memory"
+        assert wire["subject"] == "auth flow"
+        assert wire["scope"] == "project:hopper"
+        assert wire["provenance"] == "claude:acm-rewrite"
+
+        restored = SyncTask.model_validate(wire)
+        assert restored.kind == "memory"
+        assert restored.subject == "auth flow"
+        assert restored.scope == "project:hopper"
+        assert restored.provenance == "claude:acm-rewrite"
+
+    def test_server_store_payload_preserves_fields(self, tmp_path: Path) -> None:
+        """UpstreamStorage.put -> get keeps the fields in revision.payload.
+
+        revision_writer derives records.type from payload['kind'], so the
+        stored payload must carry kind="memory".
+        """
+        storage = UpstreamStorage(tmp_path)
+        now = datetime.now(timezone.utc)
+        task = SyncTask(
+            id="mem-store",
+            title="A memory",
+            status="open",
+            instance="test-instance",
+            created_at=now,
+            updated_at=now,
+            **self.MEMORY_FIELDS,
+        )
+
+        ok, _ = storage.put(task, from_did="did:key:test")
+        assert ok
+
+        # The same dict shape revision_writer consumes (payload.get("kind")).
+        stored = storage.get("test-instance", "mem-store")
+        assert stored is not None
+        payload = stored.task.model_dump(mode="json")
+        assert payload["kind"] == "memory"
+        assert payload["subject"] == "auth flow"
+        assert payload["scope"] == "project:hopper"
+        assert payload["provenance"] == "claude:acm-rewrite"
+
+    def test_client_serialize_and_apply_round_trip(self, tmp_path: Path) -> None:
+        """LocalTask -> SyncTask -> (pull) -> LocalTask preserves the fields."""
+        from hopper.storage.tasks import LocalTask
+
+        local = LocalTask.create(
+            title="A memory",
+            status="open",
+            **self.MEMORY_FIELDS,
+        )
+
+        # Client serialize hop.
+        sync_task = _local_task_to_sync_task(local)
+        assert sync_task.kind == "memory"
+        assert sync_task.subject == "auth flow"
+        assert sync_task.scope == "project:hopper"
+        assert sync_task.provenance == "claude:acm-rewrite"
+
+        # Pull-back / apply hop into a real markdown store.
+        store = self._markdown_store(tmp_path)
+        applied_id = _apply_sync_task_to_local(sync_task, store)
+        assert applied_id == sync_task.id
+
+        reloaded = store.get(sync_task.id)
+        assert reloaded is not None
+        assert reloaded.kind == "memory"
+        assert reloaded.subject == "auth flow"
+        assert reloaded.scope == "project:hopper"
+        assert reloaded.provenance == "claude:acm-rewrite"
+
+    def test_legacy_task_without_fields_still_syncs(self, tmp_path: Path) -> None:
+        """Older payloads omitting the fields validate and default to a task."""
+        # Simulate an old client/server that never sends the new keys.
+        legacy_wire = {
+            "id": "legacy-1",
+            "title": "Old task",
+            "status": "open",
+            "instance": "test-instance",
+        }
+        restored = SyncTask.model_validate(legacy_wire)
+        assert restored.kind is None  # treated as "task" downstream
+        assert restored.subject is None
+        assert restored.scope is None
+        assert restored.provenance is None
+
+        store = self._markdown_store(tmp_path)
+        applied_id = _apply_sync_task_to_local(restored, store)
+        assert applied_id == "legacy-1"
+        reloaded = store.get("legacy-1")
+        assert reloaded is not None
+        assert reloaded.kind == "task"

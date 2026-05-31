@@ -5,17 +5,19 @@ Provides CRUD operations, filtering, search, and status updates for tasks.
 """
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from hopper.api.dependencies import PaginationParams, get_db
+from hopper.api.dependencies import PaginationParams, get_db, records_backend_enabled
 from hopper.api.exceptions import (
     InvalidStateTransitionException,
     NotFoundException,
     ValidationException,
 )
+from hopper.api.repositories.record_tasks import RecordTaskRepository
 from hopper.api.schemas.task import (
     Priority,
     TaskCreate,
@@ -46,6 +48,77 @@ VALID_TRANSITIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Records/revisions backend helpers (Phase 2/3)
+#
+# The REST task routes carry no DID-auth context (unlike the MCP path), so
+# server-side writes are attributed to a documented placeholder identity
+# standing in for the configured instance DID. Revision history still records
+# a non-null author_did/author_location per write.
+# ---------------------------------------------------------------------------
+_SERVER_AUTHOR_DID = "did:key:hopper-api-server"
+_SERVER_AUTHOR_LOCATION = "api"
+
+# Defaults for fields the records payload doesn't carry but TaskResponse
+# requires (these have no schema-level default).
+_RESPONSE_DEFAULTS: dict[str, Any] = {
+    "velocity_requirement": "medium",
+    "source": "api",
+}
+
+
+def _record_to_response(rec: dict[str, Any]) -> TaskResponse:
+    """Map a records-backend task-shaped dict onto TaskResponse.
+
+    Mirrors the field shape the legacy Task ORM produces. ``assigned_to`` in
+    the payload maps to the response ``owner`` field; missing required fields
+    fall back to documented defaults.
+    """
+    data: dict[str, Any] = dict(_RESPONSE_DEFAULTS)
+    data.update(
+        {
+            "id": rec.get("id"),
+            "title": rec.get("title") or "",
+            "description": rec.get("description") or "",
+            "project": rec.get("project"),
+            "tags": rec.get("tags") or [],
+            "priority": rec.get("priority") or "medium",
+            "status": rec.get("status") or "pending",
+            "owner": rec.get("assigned_to"),
+            "created_at": rec.get("created_at"),
+            "updated_at": rec.get("updated_at"),
+            "kind": rec.get("kind") or "task",
+        }
+    )
+    # Carry through any explicitly-present payload fields that TaskResponse
+    # knows about (requester, external_*, context, deps, memory fields, etc.).
+    for key in (
+        "executor_preference",
+        "required_capabilities",
+        "estimated_effort",
+        "velocity_requirement",
+        "requester",
+        "source",
+        "external_id",
+        "external_url",
+        "external_platform",
+        "conversation_id",
+        "context",
+        "depends_on",
+        "blocks",
+        "subject",
+        "scope",
+        "provenance",
+    ):
+        if rec.get(key) is not None:
+            data[key] = rec[key]
+    return TaskResponse.model_validate(data)
+
+
+def _repo(sync_session) -> RecordTaskRepository:
+    return RecordTaskRepository(sync_session)
+
+
 @router.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     task_data: TaskCreate,
@@ -64,6 +137,21 @@ async def create_task(
     Raises:
         ValidationException: If task data is invalid
     """
+    if records_backend_enabled():
+        payload = task_data.model_dump(exclude_none=True)
+        # The payload "owner" concept lives under assigned_to in records.
+        payload.setdefault("kind", "task")
+
+        def _create(sync_session) -> dict[str, Any]:
+            return _repo(sync_session).create(
+                payload,
+                author_did=_SERVER_AUTHOR_DID,
+                author_location=_SERVER_AUTHOR_LOCATION,
+            )
+
+        rec = await db.run_sync(_create)
+        return _record_to_response(rec)
+
     # Create task model
     task = Task(
         title=task_data.title,
@@ -104,6 +192,9 @@ async def list_tasks(
     tags: list[str] | None = Query(None),
     owner: str | None = None,
     requester: str | None = None,
+    # Kind segmentation (records backend only; default kind="task")
+    kind: str = Query("task", description="Record kind to list (records backend)"),
+    all_kinds: bool = Query(False, description="List all kinds (records backend)"),
     # Sorting
     sort_by: str = Query("created_at", description="Field to sort by"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -126,6 +217,36 @@ async def list_tasks(
     Returns:
         Paginated task list
     """
+    if records_backend_enabled():
+        # Records backend filters single-valued status/priority in Python; the
+        # legacy path accepts lists, so collapse to the first value here.
+        status_value = status_filter[0].value if status_filter else None
+        priority_value = priority[0].value if priority else None
+
+        def _list(sync_session) -> tuple[list[dict[str, Any]], int]:
+            return _repo(sync_session).list(
+                kind=kind,
+                all_kinds=all_kinds,
+                status=status_value,
+                priority=priority_value,
+                project=project,
+                owner=owner,
+                tags=tags,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                skip=pagination.skip,
+                limit=pagination.limit,
+            )
+
+        items, total = await db.run_sync(_list)
+        return TaskList(
+            items=[_record_to_response(r) for r in items],
+            total=total,
+            skip=pagination.skip,
+            limit=pagination.limit,
+            has_more=(pagination.skip + len(items)) < total,
+        )
+
     # Build query
     query = select(Task)
 
@@ -172,6 +293,79 @@ async def list_tasks(
     )
 
 
+@router.get("/tasks/search", response_model=TaskList)
+async def search_tasks(
+    q: str = Query(..., min_length=1, description="Search query"),
+    db: AsyncSession = Depends(get_db),
+    pagination: PaginationParams = Depends(),
+    kind: str = Query("task", description="Record kind to search (records backend)"),
+    all_kinds: bool = Query(False, description="Search all kinds (records backend)"),
+) -> TaskList:
+    """
+    Search tasks by title, description, or tags.
+
+    Basic full-text search for Phase 1. Will be enhanced with
+    proper search in later phases.
+
+    NOTE: declared before ``/tasks/{task_id}`` so the static ``/search``
+    segment is matched ahead of the dynamic id route.
+
+    Args:
+        q: Search query
+        db: Database session
+        pagination: Pagination parameters
+
+    Returns:
+        Matching tasks
+    """
+    if records_backend_enabled():
+        def _search(sync_session) -> tuple[list[dict[str, Any]], int]:
+            return _repo(sync_session).search(
+                q,
+                kind=kind,
+                all_kinds=all_kinds,
+                skip=pagination.skip,
+                limit=pagination.limit,
+            )
+
+        items, total = await db.run_sync(_search)
+        return TaskList(
+            items=[_record_to_response(r) for r in items],
+            total=total,
+            skip=pagination.skip,
+            limit=pagination.limit,
+            has_more=(pagination.skip + len(items)) < total,
+        )
+
+    # Simple search - will be enhanced with proper search later
+    search_pattern = f"%{q}%"
+    query = select(Task).where(
+        or_(
+            Task.title.ilike(search_pattern),
+            Task.description.ilike(search_pattern),
+        )
+    )
+
+    # Count total
+    count_query = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_query) or 0
+
+    # Apply pagination
+    query = query.offset(pagination.skip).limit(pagination.limit)
+
+    # Execute query
+    result = await db.execute(query)
+    tasks = result.scalars().all()
+
+    return TaskList(
+        items=[TaskResponse.model_validate(task) for task in tasks],
+        total=total,
+        skip=pagination.skip,
+        limit=pagination.limit,
+        has_more=(pagination.skip + len(tasks)) < total,
+    )
+
+
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: str,
@@ -190,6 +384,12 @@ async def get_task(
     Raises:
         NotFoundException: If task not found
     """
+    if records_backend_enabled():
+        rec = await db.run_sync(lambda s: _repo(s).get(task_id))
+        if rec is None:
+            raise NotFoundException("Task", task_id)
+        return _record_to_response(rec)
+
     query = select(Task).where(Task.id == task_id)
     result = await db.execute(query)
     task = result.scalar_one_or_none()
@@ -221,6 +421,37 @@ async def update_task(
         NotFoundException: If task not found
         InvalidStateTransitionException: If status transition is invalid
     """
+    if records_backend_enabled():
+        rec = await db.run_sync(lambda s: _repo(s).get(task_id))
+        if rec is None:
+            raise NotFoundException("Task", task_id)
+
+        current_status = rec.get("status") or "pending"
+        # Validate status transition if status is being updated
+        if task_data.status and task_data.status != current_status:
+            current_enum = StatusEnum(current_status)
+            new_status = StatusEnum(task_data.status)
+            if new_status not in VALID_TRANSITIONS.get(current_enum, []):
+                raise InvalidStateTransitionException(current_status, task_data.status)
+
+        changes = task_data.model_dump(exclude_unset=True)
+        # Response uses "owner"; the records payload stores it as assigned_to.
+        if "owner" in changes:
+            changes["assigned_to"] = changes.pop("owner")
+
+        def _update(sync_session) -> dict[str, Any] | None:
+            return _repo(sync_session).update(
+                task_id,
+                changes,
+                author_did=_SERVER_AUTHOR_DID,
+                author_location=_SERVER_AUTHOR_LOCATION,
+            )
+
+        updated = await db.run_sync(_update)
+        if updated is None:
+            raise NotFoundException("Task", task_id)
+        return _record_to_response(updated)
+
     query = select(Task).where(Task.id == task_id)
     result = await db.execute(query)
     task = result.scalar_one_or_none()
@@ -262,6 +493,19 @@ async def delete_task(
     Raises:
         NotFoundException: If task not found
     """
+    if records_backend_enabled():
+        def _delete(sync_session) -> bool:
+            return _repo(sync_session).soft_delete(
+                task_id,
+                author_did=_SERVER_AUTHOR_DID,
+                author_location=_SERVER_AUTHOR_LOCATION,
+            )
+
+        ok = await db.run_sync(_delete)
+        if not ok:
+            raise NotFoundException("Task", task_id)
+        return
+
     query = select(Task).where(Task.id == task_id)
     result = await db.execute(query)
     task = result.scalar_one_or_none()
@@ -297,6 +541,34 @@ async def update_task_status(
         NotFoundException: If task not found
         InvalidStateTransitionException: If status transition is invalid
     """
+    if records_backend_enabled():
+        rec = await db.run_sync(lambda s: _repo(s).get(task_id))
+        if rec is None:
+            raise NotFoundException("Task", task_id)
+
+        current_status = rec.get("status") or "pending"
+        current_enum = StatusEnum(current_status)
+        new_status = StatusEnum(status_update.status)
+        if new_status not in VALID_TRANSITIONS.get(current_enum, []):
+            raise InvalidStateTransitionException(current_status, status_update.status)
+
+        changes: dict[str, Any] = {"status": new_status.value}
+        if status_update.owner is not None:
+            changes["assigned_to"] = status_update.owner
+
+        def _update_status(sync_session) -> dict[str, Any] | None:
+            return _repo(sync_session).update(
+                task_id,
+                changes,
+                author_did=_SERVER_AUTHOR_DID,
+                author_location=_SERVER_AUTHOR_LOCATION,
+            )
+
+        updated = await db.run_sync(_update_status)
+        if updated is None:
+            raise NotFoundException("Task", task_id)
+        return _record_to_response(updated)
+
     query = select(Task).where(Task.id == task_id)
     result = await db.execute(query)
     task = result.scalar_one_or_none()
@@ -318,55 +590,6 @@ async def update_task_status(
     await db.refresh(task)
 
     return TaskResponse.model_validate(task)
-
-
-@router.get("/tasks/search", response_model=TaskList)
-async def search_tasks(
-    q: str = Query(..., min_length=1, description="Search query"),
-    db: AsyncSession = Depends(get_db),
-    pagination: PaginationParams = Depends(),
-) -> TaskList:
-    """
-    Search tasks by title, description, or tags.
-
-    Basic full-text search for Phase 1. Will be enhanced with
-    proper search in later phases.
-
-    Args:
-        q: Search query
-        db: Database session
-        pagination: Pagination parameters
-
-    Returns:
-        Matching tasks
-    """
-    # Simple search - will be enhanced with proper search later
-    search_pattern = f"%{q}%"
-    query = select(Task).where(
-        or_(
-            Task.title.ilike(search_pattern),
-            Task.description.ilike(search_pattern),
-        )
-    )
-
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
-    total = await db.scalar(count_query) or 0
-
-    # Apply pagination
-    query = query.offset(pagination.skip).limit(pagination.limit)
-
-    # Execute query
-    result = await db.execute(query)
-    tasks = result.scalars().all()
-
-    return TaskList(
-        items=[TaskResponse.model_validate(task) for task in tasks],
-        total=total,
-        skip=pagination.skip,
-        limit=pagination.limit,
-        has_more=(pagination.skip + len(tasks)) < total,
-    )
 
 
 @router.post(

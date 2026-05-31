@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from hopper.models.record import Record
 from hopper.models.task import Task
 from hopper.storage.tasks import LocalTask, _utc_now
 from hopper.storage.revision_writer import AuthorContext, write_revision, tombstone_revision
@@ -26,8 +27,25 @@ from hopper.storage.revision_writer import AuthorContext, write_revision, tombst
 logger = logging.getLogger(__name__)
 
 
-def _orm_to_local(row: Task) -> LocalTask:
-    """Convert a Task ORM row to a LocalTask dataclass."""
+def _resolve_kinds(session: Session, task_ids: list[str]) -> dict[str, str]:
+    """Look up the record `type` for the given task IDs.
+
+    The real kind lives in records.type (written via the revision path), not in
+    the tasks table. Returns a mapping of id -> type for the records that exist;
+    callers default to "task" for any id absent here.
+    """
+    if not task_ids:
+        return {}
+    stmt = select(Record.id, Record.type).where(Record.id.in_(task_ids))
+    return {rid: rtype for rid, rtype in session.execute(stmt).all() if rtype}
+
+
+def _orm_to_local(row: Task, kind: str = "task") -> LocalTask:
+    """Convert a Task ORM row to a LocalTask dataclass.
+
+    `kind` is the record's type as read from records.type (see _resolve_kinds);
+    it defaults to "task" when no matching record row exists.
+    """
 
     def _dt(v: Any) -> datetime | None:
         if v is None:
@@ -59,10 +77,6 @@ def _orm_to_local(row: Task) -> LocalTask:
             depends_on = []
     if not isinstance(depends_on, list):
         depends_on = []
-
-    # kind is stored in records.type, not in the tasks table directly.
-    # Default to "task"; full kind round-trip happens via the revision payload.
-    kind = "task"
 
     return LocalTask(
         id=row.id,
@@ -179,7 +193,8 @@ class TaskSQLiteStore:
                 return None
             if row.deleted and not include_deleted:
                 return None
-            return _orm_to_local(row)
+            kind = _resolve_kinds(session, [row.id]).get(row.id, "task")
+            return _orm_to_local(row, kind)
 
     def create(self, task: LocalTask, author: AuthorContext | None = None) -> None:
         """Insert a new task, retrying with fresh ID on collision.
@@ -233,7 +248,8 @@ class TaskSQLiteStore:
             if row is None:
                 return False
             if author is not None:
-                task = _orm_to_local(row)
+                kind = _resolve_kinds(session, [resolved]).get(resolved, "task")
+                task = _orm_to_local(row, kind)
                 tombstone_revision(session, resolved, author, task.to_frontmatter(),
                                    instance_id=task.instance or "local")
             session.delete(row)
@@ -282,7 +298,13 @@ class TaskSQLiteStore:
             stmt = stmt.order_by(Task.updated_at.desc())
 
             rows = session.execute(stmt).scalars().all()
-            tasks = [_orm_to_local(r) for r in rows]
+            kinds = _resolve_kinds(session, [r.id for r in rows])
+            tasks = [_orm_to_local(r, kinds.get(r.id, "task")) for r in rows]
+
+        # Kind filtering — the real type lives in records.type, resolved above.
+        if "kind" in filters and filters["kind"]:
+            wanted = filters["kind"]
+            tasks = [t for t in tasks if t.kind == wanted]
 
         # Tag filtering — SQLite JSON is stored as text; do it in Python
         if "tags" in filters and filters["tags"]:
@@ -322,7 +344,8 @@ class TaskSQLiteStore:
                 stmt = stmt.where(Task.project == filters["project"])
 
             rows = session.execute(stmt).scalars().all()
-            tasks = [_orm_to_local(r) for r in rows]
+            kinds = _resolve_kinds(session, [r.id for r in rows])
+            tasks = [_orm_to_local(r, kinds.get(r.id, "task")) for r in rows]
 
         # Python-side: also match tags, catch any title/desc misses
         results = []
@@ -363,7 +386,8 @@ class TaskSQLiteStore:
                 .where(Task.deleted.is_(False))
             )
             rows = session.execute(stmt).scalars().all()
-            return [_orm_to_local(r) for r in rows]
+            kinds = _resolve_kinds(session, [r.id for r in rows])
+            return [_orm_to_local(r, kinds.get(r.id, "task")) for r in rows]
 
     def get_by_status(self, status: str) -> list[LocalTask]:
         return self.list(status=status)

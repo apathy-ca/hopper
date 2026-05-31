@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -235,22 +236,27 @@ def run_server(host: str, port: int, storage: str) -> None:
     # Note: start_server blocks, so we won't reach here until shutdown
 
 
-@upstream.command(name="status")
-@click.pass_obj
-def status_upstream(ctx: Context) -> None:
-    """Show upstream sync status."""
+def _collect_upstream_status(ctx: Context) -> dict[str, Any]:
+    """Gather the *real* upstream sync state.
+
+    The source of truth is the ``upstream`` config (server + DID key) plus the
+    per-instance ``.sync_state_<instance_id>`` file written by the sync engine —
+    NOT the legacy ``sync:`` block in config.yaml (that block configures the old
+    learning-engine and no longer drives server sync).
+    """
     import json
 
     profile = ctx.config.current_profile
 
-    # Get config info
     server = profile.upstream.server
     key_path_str = profile.upstream.did_key_path
     enabled = profile.upstream.enabled
 
-    # Get storage path and sync state
     storage_path = ctx.get_storage_path()
-    last_sync = None
+    last_sync: int | None = None
+    last_server_time: int | None = None
+    state_path_str: str | None = None
+    instance_id: str | None = None
     did = None
 
     if key_path_str:
@@ -267,35 +273,75 @@ def status_upstream(ctx: Context) -> None:
     if storage_path:
         instance_id = StorageConfig.local(storage_path).instance_id
         state_path = storage_path / f".sync_state_{instance_id}"
+        state_path_str = str(state_path)
         if state_path.exists():
             try:
                 with open(state_path) as f:
                     state = json.load(f)
                     last_sync = state.get("last_sync", 0)
+                    last_server_time = state.get("last_server_time", 0)
             except Exception:
                 pass
 
+    # An upstream is "configured" when we have both a server and a DID key.
+    configured = bool(server and key_path_str)
+
+    return {
+        "configured": configured,
+        "enabled": enabled,
+        "server": server,
+        "did": did,
+        "key_path": key_path_str,
+        "instance_id": instance_id,
+        "state_path": state_path_str,
+        "last_sync": last_sync,
+        "last_server_time": last_server_time,
+    }
+
+
+def _print_upstream_status(ctx: Context) -> None:
+    """Render upstream sync status (shared by `upstream status` and `sync status`)."""
+    info = _collect_upstream_status(ctx)
+
     if ctx.json_output:
-        print_json({
-            "enabled": enabled,
-            "server": server,
-            "did": did,
-            "key_path": key_path_str,
-            "last_sync": last_sync,
-        })
+        print_json(info)
+        return
+
+    if info["configured"]:
+        print_success("Upstream sync is configured")
+    elif info["server"] or info["did"]:
+        print_warning("Upstream sync is partially configured")
     else:
-        print_info(f"Enabled: {enabled}")
-        print_info(f"Server: {server or '(not configured)'}")
-        print_info(f"DID: {did or '(no key)'}")
-        print_info(f"Key path: {key_path_str or '(not configured)'}")
+        print_info("No upstream configured (server sync is off)")
+        print_info("Configure with: hopper upstream init --server <url>")
 
-        if last_sync:
-            from datetime import datetime, timezone
+    print_info(f"Enabled: {info['enabled']}")
+    print_info(f"Server: {info['server'] or '(not configured)'}")
+    print_info(f"DID: {info['did'] or '(no key)'}")
+    print_info(f"Key path: {info['key_path'] or '(not configured)'}")
+    if info["instance_id"]:
+        print_info(f"Instance: {info['instance_id']}")
+    if info["state_path"]:
+        print_info(f"Sync state: {info['state_path']}")
 
-            dt = datetime.fromtimestamp(last_sync / 1000, tz=timezone.utc)
-            print_info(f"Last sync: {dt.isoformat()}")
-        else:
-            print_info("Last sync: never")
+    from datetime import datetime, timezone
+
+    if info["last_sync"]:
+        dt = datetime.fromtimestamp(info["last_sync"] / 1000, tz=timezone.utc)
+        print_info(f"Last sync: {dt.isoformat()}")
+    else:
+        print_info("Last sync: never")
+
+    if info["last_server_time"]:
+        dt = datetime.fromtimestamp(info["last_server_time"] / 1000, tz=timezone.utc)
+        print_info(f"Last server time: {dt.isoformat()}")
+
+
+@upstream.command(name="status")
+@click.pass_obj
+def status_upstream(ctx: Context) -> None:
+    """Show upstream sync status (the real server-sync state)."""
+    _print_upstream_status(ctx)
 
 
 @upstream.command(name="reset")
@@ -823,3 +869,32 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
         elif namespace:
             print_info(f"Namespace: {namespace} — run 'hopper init --name {namespace}' to configure this project.")
         print_info("Run 'hopper sync' to pull tasks.")
+
+
+# --- `hopper sync` top-level group ---------------------------------------------
+#
+# `hopper sync` (no subcommand) runs a sync against the upstream server, exactly
+# like `hopper upstream sync`. `hopper sync status` reports the REAL upstream
+# state (server target + last-sync time from .sync_state_<instance_id>), which is
+# the source of truth — not the legacy `sync:` block in config.yaml.
+
+
+@click.group(name="sync", invoke_without_command=True)
+@click.option("--server", "-s", help="Upstream server URL (overrides config)")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed sync info")
+@click.pass_context
+def sync_group(click_ctx: click.Context, server: str | None, verbose: bool) -> None:
+    """Sync tasks with the upstream server.
+
+    Run without a subcommand to perform a sync. Use `hopper sync status` to see
+    the real upstream target and last-sync time.
+    """
+    if click_ctx.invoked_subcommand is None:
+        click_ctx.invoke(sync_upstream, server=server, verbose=verbose)
+
+
+@sync_group.command(name="status")
+@click.pass_obj
+def sync_status(ctx: Context) -> None:
+    """Show the real upstream sync state (server, DID, last sync)."""
+    _print_upstream_status(ctx)
