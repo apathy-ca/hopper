@@ -167,6 +167,22 @@ profiles:
       default_owner: your-org
 ```
 
+### Server Sync
+
+Syncing to a Hopper server is configured through the **upstream** subsystem
+(DID-authenticated record/revision exchange), not a `sync:` block:
+
+```bash
+hopper upstream init --server https://hopper.example.com  # generate DID + set server
+hopper sync                                               # push/pull tasks
+hopper sync status                                        # the real sync state
+```
+
+`hopper sync status` (alias of `hopper upstream status`) is the source of truth —
+it reports the configured server, your DID, and the last-sync time from
+`.hopper/.sync_state_<instance_id>`. Any legacy `sync:` block in `config.yaml` is
+ignored and is no longer written on `hopper init`.
+
 ## Adding to Your Project
 
 1. **Initialize Hopper:**

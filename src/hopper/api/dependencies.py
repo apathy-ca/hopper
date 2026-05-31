@@ -35,6 +35,26 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    """Read a boolean env flag. Truthy: 1/true/yes/on (case-insensitive)."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Phase 2/3: route task CRUD through the records+revisions backend
+# (RecordTaskRepository) instead of the legacy Task ORM. Defaulted ON in
+# Phase 3. Set HOPPER_API_RECORDS_BACKEND=0 to fall back to the legacy path.
+def records_backend_enabled() -> bool:
+    """Whether the REST task routes use the records/revisions backend.
+
+    Read at request time (not import time) so tests can toggle it via the
+    environment per-test.
+    """
+    return _env_flag("HOPPER_API_RECORDS_BACKEND", True)
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency that provides a database session.

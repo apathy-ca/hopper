@@ -193,14 +193,11 @@ storage:
   type: markdown
   path: ~/.hopper  # or .hopper for project-local
 
-sync:
-  enabled: false
-  server_url: null
-  # When enabled:
-  # server_url: https://hopper.example.com
-  # api_key: xxx
-  # sync_patterns: true
-  # sync_episodes: false  # Privacy: don't sync task details
+# NOTE: server sync is configured via the `upstream:` block (DID-authenticated
+# record/revision exchange), NOT a `sync:` block. There is no longer a `sync:`
+# stanza here — it was legacy learning-engine config that never drove server
+# sync. Configure with `hopper upstream init --server <url>` and inspect with
+# `hopper sync status`.
 
 defaults:
   priority: medium

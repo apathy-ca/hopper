@@ -164,12 +164,12 @@ class MarkdownStorage(StorageBackend):
             "type": "markdown",
             "path": str(self.base_path),
         })
-        existing.setdefault("sync", {
-            "enabled": self.config.sync_enabled,
-            "server_url": self.config.server_url,
-            "sync_patterns": self.config.sync_patterns,
-            "sync_episodes": self.config.sync_episodes,
-        })
+        # NOTE: we intentionally do NOT write a `sync:` block here. The legacy
+        # `sync:` stanza (enabled/server_url/sync_patterns/sync_episodes)
+        # configured the old learning-engine sync and never drove server sync —
+        # it made config.yaml claim sync was off while the `upstream` subsystem
+        # synced anyway. Server sync is owned entirely by the `upstream:` config
+        # + `.sync_state_<instance_id>`; query it with `hopper sync status`.
         existing.setdefault("defaults", {
             "priority": "medium",
             "status": "pending",
@@ -283,6 +283,7 @@ class MarkdownStorage(StorageBackend):
             "by_status": {},
             "by_tag": {},
             "by_project": {},
+            "by_kind": {},
             "generated_at": _utc_now().isoformat(),
         }
 
@@ -300,6 +301,9 @@ class MarkdownStorage(StorageBackend):
 
         task_id = frontmatter["id"]
 
+        # Tolerate older on-disk indexes that predate the by_kind bucket.
+        self._index.setdefault("by_kind", {})
+
         # Main index
         self._index["tasks"][task_id] = {
             "title": frontmatter.get("title", ""),
@@ -307,6 +311,7 @@ class MarkdownStorage(StorageBackend):
             "priority": frontmatter.get("priority"),
             "tags": frontmatter.get("tags", []),
             "project": frontmatter.get("project"),
+            "kind": frontmatter.get("kind", "task"),
             "file": str(file_path.relative_to(self.base_path)),
             "updated_at": frontmatter.get("updated_at"),
         }
@@ -332,6 +337,13 @@ class MarkdownStorage(StorageBackend):
                 self._index["by_project"][project] = []
             if task_id not in self._index["by_project"][project]:
                 self._index["by_project"][project].append(task_id)
+
+        # Kind index (default "task" so untyped records are findable)
+        kind = frontmatter.get("kind", "task")
+        if kind not in self._index["by_kind"]:
+            self._index["by_kind"][kind] = []
+        if task_id not in self._index["by_kind"][kind]:
+            self._index["by_kind"][kind].append(task_id)
 
         self._index_dirty = True
 
@@ -365,6 +377,12 @@ class MarkdownStorage(StorageBackend):
             self._index["by_project"][project] = [
                 t for t in self._index["by_project"][project] if t != task_id
             ]
+
+        # Remove from kind index
+        by_kind = self._index.get("by_kind", {})
+        kind = task_data.get("kind", "task")
+        if kind in by_kind:
+            by_kind[kind] = [t for t in by_kind[kind] if t != task_id]
 
         self._index_dirty = True
 

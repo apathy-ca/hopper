@@ -174,6 +174,9 @@ class LocalClient:
             parent_id=parent_id,
             source=location,
             kind=data.get("kind", "task"),
+            subject=data.get("subject"),
+            scope=data.get("scope"),
+            provenance=data.get("provenance"),
         )
         task.instance = self.config.instance_id
         author = self._author_context(
@@ -209,6 +212,8 @@ class LocalClient:
             filters["priority"] = params["priority"]
         if "project" in params:
             filters["project"] = params["project"]
+        if "kind" in params and params["kind"]:
+            filters["kind"] = params["kind"]
         if "tags" in params:
             # Handle comma-separated tags
             tags = params["tags"]
@@ -415,6 +420,14 @@ class LocalClient:
             task.status = data["status"]
         if "project_id" in data:
             task.project = data["project_id"]
+        if "kind" in data:
+            task.kind = data["kind"]
+        if "subject" in data:
+            task.subject = data["subject"]
+        if "scope" in data:
+            task.scope = data["scope"]
+        if "provenance" in data:
+            task.provenance = data["provenance"]
 
         # Handle tags
         if "add_tags" in data:
@@ -741,6 +754,10 @@ class LocalClient:
             "status": task.status,
             "priority": task.priority,
             "tags": task.tags,
+            "kind": task.kind,
+            "subject": task.subject,
+            "scope": task.scope,
+            "provenance": task.provenance,
             "project_id": task.project,
             "instance": task.instance,
             "source": task.source,

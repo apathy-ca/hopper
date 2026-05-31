@@ -168,6 +168,34 @@ def postgres_session(postgres_engine: Engine) -> Generator[Session, None, None]:
 # ============================================================================
 
 
+def _seed_local_instance(session: Session) -> None:
+    """Seed the 'local' hopper_instances row via the ORM.
+
+    The records/revisions backend (RecordTaskRepository -> write_revision)
+    calls RevisionShadowWriter._ensure_instance, whose raw INSERT omits the
+    NOT-NULL instance_type column and would fail on a fresh DB. Seeding the
+    row via the ORM here means _ensure_instance finds an existing row and
+    skips its (broken) insert. See the report's flagged production bug.
+    """
+    try:
+        from hopper.models.enums import HopperScope, InstanceStatus, InstanceType
+        from hopper.models.hopper_instance import HopperInstance
+    except ImportError:
+        return
+    if session.get(HopperInstance, "local") is not None:
+        return
+    session.add(
+        HopperInstance(
+            id="local",
+            name="local",
+            scope=HopperScope.PERSONAL,
+            instance_type=InstanceType.PERSISTENT,
+            status=InstanceStatus.RUNNING,
+        )
+    )
+    session.flush()
+
+
 @pytest.fixture
 def api_client(db_session: Session) -> TestClient:
     """
@@ -179,6 +207,10 @@ def api_client(db_session: Session) -> TestClient:
     try:
         from hopper.api.app import create_app
         from hopper.api.dependencies import get_db
+
+        # Records backend is the default; ensure the 'local' instance row
+        # exists so revision writes don't hit the _ensure_instance bug.
+        _seed_local_instance(db_session)
 
         app = create_app()
 

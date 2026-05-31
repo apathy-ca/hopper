@@ -68,8 +68,13 @@ class LocalTask:
     parent_id: str | None = None
     # Soft delete — propagated via sync
     deleted: bool = False
-    # Record kind (Phase 4c): task | idea | note | memory | log | reference | inbox
+    # Record kind (Phase 4c): task | idea | note | memory | log | reference | inbox | job
     kind: str = "task"
+    # Memory structured fields (Phase 2): first-class on memory records,
+    # serialized to frontmatter only when present so ordinary tasks stay clean.
+    subject: str | None = None
+    scope: str | None = None
+    provenance: str | None = None
 
     @classmethod
     def _generate_id(cls) -> str:
@@ -96,6 +101,9 @@ class LocalTask:
         expected_heartbeat: datetime | None = None,
         parent_id: str | None = None,
         kind: str = "task",
+        subject: str | None = None,
+        scope: str | None = None,
+        provenance: str | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> "LocalTask":
         """Create a new task with generated ID."""
@@ -122,6 +130,9 @@ class LocalTask:
             created_at=now,
             updated_at=now,
             kind=kind,
+            subject=subject,
+            scope=scope,
+            provenance=provenance,
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -164,6 +175,14 @@ class LocalTask:
             data["deleted"] = True
         if self.kind and self.kind != "task":
             data["kind"] = self.kind
+        # Memory structured fields — only written when present, so ordinary
+        # task files stay clean.
+        if self.subject:
+            data["subject"] = self.subject
+        if self.scope:
+            data["scope"] = self.scope
+        if self.provenance:
+            data["provenance"] = self.provenance
         return data
 
     @classmethod
@@ -197,6 +216,9 @@ class LocalTask:
             parent_id=fm.get("parent_id"),
             deleted=bool(fm.get("deleted", False)),
             kind=fm.get("kind", "task"),
+            subject=fm.get("subject"),
+            scope=fm.get("scope"),
+            provenance=fm.get("provenance"),
         )
 
 
@@ -342,6 +364,22 @@ class TaskMarkdownStore:
         if "project" in filters and filters["project"]:
             project_tasks = set(index.get("by_project", {}).get(filters["project"], []))
             task_ids &= project_tasks
+
+        # Filter by kind. Intersect on the by_kind bucket when present; tolerate
+        # older on-disk indexes that predate it by deriving kind per task (the
+        # main index stores kind; missing => "task").
+        if "kind" in filters and filters["kind"]:
+            wanted = filters["kind"]
+            by_kind = index.get("by_kind")
+            if by_kind is not None:
+                kind_tasks = set(by_kind.get(wanted, []))
+                task_ids &= kind_tasks
+            else:
+                tasks_meta = index.get("tasks", {})
+                task_ids = {
+                    tid for tid in task_ids
+                    if tasks_meta.get(tid, {}).get("kind", "task") == wanted
+                }
 
         include_deleted = filters.pop("include_deleted", False)
 

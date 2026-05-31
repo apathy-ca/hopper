@@ -66,6 +66,9 @@ def task() -> None:
 @click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author (agents must supply this)")
 @click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context for this write")
 @click.option("--kind", hidden=True, default="task", help="Record kind (task/idea/note/memory/…)")
+@click.option("--subject", hidden=True, help="Memory subject (memory records only)")
+@click.option("--scope", hidden=True, help="Memory scope (memory records only)")
+@click.option("--provenance", hidden=True, help="Memory provenance (memory records only)")
 @click.pass_obj
 def add_task(
     ctx: Context,
@@ -82,6 +85,9 @@ def add_task(
     author_did: str | None,
     author_location: str | None,
     kind: str,
+    subject: str | None = None,
+    scope: str | None = None,
+    provenance: str | None = None,
 ) -> None:
     """Create a new task.
 
@@ -145,6 +151,12 @@ def add_task(
         task_data["author_location"] = author_location
     if kind and kind != "task":
         task_data["kind"] = kind
+    if subject:
+        task_data["subject"] = subject
+    if scope:
+        task_data["scope"] = scope
+    if provenance:
+        task_data["provenance"] = provenance
 
     # Create task — use brief path when a full brief is provided
     try:
@@ -184,6 +196,15 @@ def add_task(
 @click.option("--limit", type=int, default=50, help="Maximum number of tasks to show")
 @click.option("--compact", is_flag=True, help="Use compact table layout")
 @click.option("--ids-only", is_flag=True, help="Output task IDs only, one per line (for scripting)")
+@click.option(
+    "--kind",
+    help="Filter by record kind (task/memory/job/idea/note/reference/inbox/log)",
+)
+@click.option(
+    "--all-kinds",
+    is_flag=True,
+    help="Show every kind (jobs, memory, ideas, …), not just tasks",
+)
 @click.pass_obj
 def list_tasks(
     ctx: Context,
@@ -195,20 +216,36 @@ def list_tasks(
     limit: int,
     compact: bool,
     ids_only: bool,
+    kind: str | None = None,
+    all_kinds: bool = False,
 ) -> None:
     """List tasks with optional filters.
+
+    By default this shows only records of kind=task; jobs, memory, ideas and
+    other non-task kinds are excluded so the task list stays focused. Use
+    --kind to view a specific kind or --all-kinds to see everything.
 
     Examples:
         hopper task list
         hopper task list --status open
         hopper task list --priority high --tag bug
         hopper task list --project my-project --compact
+        hopper task list --kind memory
+        hopper task list --all-kinds
     """
     # Build query parameters
     params = {
         "limit": limit,
         "sort_by": sort_by,
     }
+
+    # Default segmentation: task-oriented views show only kind=task. An
+    # explicit --kind selects a different kind; --all-kinds disables the
+    # filter entirely so nothing is truly hidden.
+    if kind:
+        params["kind"] = kind
+    elif not all_kinds:
+        params["kind"] = "task"
 
     if status:
         params["status"] = status

@@ -1,21 +1,19 @@
 """Per-kind CLI wrappers.
 
-Phase 4c (client-side). Adds ``hopper idea``, ``hopper note``,
-``hopper memory``, ``hopper log``, ``hopper reference``, and
-``hopper inbox`` command groups as thin wrappers over ``hopper task``
-that prefill the kind as a tag.
+Adds ``hopper idea``, ``hopper note``, ``hopper memory``, ``hopper log``,
+``hopper reference``, ``hopper inbox``, and ``hopper job`` command groups
+as thin wrappers over ``hopper task`` that set the record ``kind``.
 
-This is intentionally storage-layer-free. Until Phase 4a's live write
-path is wired, kind is encoded as a tag on the underlying task record.
-Once records.type is populated at write time, these wrappers can set
-it directly without behavior change for users.
+Now that the storage layer supports a queryable ``kind`` (Phase 1), these
+wrappers write ``kind=<kind>`` on the underlying record and ``list``
+filters by ``kind=`` — they are type-based, not tag-based. The kind is
+still added as a tag on write for backwards-compatible discovery, but
+queries no longer depend on the tag.
 
-Memory ergonomics: ``hopper memory add`` accepts ``--subject`` and
-``--scope`` to capture agent-knowledge structure up front; these are
-written as a structured preamble on the description so they survive
-the markdown round-trip and are easy to read both by humans and by
-future triage agents. See plans/Phase-4-Revisions-DID-Agent-Plan.md
-for the full payload shape.
+Memory ergonomics: ``hopper memory add`` accepts ``--subject``,
+``--scope``, and ``--provenance`` to capture agent-knowledge structure up
+front; these are now promoted to real frontmatter fields on the record
+(round-tripping cleanly) rather than jammed into a text preamble.
 """
 
 from __future__ import annotations
@@ -26,7 +24,7 @@ import click
 
 from hopper.cli.commands.task import add_task, list_tasks
 
-_KINDS = ("idea", "note", "memory", "log", "reference", "inbox")
+_KINDS = ("idea", "note", "memory", "log", "reference", "inbox", "job")
 
 
 def _make_group(kind: str) -> click.Group:
@@ -106,26 +104,28 @@ def _make_group(kind: str) -> click.Group:
         ids_only: bool,
         limit: int,
     ) -> None:
-        tags = (kind,) + tuple(t for t in tag if t != kind)
+        # Type-based: filter by kind=, not by tag. Extra --tag flags still
+        # narrow within the kind.
         ctx.invoke(
             list_tasks,
             status=status,
             priority=priority,
             project=project,
-            tag=tags,
+            tag=tuple(tag),
             sort_by="status",
             limit=limit,
             compact=compact,
             ids_only=ids_only,
+            kind=kind,
         )
 
     return group
 
 
-# Memory gets extra structured fields that bleed into the description as
-# a preamble. This keeps the storage layer untouched while preserving the
-# agent-knowledge shape (subject, scope, provenance) for triage agents and
-# the eventual type=memory SQL representation to parse.
+# Memory carries extra structured fields (subject, scope, provenance).
+# These are promoted to real frontmatter fields on the record so they
+# round-trip cleanly and are queryable, rather than being jammed into a
+# text preamble on the description.
 def _make_memory_group() -> click.Group:
     base = _make_group("memory")
 
@@ -180,24 +180,13 @@ def _make_memory_group() -> click.Group:
             hopper memory add "Rosetta queues peak at 03:00 UTC" \\
                 --subject agent:rosetta-agent --scope shared-across-agents
         """
-        preamble_lines: list[str] = []
-        if subject:
-            preamble_lines.append(f"Subject: {subject}")
-        preamble_lines.append(f"Scope: {scope}")
-        if provenance:
-            preamble_lines.append(f"Provenance: {provenance}")
-        preamble = "\n".join(preamble_lines)
-
-        if description:
-            full_desc = f"{preamble}\n\n{description}"
-        else:
-            full_desc = preamble
-
+        # Promote subject/scope/provenance to real record fields (frontmatter)
+        # instead of a text preamble on the description.
         tags = ("memory",) + tuple(t for t in tag if t != "memory")
         ctx.invoke(
             add_task,
             title=title,
-            description=full_desc,
+            description=description,
             brief_file=None,
             priority=priority,
             tag=tags,
@@ -209,6 +198,9 @@ def _make_memory_group() -> click.Group:
             author_did=None,
             author_location=None,
             kind="memory",
+            subject=subject,
+            scope=scope,
+            provenance=provenance,
         )
 
     return base

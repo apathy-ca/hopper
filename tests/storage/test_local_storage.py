@@ -111,6 +111,28 @@ class TestMarkdownStorage:
         count = storage.reindex()
         assert count == 0  # No tasks yet
 
+    def test_init_does_not_write_legacy_sync_block(self, temp_storage_path):
+        """A freshly-initialized config.yaml must not claim to control sync.
+
+        The legacy ``sync:`` block (enabled/server_url/sync_patterns/
+        sync_episodes) configured the old learning-engine sync and never drove
+        the upstream server sync — so it must no longer be emitted on init,
+        otherwise config.yaml lies about whether sync is on.
+        """
+        import yaml
+
+        config = StorageConfig.local(temp_storage_path)
+        storage = MarkdownStorage(config)
+        storage.initialize()
+
+        data = yaml.safe_load((temp_storage_path / "config.yaml").read_text())
+
+        assert "sync" not in data
+        # The legitimate config sections are still present.
+        assert "instance" in data
+        assert "storage" in data
+        assert "defaults" in data
+
 
 class TestTaskMarkdownStore:
     """Test task markdown storage."""
@@ -224,6 +246,70 @@ class TestTaskMarkdownStore:
 
         updated = task_store.remove_tags(task.id, ["remove"])
         assert updated.tags == ["keep"]
+
+
+class TestTaskKindFilter:
+    """Test kind/type as a queryable dimension on the markdown backend."""
+
+    def test_kind_indexed_in_by_kind_bucket(self, task_store, storage):
+        """A saved record's kind lands in the index by_kind bucket."""
+        memory = LocalTask.create(title="A memory", kind="memory")
+        task_store.save(memory)
+
+        index = storage.get_index()
+        assert "by_kind" in index
+        assert memory.id in index["by_kind"].get("memory", [])
+        assert index["tasks"][memory.id]["kind"] == "memory"
+
+    def test_filter_by_kind_returns_matching(self, task_store):
+        """list(kind="memory") returns only memory records."""
+        task_store.save(LocalTask.create(title="A task"))  # default kind="task"
+        memory = LocalTask.create(title="A memory", kind="memory")
+        task_store.save(memory)
+
+        memories = task_store.list(kind="memory")
+        assert len(memories) == 1
+        assert memories[0].id == memory.id
+        assert memories[0].kind == "memory"
+
+    def test_memory_excluded_from_kind_task(self, task_store):
+        """A memory record is NOT returned when filtering kind="task"."""
+        plain = LocalTask.create(title="A task")
+        task_store.save(plain)
+        task_store.save(LocalTask.create(title="A memory", kind="memory"))
+
+        tasks = task_store.list(kind="task")
+        ids = {t.id for t in tasks}
+        assert plain.id in ids
+        assert all(t.kind == "task" for t in tasks)
+        assert len(tasks) == 1
+
+    def test_no_kind_filter_returns_all_kinds(self, task_store):
+        """list() with no kind filter returns every kind, unchanged behaviour."""
+        task_store.save(LocalTask.create(title="A task"))
+        task_store.save(LocalTask.create(title="A memory", kind="memory"))
+        task_store.save(LocalTask.create(title="An idea", kind="idea"))
+
+        all_records = task_store.list()
+        assert len(all_records) == 3
+        assert {r.kind for r in all_records} == {"task", "memory", "idea"}
+
+    def test_by_kind_tolerates_legacy_index(self, task_store, storage):
+        """A list(kind=...) call works even if by_kind is absent from the index.
+
+        Simulates an older on-disk index that predates the by_kind bucket: the
+        filter falls back to the per-task kind stored in the main index.
+        """
+        task_store.save(LocalTask.create(title="A task"))
+        memory = LocalTask.create(title="A memory", kind="memory")
+        task_store.save(memory)
+
+        # Drop the by_kind bucket to mimic a legacy index.
+        index = storage.get_index()
+        index.pop("by_kind", None)
+
+        memories = task_store.list(kind="memory")
+        assert [m.id for m in memories] == [memory.id]
 
 
 class TestEpisodeMarkdownStore:

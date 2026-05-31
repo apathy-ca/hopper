@@ -119,6 +119,10 @@ def _local_task_to_sync_task(task: "LocalTask") -> SyncTask:
         expected_heartbeat=task.expected_heartbeat,
         parent_id=task.parent_id,
         deleted=task.deleted,
+        kind=getattr(task, "kind", None),
+        subject=getattr(task, "subject", None),
+        scope=getattr(task, "scope", None),
+        provenance=getattr(task, "provenance", None),
     )
 
 
@@ -175,6 +179,10 @@ def _apply_sync_task_to_local(
         existing.last_heartbeat = sync_task.last_heartbeat
         existing.expected_heartbeat = sync_task.expected_heartbeat
         existing.parent_id = sync_task.parent_id
+        existing.kind = sync_task.kind or "task"
+        existing.subject = sync_task.subject
+        existing.scope = sync_task.scope
+        existing.provenance = sync_task.provenance
         task_store.save(existing, preserve_timestamp=True)
     else:
         # Create new task with the remote ID
@@ -201,6 +209,10 @@ def _apply_sync_task_to_local(
             last_heartbeat=sync_task.last_heartbeat,
             expected_heartbeat=sync_task.expected_heartbeat,
             parent_id=sync_task.parent_id,
+            kind=sync_task.kind or "task",
+            subject=sync_task.subject,
+            scope=sync_task.scope,
+            provenance=sync_task.provenance,
         )
         task_store.save(new_task, preserve_timestamp=True)
 

@@ -22,7 +22,8 @@ class TestTaskToolDefinitions:
     def test_get_task_tools_returns_correct_count(self):
         """Test that all task tools are returned."""
         tools = get_task_tools()
-        assert len(tools) == 5
+        # create, list, list_memory, get, update, update_status
+        assert len(tools) == 6
 
     def test_tool_names_are_correct(self):
         """Test that tool names match expected values."""
@@ -31,6 +32,7 @@ class TestTaskToolDefinitions:
 
         assert "hopper_create_task" in tool_names
         assert "hopper_list_tasks" in tool_names
+        assert "hopper_list_memory" in tool_names
         assert "hopper_get_task" in tool_names
         assert "hopper_update_task" in tool_names
         assert "hopper_update_task_status" in tool_names
