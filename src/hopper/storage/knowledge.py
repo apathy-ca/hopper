@@ -7,7 +7,6 @@ agent-knowledge repositories.
 
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -618,6 +617,7 @@ def _extract_agent_files_version(content: str) -> int | None:
         Version integer, or None if not present.
     """
     import re
+
     match = re.search(r"<!--\s*hopper-agent-files:\s*v(\d+)\s*-->", content)
     return int(match.group(1)) if match else None
 
@@ -650,7 +650,9 @@ def write_agent_files(project_path: Path, force: bool = False) -> dict[str, Any]
             content = target.read_text()
             if section_marker in content:
                 existing_version = _extract_agent_files_version(content)
-                needs_update = force or (existing_version is None) or (existing_version < AGENTS_MD_VERSION)
+                needs_update = (
+                    force or (existing_version is None) or (existing_version < AGENTS_MD_VERSION)
+                )
 
                 if needs_update:
                     pre_section = content[: content.index(section_marker)]

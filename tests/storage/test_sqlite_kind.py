@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 
 from hopper.storage.base import StorageConfig
+from hopper.storage.revision_writer import AuthorContext
 from hopper.storage.sqlite import SQLiteStorage
 from hopper.storage.sqlite_tasks import TaskSQLiteStore
 from hopper.storage.tasks import LocalTask
-from hopper.storage.revision_writer import AuthorContext
 
 
 @pytest.fixture
@@ -60,9 +60,7 @@ class TestSQLiteKindReadBack:
     def test_list_surfaces_real_kind(self, sqlite_store, author):
         """list() returns the real kind for each row, not a hardcoded value."""
         sqlite_store.create(LocalTask.create(title="A task"), author=author)
-        sqlite_store.create(
-            LocalTask.create(title="A memory", kind="memory"), author=author
-        )
+        sqlite_store.create(LocalTask.create(title="A memory", kind="memory"), author=author)
 
         by_id = {t.title: t.kind for t in sqlite_store.list()}
         assert by_id["A task"] == "task"

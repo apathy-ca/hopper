@@ -7,6 +7,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from hopper.timeutils import utc_now_naive
+
 
 class SuggestionSource(Enum):
     """Source of a routing suggestion."""
@@ -32,7 +34,7 @@ class RoutingSuggestion:
     factors: dict[str, Any] = field(default_factory=dict)
 
     # Metadata
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now_naive)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""

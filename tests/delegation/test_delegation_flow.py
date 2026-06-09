@@ -5,24 +5,19 @@ Tests end-to-end task delegation from Global -> Project -> Orchestration
 and completion bubbling back up.
 """
 
-import pytest
-from datetime import datetime
 from uuid import uuid4
 
-from hopper.delegation.delegator import Delegator, DelegationError
 from hopper.delegation.completion import CompletionBubbler
+from hopper.delegation.delegator import Delegator
 from hopper.delegation.router import InstanceRouter
 from hopper.models import (
     DelegationStatus,
     DelegationType,
-    HopperInstance,
     HopperScope,
-    InstanceStatus,
-    InstanceType,
     Task,
-    TaskDelegation,
     TaskStatus,
 )
+from hopper.timeutils import utc_now_naive
 
 
 class TestFullDelegationFlow:
@@ -147,7 +142,6 @@ class TestCompletionBubbling:
         delegator = Delegator(db_session)
         bubbler = CompletionBubbler(db_session)
 
-        global_inst = instance_hierarchy["global"]
         project_inst = instance_hierarchy["project"]
         orch_inst = instance_hierarchy["orchestration"]
 
@@ -219,7 +213,8 @@ class TestInstanceRouter:
         global_instance.children = [project_instance, second_project_instance]
 
         # Task matching Python/FastAPI
-        from hopper.models import Task, TaskStatus
+        from hopper.models import TaskStatus
+
         python_task = Task(
             id=f"task-{uuid4().hex[:8]}",
             title="Add FastAPI endpoint",
@@ -229,7 +224,7 @@ class TestInstanceRouter:
             priority="medium",
             instance_id=global_instance.id,
             tags={"python": True, "api": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(python_task)
         db_session.flush()
@@ -255,7 +250,8 @@ class TestInstanceRouter:
         global_instance.children = [project_instance, second_project_instance]
 
         # Task with tags matching project capabilities
-        from hopper.models import Task, TaskStatus
+        from hopper.models import TaskStatus
+
         task = Task(
             id=f"task-{uuid4().hex[:8]}",
             title="New task",
@@ -264,7 +260,7 @@ class TestInstanceRouter:
             priority="medium",
             instance_id=global_instance.id,
             tags=["python", "testing"],  # Matches Project Alpha capabilities
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         db_session.flush()
@@ -288,7 +284,8 @@ class TestInstanceRouter:
         router = InstanceRouter(db_session)
         global_instance.children = [stopped_instance]
 
-        from hopper.models import Task, TaskStatus
+        from hopper.models import TaskStatus
+
         task = Task(
             id=f"task-{uuid4().hex[:8]}",
             title="Test task",
@@ -296,7 +293,7 @@ class TestInstanceRouter:
             status=TaskStatus.PENDING,
             priority="medium",
             instance_id=global_instance.id,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         db_session.flush()
@@ -401,7 +398,7 @@ class TestDelegationWithTaskLifecycle:
         delegator = Delegator(db_session)
 
         project_inst = instance_hierarchy["project"]
-        before_delegation = datetime.utcnow()
+        before_delegation = utc_now_naive()
 
         delegation = delegator.delegate_task(sample_task, project_inst)
 
@@ -409,7 +406,7 @@ class TestDelegationWithTaskLifecycle:
         assert delegation.delegated_at >= before_delegation
 
         # Accept and check accepted_at
-        before_accept = datetime.utcnow()
+        before_accept = utc_now_naive()
         delegator.accept_delegation(delegation)
 
         assert delegation.accepted_at is not None

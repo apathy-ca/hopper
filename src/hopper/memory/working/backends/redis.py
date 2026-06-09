@@ -36,9 +36,7 @@ class RedisBackend(BaseBackend):
             key_prefix: Prefix for all keys
         """
         if redis is None:
-            raise ImportError(
-                "Redis package not installed. Install with: pip install redis"
-            )
+            raise ImportError("Redis package not installed. Install with: pip install redis")
 
         self._client = redis.from_url(url, decode_responses=True)
         self._prefix = key_prefix

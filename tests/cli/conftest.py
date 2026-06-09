@@ -3,12 +3,16 @@
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, Mock
 
 import pytest
 from click.testing import CliRunner
 
 from hopper.cli.config import APIConfig, AuthConfig, Config, LocalConfig, ProfileConfig
+
+if TYPE_CHECKING:
+    from hopper.cli.main import Context
 
 
 @pytest.fixture

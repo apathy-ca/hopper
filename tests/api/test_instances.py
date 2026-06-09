@@ -4,18 +4,22 @@ Tests for instance API routes.
 Tests the instance API endpoints for CRUD operations, hierarchy, and lifecycle.
 """
 
-import pytest
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, InstanceStatus, InstanceType
+from hopper.api.schemas.hopper_instance import (
+    HopperScope as SchemaScope,
+)
 from hopper.api.schemas.hopper_instance import (
     InstanceCreate,
     InstanceUpdate,
-    InstanceResponse,
-    HopperScope as SchemaScope,
+)
+from hopper.api.schemas.hopper_instance import (
     InstanceStatus as SchemaStatus,
+)
+from hopper.api.schemas.hopper_instance import (
     InstanceType as SchemaType,
 )
+from hopper.models import HopperInstance, HopperScope, InstanceStatus, InstanceType
 
 
 class TestInstanceSchemas:
@@ -202,7 +206,7 @@ class TestInstanceModel:
 
         assert len(ancestors) == 2
         assert ancestors[0].id == "project-1"  # Immediate parent
-        assert ancestors[1].id == "global-1"   # Root
+        assert ancestors[1].id == "global-1"  # Root
 
     def test_instance_get_root(self, clean_db: Session):
         """Test getting root instance."""
@@ -262,15 +266,29 @@ class TestInstanceModel:
     def test_instance_get_depth(self, clean_db: Session):
         """Test getting instance depth in hierarchy."""
         # Create 3-level hierarchy
-        level0 = HopperInstance(id="depth-0", name="L0", scope=HopperScope.GLOBAL, status=InstanceStatus.RUNNING)
+        level0 = HopperInstance(
+            id="depth-0", name="L0", scope=HopperScope.GLOBAL, status=InstanceStatus.RUNNING
+        )
         clean_db.add(level0)
         clean_db.commit()
 
-        level1 = HopperInstance(id="depth-1", name="L1", scope=HopperScope.PROJECT, parent_id="depth-0", status=InstanceStatus.RUNNING)
+        level1 = HopperInstance(
+            id="depth-1",
+            name="L1",
+            scope=HopperScope.PROJECT,
+            parent_id="depth-0",
+            status=InstanceStatus.RUNNING,
+        )
         clean_db.add(level1)
         clean_db.commit()
 
-        level2 = HopperInstance(id="depth-2", name="L2", scope=HopperScope.ORCHESTRATION, parent_id="depth-1", status=InstanceStatus.RUNNING)
+        level2 = HopperInstance(
+            id="depth-2",
+            name="L2",
+            scope=HopperScope.ORCHESTRATION,
+            parent_id="depth-1",
+            status=InstanceStatus.RUNNING,
+        )
         clean_db.add(level2)
         clean_db.commit()
 

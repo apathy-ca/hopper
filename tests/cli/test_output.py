@@ -1,7 +1,6 @@
 """Tests for output formatting utilities."""
 
 from datetime import datetime, timedelta
-from io import StringIO
 from unittest.mock import patch
 
 from hopper.cli.output import (

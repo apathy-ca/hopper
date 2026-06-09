@@ -1,21 +1,20 @@
 """Tests for local markdown storage."""
 
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from hopper.storage import (
-    StorageConfig,
-    MarkdownStorage,
-    TaskMarkdownStore,
     EpisodeMarkdownStore,
-    PatternMarkdownStore,
     FeedbackMarkdownStore,
+    MarkdownStorage,
+    PatternMarkdownStore,
+    StorageConfig,
+    TaskMarkdownStore,
 )
+from hopper.storage.memory import LocalFeedback, LocalPattern
 from hopper.storage.tasks import LocalTask
-from hopper.storage.memory import LocalPattern, LocalEpisode, LocalFeedback
 
 
 @pytest.fixture
@@ -624,7 +623,7 @@ class TestEdgeCases:
 
     def test_feedback_with_all_fields(self, feedback_store):
         """Test feedback with all optional fields populated."""
-        feedback = feedback_store.save(
+        feedback_store.save(
             task_id="task-full",
             was_good_match=True,
             routing_feedback="Great routing decision",

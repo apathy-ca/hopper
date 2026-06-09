@@ -2,12 +2,12 @@
 Project repository with project-specific queries and operations.
 """
 
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.project import Project
 from hopper.models.task import Task
+from hopper.timeutils import utc_now_naive
 
 from .base import BaseRepository
 
@@ -92,9 +92,8 @@ class ProjectRepository(BaseRepository[Project]):
         Returns:
             Updated project or None if not found
         """
-        from datetime import datetime
 
-        return self.update(name, last_sync=datetime.utcnow())
+        return self.update(name, last_sync=utc_now_naive())
 
     def get_project_task_count(self, name: str) -> int:
         """

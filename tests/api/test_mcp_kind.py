@@ -66,9 +66,7 @@ class TestUpstreamCreatePersistsKind:
 class TestUpstreamListSegmentsByKind:
     def test_list_defaults_and_kind_filter(self, upstream_client):
         upstream_client.create_task({"title": "real task", "kind": "task"})
-        upstream_client.create_task(
-            {"title": "a memory", "kind": "memory", "subject": "self"}
-        )
+        upstream_client.create_task({"title": "a memory", "kind": "memory", "subject": "self"})
 
         # kind="task" excludes the memory.
         titles = {t["title"] for t in upstream_client.list_tasks(kind="task")}
@@ -76,9 +74,7 @@ class TestUpstreamListSegmentsByKind:
         assert "a memory" not in titles
 
         # kind="memory" selects it via the real kind field.
-        assert {m["title"] for m in upstream_client.list_tasks(kind="memory")} == {
-            "a memory"
-        }
+        assert {m["title"] for m in upstream_client.list_tasks(kind="memory")} == {"a memory"}
 
         # No kind filter → everything.
         assert len(upstream_client.list_tasks()) == 2

@@ -1,6 +1,6 @@
 """Tests for GitHub mapper."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -24,8 +24,8 @@ def sample_issue():
         state="open",
         labels=["bug", "priority:high"],
         html_url="https://github.com/owner/repo/issues/42",
-        created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-        updated_at=datetime(2024, 1, 16, 14, 30, 0, tzinfo=timezone.utc),
+        created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        updated_at=datetime(2024, 1, 16, 14, 30, 0, tzinfo=UTC),
     )
 
 
@@ -61,8 +61,8 @@ class TestGitHubMapper:
             state="closed",
             labels=[],
             html_url="https://github.com/owner/repo/issues/1",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
         result = mapper.issue_to_task_data(issue, "owner", "repo")

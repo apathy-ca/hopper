@@ -7,8 +7,7 @@ Defines the contract for storage implementations.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -39,6 +38,7 @@ class StorageConfig:
             return None
         try:
             import yaml
+
             with open(config_file) as f:
                 data = yaml.safe_load(f) or {}
             inst = data.get("instance", {})
@@ -47,7 +47,7 @@ class StorageConfig:
             return None
 
     @classmethod
-    def local(cls, path: Path | None = None, instance_name: str | None = None) -> "StorageConfig":
+    def local(cls, path: Path | None = None, instance_name: str | None = None) -> StorageConfig:
         """Create local storage config."""
         resolved = path or Path.home() / ".hopper"
         name = instance_name or cls._read_instance_name(resolved) or resolved.name
@@ -59,7 +59,7 @@ class StorageConfig:
         )
 
     @classmethod
-    def embedded(cls, path: Path, instance_name: str | None = None) -> "StorageConfig":
+    def embedded(cls, path: Path, instance_name: str | None = None) -> StorageConfig:
         """Create embedded storage config (project-local)."""
         name = instance_name or cls._read_instance_name(path) or path.parent.name
         return cls(
@@ -70,7 +70,7 @@ class StorageConfig:
         )
 
     @classmethod
-    def server(cls, url: str, api_key: str | None = None) -> "StorageConfig":
+    def server(cls, url: str, api_key: str | None = None) -> StorageConfig:
         """Create server storage config."""
         return cls(
             mode="server",

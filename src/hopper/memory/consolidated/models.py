@@ -7,12 +7,13 @@ Defines the RoutingPattern model for storing learned patterns.
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, Boolean
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from hopper.models.base import Base, TimestampMixin
+from hopper.timeutils import utc_now_naive
 
 
 class RoutingPattern(Base, TimestampMixin):
@@ -85,7 +86,7 @@ class RoutingPattern(Base, TimestampMixin):
     def record_usage(self, success: bool) -> None:
         """Record pattern usage."""
         self.usage_count += 1
-        self.last_used_at = datetime.utcnow()
+        self.last_used_at = utc_now_naive()
         if success:
             self.success_count += 1
         else:

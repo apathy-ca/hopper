@@ -1,6 +1,5 @@
 """Project management commands."""
 
-
 import click
 from rich.prompt import Confirm, Prompt
 
@@ -69,7 +68,7 @@ def create_project(
             project_data["config"] = json.loads(config)
         except json.JSONDecodeError as e:
             print_error(f"Invalid JSON config: {e}")
-            raise click.Abort()
+            raise click.Abort() from e
 
     # Create project
     try:
@@ -86,7 +85,7 @@ def create_project(
 
     except APIError as e:
         print_error(f"Failed to create project: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @project.command(name="list")
@@ -112,7 +111,7 @@ def list_projects(ctx: Context, limit: int) -> None:
 
     except APIError as e:
         print_error(f"Failed to list projects: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @project.command(name="get")
@@ -154,7 +153,7 @@ def get_project(ctx: Context, project_id: str) -> None:
 
     except APIError as e:
         print_error(f"Failed to get project: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @project.command(name="update")
@@ -192,7 +191,7 @@ def update_project(
 
         except APIError as e:
             print_error(f"Failed to get project: {e.message}")
-            raise click.Abort()
+            raise click.Abort() from e
 
     # Build update data
     update_data = {}
@@ -208,7 +207,7 @@ def update_project(
             update_data["config"] = json.loads(config)
         except json.JSONDecodeError as e:
             print_error(f"Invalid JSON config: {e}")
-            raise click.Abort()
+            raise click.Abort() from e
 
     if not update_data:
         print_error("No updates specified")
@@ -227,7 +226,7 @@ def update_project(
 
     except APIError as e:
         print_error(f"Failed to update project: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @project.command(name="delete")
@@ -273,7 +272,7 @@ def delete_project(ctx: Context, project_id: str, force: bool) -> None:
 
     except APIError as e:
         print_error(f"Failed to delete project: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @project.command(name="tasks")
@@ -329,4 +328,4 @@ def list_project_tasks(
 
     except APIError as e:
         print_error(f"Failed to list project tasks: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e

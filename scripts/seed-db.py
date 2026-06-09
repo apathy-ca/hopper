@@ -10,7 +10,7 @@ Options:
 """
 import argparse
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # Add src to path
@@ -92,7 +92,7 @@ def seed_tasks(session):
     """Seed sample tasks."""
     task_repo = TaskRepository(session)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     tasks = [
         {

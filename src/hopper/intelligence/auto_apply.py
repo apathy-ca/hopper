@@ -17,7 +17,7 @@ Run with: ``hopper revision auto-apply``
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +29,10 @@ _DEFAULT_RULES_FILE = "auto-apply-rules.yaml"
 @dataclass
 class AutoApplyRule:
     name: str
-    author_did: str = "*"       # exact DID or "*" for any
-    record_type: str = "*"      # RecordType value or "*" for any
-    action: str = "apply"       # "apply" or "reject"
-    reason: str | None = None   # optional rejection reason
+    author_did: str = "*"  # exact DID or "*" for any
+    record_type: str = "*"  # RecordType value or "*" for any
+    action: str = "apply"  # "apply" or "reject"
+    reason: str | None = None  # optional rejection reason
 
 
 def _load_rules(hopper_path: Path) -> list[AutoApplyRule]:
@@ -41,26 +41,28 @@ def _load_rules(hopper_path: Path) -> list[AutoApplyRule]:
         return []
     try:
         import yaml
+
         with open(rules_file) as f:
             data = yaml.safe_load(f) or {}
         raw = data.get("rules") or []
         result = []
         for r in raw:
-            result.append(AutoApplyRule(
-                name=r.get("name", "unnamed"),
-                author_did=r.get("author_did", "*"),
-                record_type=r.get("record_type", "*"),
-                action=r.get("action", "apply"),
-                reason=r.get("reason"),
-            ))
+            result.append(
+                AutoApplyRule(
+                    name=r.get("name", "unnamed"),
+                    author_did=r.get("author_did", "*"),
+                    record_type=r.get("record_type", "*"),
+                    action=r.get("action", "apply"),
+                    reason=r.get("reason"),
+                )
+            )
         return result
     except Exception:
         logger.exception("Failed to load auto-apply rules from %s", rules_file)
         return []
 
 
-def _rule_matches(rule: AutoApplyRule, proposal: dict[str, Any],
-                  record_type: str) -> bool:
+def _rule_matches(rule: AutoApplyRule, proposal: dict[str, Any], record_type: str) -> bool:
     """Return True if this rule applies to this proposal."""
     if rule.author_did != "*" and proposal.get("author_did") != rule.author_did:
         return False
@@ -79,18 +81,26 @@ def run_auto_apply(hopper_path: Path, client: Any) -> dict[str, Any]:
     Returns:
         Summary dict: {applied: int, rejected: int, skipped: int}.
     """
+
+    from hopper.models import Record
     from hopper.storage.sqlite import SQLiteStorage
-    from sqlalchemy import select, text
-    from hopper.models import Record, Revision
 
     if not isinstance(client.storage, SQLiteStorage):
-        return {"applied": 0, "rejected": 0, "skipped": 0,
-                "error": "auto-apply requires SQLite backend"}
+        return {
+            "applied": 0,
+            "rejected": 0,
+            "skipped": 0,
+            "error": "auto-apply requires SQLite backend",
+        }
 
     rules = _load_rules(hopper_path)
     if not rules:
-        return {"applied": 0, "rejected": 0, "skipped": 0,
-                "message": "No auto-apply rules configured"}
+        return {
+            "applied": 0,
+            "rejected": 0,
+            "skipped": 0,
+            "message": "No auto-apply rules configured",
+        }
 
     pending = client.list_pending_revisions(limit=500)
     applied = rejected = skipped = 0

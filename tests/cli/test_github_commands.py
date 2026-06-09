@@ -1,12 +1,12 @@
 """Tests for GitHub CLI commands."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
 
-from hopper.cli.main import cli, Context
+from hopper.cli.main import Context, cli
 
 
 @pytest.fixture
@@ -48,8 +48,8 @@ def sample_issue():
         state="open",
         labels=["bug", "priority:high"],
         html_url="https://github.com/owner/repo/issues/42",
-        created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-        updated_at=datetime(2024, 1, 16, 14, 30, 0, tzinfo=timezone.utc),
+        created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        updated_at=datetime(2024, 1, 16, 14, 30, 0, tzinfo=UTC),
     )
 
 
@@ -73,7 +73,9 @@ class TestGitHubAuth:
 
     @patch("hopper.cli.commands.github.GitHubClient")
     @patch("hopper.cli.main.load_config")
-    def test_auth_with_default_owner(self, mock_load_config, mock_client_class, runner, mock_config):
+    def test_auth_with_default_owner(
+        self, mock_load_config, mock_client_class, runner, mock_config
+    ):
         """Test authentication with default owner."""
         mock_load_config.return_value = mock_config
         mock_client = MagicMock()
@@ -110,7 +112,9 @@ class TestGitHubList:
 
     @patch("hopper.cli.commands.github.GitHubClient")
     @patch("hopper.cli.main.load_config")
-    def test_list_issues(self, mock_load_config, mock_client_class, runner, mock_config, sample_issue):
+    def test_list_issues(
+        self, mock_load_config, mock_client_class, runner, mock_config, sample_issue
+    ):
         """Test listing issues."""
         mock_load_config.return_value = mock_config
         mock_client = MagicMock()
@@ -125,7 +129,9 @@ class TestGitHubList:
 
     @patch("hopper.cli.commands.github.GitHubClient")
     @patch("hopper.cli.main.load_config")
-    def test_list_issues_json(self, mock_load_config, mock_client_class, runner, mock_config, sample_issue):
+    def test_list_issues_json(
+        self, mock_load_config, mock_client_class, runner, mock_config, sample_issue
+    ):
         """Test listing issues with JSON output."""
         mock_load_config.return_value = mock_config
         mock_client = MagicMock()
@@ -171,7 +177,14 @@ class TestGitHubImport:
     @patch("hopper.cli.config.get_storage_path")
     @patch("hopper.cli.main.load_config")
     def test_import_single_issue(
-        self, mock_load_config, mock_get_storage, mock_client_class, mock_sync_class, mock_local_client, runner, mock_config
+        self,
+        mock_load_config,
+        mock_get_storage,
+        mock_client_class,
+        mock_sync_class,
+        mock_local_client,
+        runner,
+        mock_config,
     ):
         """Test importing a single issue."""
         mock_load_config.return_value = mock_config
@@ -193,7 +206,14 @@ class TestGitHubImport:
     @patch("hopper.cli.config.get_storage_path")
     @patch("hopper.cli.main.load_config")
     def test_import_all_issues(
-        self, mock_load_config, mock_get_storage, mock_client_class, mock_sync_class, mock_local_client, runner, mock_config
+        self,
+        mock_load_config,
+        mock_get_storage,
+        mock_client_class,
+        mock_sync_class,
+        mock_local_client,
+        runner,
+        mock_config,
     ):
         """Test importing all issues."""
         from hopper.platforms.sync import ImportResult
@@ -235,7 +255,14 @@ class TestGitHubExport:
     @patch("hopper.cli.config.get_storage_path")
     @patch("hopper.cli.main.load_config")
     def test_export_task(
-        self, mock_load_config, mock_get_storage, mock_client_class, mock_sync_class, mock_local_client, runner, mock_config
+        self,
+        mock_load_config,
+        mock_get_storage,
+        mock_client_class,
+        mock_sync_class,
+        mock_local_client,
+        runner,
+        mock_config,
     ):
         """Test exporting a task."""
         from hopper.platforms.sync import ExportResult
@@ -252,9 +279,7 @@ class TestGitHubExport:
         )
         mock_sync_class.return_value = mock_sync
 
-        result = runner.invoke(
-            cli, ["github", "export", "task-123", "--repo", "owner/repo"]
-        )
+        result = runner.invoke(cli, ["github", "export", "task-123", "--repo", "owner/repo"])
 
         assert result.exit_code == 0
         assert "#99" in result.output or "99" in result.output
@@ -265,7 +290,14 @@ class TestGitHubExport:
     @patch("hopper.cli.config.get_storage_path")
     @patch("hopper.cli.main.load_config")
     def test_export_task_failure(
-        self, mock_load_config, mock_get_storage, mock_client_class, mock_sync_class, mock_local_client, runner, mock_config
+        self,
+        mock_load_config,
+        mock_get_storage,
+        mock_client_class,
+        mock_sync_class,
+        mock_local_client,
+        runner,
+        mock_config,
     ):
         """Test export failure."""
         from hopper.platforms.sync import ExportResult
@@ -283,9 +315,7 @@ class TestGitHubExport:
         )
         mock_sync_class.return_value = mock_sync
 
-        result = runner.invoke(
-            cli, ["github", "export", "nonexistent", "--repo", "owner/repo"]
-        )
+        result = runner.invoke(cli, ["github", "export", "nonexistent", "--repo", "owner/repo"])
 
         assert result.exit_code == 1
 
@@ -329,7 +359,9 @@ class TestGitHubTokenRetrieval:
 
     @patch("hopper.cli.commands.github.GitHubClient")
     @patch("hopper.cli.main.load_config")
-    def test_uses_env_token_as_fallback(self, mock_load_config, mock_client_class, runner, sample_issue):
+    def test_uses_env_token_as_fallback(
+        self, mock_load_config, mock_client_class, runner, sample_issue
+    ):
         """Test using GITHUB_TOKEN from environment."""
         import os
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 
+from hopper.cli.config import detect_embedded_hopper
 from hopper.cli.main import Context
 from hopper.cli.output import (
     console,
@@ -13,7 +14,6 @@ from hopper.cli.output import (
     print_success,
     print_warning,
 )
-from hopper.cli.config import detect_embedded_hopper
 
 
 @click.group(name="knowledge")
@@ -45,9 +45,9 @@ def sync(ctx: Context, source: str | None, full: bool, patterns: tuple[str, ...]
         hopper knowledge sync -s /path/to/knowledge
     """
     from hopper.storage.knowledge import (
-        sync_agent_knowledge,
-        detect_project_type,
         DEFAULT_KNOWLEDGE_SOURCE,
+        detect_project_type,
+        sync_agent_knowledge,
     )
 
     # Find storage path
@@ -135,7 +135,7 @@ def list_knowledge(ctx: Context) -> None:
     # Agent knowledge
     agent_knowledge = knowledge_path / "agent-knowledge"
     if agent_knowledge.exists():
-        console.print(f"\n  [bold]agent-knowledge/[/bold]")
+        console.print("\n  [bold]agent-knowledge/[/bold]")
         for item in sorted(agent_knowledge.iterdir()):
             if item.is_dir():
                 file_count = len(list(item.rglob("*.md")))
@@ -211,7 +211,9 @@ def refresh(ctx: Context) -> None:
 
 
 @knowledge.command(name="update-agent-files")
-@click.option("--force", "-f", is_flag=True, help="Replace existing Hopper section with latest version.")
+@click.option(
+    "--force", "-f", is_flag=True, help="Replace existing Hopper section with latest version."
+)
 @click.pass_obj
 def update_agent_files(ctx: Context, force: bool) -> None:
     """Update AGENTS.md and CLAUDE.md with the latest Hopper section.

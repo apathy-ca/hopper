@@ -74,7 +74,7 @@ def aggregate_scores(
         if total_weight == 0:
             return 0.0
 
-        weighted_sum = sum(s * w for s, w in zip(scores, weights))
+        weighted_sum = sum(s * w for s, w in zip(scores, weights, strict=True))
         return weighted_sum / total_weight
 
     elif method == "product":
@@ -155,7 +155,8 @@ def calculate_multi_destination_scores(
             normalized = [exp_s / total for exp_s in exp_scores]
 
         result = [
-            (dest, norm_score) for (dest, _), norm_score in zip(destination_scores, normalized)
+            (dest, norm_score)
+            for (dest, _), norm_score in zip(destination_scores, normalized, strict=True)
         ]
 
     elif method == "normalize":

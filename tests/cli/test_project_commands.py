@@ -1,15 +1,14 @@
 """Tests for project management commands."""
 
-import pytest
 from unittest.mock import Mock
 
+import pytest
 from click.testing import CliRunner
 
 from hopper.cli.main import cli
 
 # Mark tests requiring API integration
 pytestmark = pytest.mark.skip(reason="CLI integration: Requires running API or complex mocking")
-
 
 
 def test_project_create(runner: CliRunner, mock_client: Mock, mock_context) -> None:
@@ -20,12 +19,14 @@ def test_project_create(runner: CliRunner, mock_client: Mock, mock_context) -> N
     mock_client.create_project.assert_called_once()
 
 
-def test_project_create_with_description(runner: CliRunner, mock_client: Mock, mock_context) -> None:
+def test_project_create_with_description(
+    runner: CliRunner, mock_client: Mock, mock_context
+) -> None:
     """Test creating a project with description."""
     result = runner.invoke(
         cli,
         ["project", "create", "Test Project", "--description", "Test desc", "--json"],
-        obj=mock_config,
+        obj=mock_context,
     )
 
     assert result.exit_code == 0
@@ -61,7 +62,7 @@ def test_project_update(runner: CliRunner, mock_client: Mock, mock_context) -> N
     mock_client.update_project.return_value = {"id": "proj-123", "name": "Updated"}
 
     result = runner.invoke(
-        cli, ["project", "update", "proj-123", "--name", "Updated name", "--json"], obj=mock_config
+        cli, ["project", "update", "proj-123", "--name", "Updated name", "--json"], obj=mock_context
     )
 
     assert result.exit_code == 0

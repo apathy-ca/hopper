@@ -2,18 +2,19 @@
 Tests for consolidated memory (pattern extraction and learning).
 """
 
-import pytest
-from datetime import datetime
 from uuid import uuid4
 
+import pytest
+
 from hopper.memory.consolidated import (
-    RoutingPattern,
     ConsolidatedStore,
     PatternExtractor,
+    RoutingPattern,
 )
 from hopper.memory.consolidated.extractor import PatternCandidate
 from hopper.memory.episodic import EpisodicStore
 from hopper.models import Task, TaskStatus
+from hopper.timeutils import utc_now_naive
 
 
 @pytest.fixture
@@ -325,7 +326,7 @@ class TestPatternExtractor:
                 project="backend",
                 status=TaskStatus.DONE,
                 tags={"api": True, "python": True, "backend": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             )
             db_session.add(task)
             db_session.flush()

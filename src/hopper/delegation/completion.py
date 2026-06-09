@@ -5,18 +5,17 @@ Handles propagating completion status up the instance hierarchy.
 """
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from hopper.models import (
     DelegationStatus,
-    HopperInstance,
     Task,
     TaskDelegation,
     TaskStatus,
 )
+from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +65,7 @@ class CompletionBubbler:
                 delegation.complete(result)
                 completed_delegations.append(delegation)
                 logger.info(
-                    f"Bubbled completion for task {task.id} "
-                    f"through delegation {delegation.id}"
+                    f"Bubbled completion for task {task.id} " f"through delegation {delegation.id}"
                 )
 
         self.session.flush()
@@ -103,7 +101,7 @@ class CompletionBubbler:
             )
 
             # Update delegation notes with status change
-            status_note = f"Task status changed to {new_status} at {datetime.utcnow()}"
+            status_note = f"Task status changed to {new_status} at {utc_now_naive()}"
             delegation.notes = (delegation.notes or "") + f"\n{status_note}"
 
         self.session.flush()
@@ -168,7 +166,7 @@ class CompletionBubbler:
         # Store event in delegation metadata
         event = {
             "type": event_type,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_naive().isoformat(),
             "data": event_data or {},
         }
 

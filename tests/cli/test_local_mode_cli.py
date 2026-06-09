@@ -5,7 +5,6 @@ providing true end-to-end testing without mocking.
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest

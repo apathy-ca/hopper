@@ -2,8 +2,6 @@
 TaskDelegation repository for delegation tracking and queries.
 """
 
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +10,7 @@ from hopper.models.task_delegation import (
     DelegationType,
     TaskDelegation,
 )
+from hopper.timeutils import utc_now_naive
 
 from .base import BaseRepository
 
@@ -55,7 +54,7 @@ class TaskDelegationRepository(BaseRepository[TaskDelegation]):
             target_instance_id=target_instance_id,
             delegation_type=delegation_type,
             status=DelegationStatus.PENDING,
-            delegated_at=datetime.utcnow(),
+            delegated_at=utc_now_naive(),
             delegated_by=delegated_by,
             notes=notes,
         )
@@ -123,11 +122,7 @@ class TaskDelegationRepository(BaseRepository[TaskDelegation]):
         query = (
             select(TaskDelegation)
             .where(TaskDelegation.target_instance_id == instance_id)
-            .where(
-                TaskDelegation.status.in_(
-                    [DelegationStatus.PENDING, DelegationStatus.ACCEPTED]
-                )
-            )
+            .where(TaskDelegation.status.in_([DelegationStatus.PENDING, DelegationStatus.ACCEPTED]))
         )
         result = self.session.execute(query)
         return list(result.scalars().all())
@@ -160,9 +155,7 @@ class TaskDelegationRepository(BaseRepository[TaskDelegation]):
             self.session.flush()
         return delegation
 
-    def mark_rejected(
-        self, delegation_id: str, reason: str | None = None
-    ) -> TaskDelegation | None:
+    def mark_rejected(self, delegation_id: str, reason: str | None = None) -> TaskDelegation | None:
         """
         Mark a delegation as rejected.
 

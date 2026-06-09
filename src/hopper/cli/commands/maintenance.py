@@ -100,9 +100,7 @@ def reclassify(ctx: Context, apply_changes: bool, limit: int) -> None:
                     applied += 1
 
                 if ctx.json_output:
-                    print_json(
-                        {"applied": applied, "by_kind": counts, "dry_run": False}
-                    )
+                    print_json({"applied": applied, "by_kind": counts, "dry_run": False})
                 else:
                     print_success(f"Reclassified {applied} record(s).")
                     for target, n in counts.items():
@@ -127,4 +125,4 @@ def reclassify(ctx: Context, apply_changes: bool, limit: int) -> None:
 
     except ClientError as e:
         print_error(f"Reclassify failed: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e

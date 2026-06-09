@@ -3,13 +3,13 @@ Feedback store for managing task feedback.
 """
 
 import logging
-from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from hopper.models import Task, TaskFeedback, TaskStatus
+from hopper.timeutils import utc_now_naive
 
 from ..episodic import EpisodicStore
 
@@ -72,9 +72,7 @@ class FeedbackStore:
             Created TaskFeedback or None if task not found
         """
         # Verify task exists
-        task = self.session.execute(
-            select(Task).where(Task.id == task_id)
-        ).scalar_one_or_none()
+        task = self.session.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
 
         if task is None:
             logger.warning(f"Task {task_id} not found for feedback")
@@ -130,9 +128,11 @@ class FeedbackStore:
             required_rework=required_rework,
             rework_reason=rework_reason,
             unexpected_blockers={"blockers": unexpected_blockers} if unexpected_blockers else None,
-            required_skills_not_tagged={"skills": required_skills_not_tagged} if required_skills_not_tagged else None,
+            required_skills_not_tagged=(
+                {"skills": required_skills_not_tagged} if required_skills_not_tagged else None
+            ),
             notes=notes,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
 
         self.session.add(feedback)

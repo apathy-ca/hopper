@@ -3,11 +3,10 @@
 import os
 import subprocess
 import tempfile
+
 import click
-from rich import box
 from rich.panel import Panel
-from rich.table import Table
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
 
 from hopper.cli.client import APIError
 from hopper.cli.local_client import LocalClientError
@@ -20,7 +19,6 @@ from hopper.cli.output import (
     print_json,
     print_success,
 )
-
 
 # Combined error types for handling both client types
 ClientError = (APIError, LocalClientError)
@@ -74,9 +72,7 @@ def show(ctx: Context, memory: bool, tasks: bool, limit: int) -> None:
                 if show_tasks:
                     # Open Tasks shows only kind=task — non-task kinds
                     # (memory, job, idea, …) are segmented out by type.
-                    result["tasks"] = client.list_tasks(
-                        status="open", kind="task", limit=limit
-                    )
+                    result["tasks"] = client.list_tasks(status="open", kind="task", limit=limit)
                 print_json(result)
                 return
 
@@ -89,9 +85,7 @@ def show(ctx: Context, memory: bool, tasks: bool, limit: int) -> None:
 
             # Show open tasks section — only kind=task
             if show_tasks:
-                task_items = client.list_tasks(
-                    status="open", kind="task", limit=limit
-                )
+                task_items = client.list_tasks(status="open", kind="task", limit=limit)
                 _print_tasks_section(task_items, limit)
 
             # Show northbound items (flagged for upstream)
@@ -104,7 +98,7 @@ def show(ctx: Context, memory: bool, tasks: bool, limit: int) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get context: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @context.command(name="edit")
@@ -191,7 +185,7 @@ def edit(
 
     except ClientError as e:
         print_error(f"Failed to edit: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @context.command(name="promote")
@@ -217,7 +211,7 @@ def promote(ctx: Context, task_id: str) -> None:
 
     except ClientError as e:
         print_error(f"Failed to promote: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @context.command(name="dismiss")
@@ -250,7 +244,7 @@ def dismiss(ctx: Context, task_id: str, force: bool) -> None:
 
     except ClientError as e:
         print_error(f"Failed to dismiss: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 # ============================================================================
@@ -294,7 +288,6 @@ def _print_tasks_section(items: list[dict], limit: int) -> None:
         task_id = item.get("id", "")[:8]
         title = item.get("title", "Untitled")
         priority = item.get("priority", "medium")
-        status = item.get("status", "open")
 
         priority_style = {
             "urgent": "red bold",
@@ -303,7 +296,9 @@ def _print_tasks_section(items: list[dict], limit: int) -> None:
             "low": "dim",
         }.get(priority, "")
 
-        console.print(f"  [dim]{task_id}[/dim] [{priority_style}]{priority}[/{priority_style}] {title}")
+        console.print(
+            f"  [dim]{task_id}[/dim] [{priority_style}]{priority}[/{priority_style}] {title}"
+        )
 
     console.print()
 
@@ -324,17 +319,19 @@ def _print_northbound_section(items: list[dict]) -> None:
 def _print_task_detail(task: dict) -> None:
     """Print detailed task information."""
     console.print()
-    console.print(Panel(
-        f"[bold]{task.get('title', 'Untitled')}[/bold]\n\n"
-        f"[dim]ID:[/dim] {task.get('id', '')}\n"
-        f"[dim]Status:[/dim] {task.get('status', 'open')}\n"
-        f"[dim]Priority:[/dim] {task.get('priority', 'medium')}\n"
-        f"[dim]Tags:[/dim] {', '.join(task.get('tags', []))}\n"
-        f"[dim]Created:[/dim] {format_datetime(task.get('created_at'))}\n\n"
-        f"{task.get('description', '') or '[dim]No description[/dim]'}",
-        title="Task Details",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{task.get('title', 'Untitled')}[/bold]\n\n"
+            f"[dim]ID:[/dim] {task.get('id', '')}\n"
+            f"[dim]Status:[/dim] {task.get('status', 'open')}\n"
+            f"[dim]Priority:[/dim] {task.get('priority', 'medium')}\n"
+            f"[dim]Tags:[/dim] {', '.join(task.get('tags', []))}\n"
+            f"[dim]Created:[/dim] {format_datetime(task.get('created_at'))}\n\n"
+            f"{task.get('description', '') or '[dim]No description[/dim]'}",
+            title="Task Details",
+            border_style="cyan",
+        )
+    )
     console.print()
 
 
@@ -384,7 +381,7 @@ def _editor_edit(task: dict) -> str | None:
             return None
 
         # Read back
-        with open(temp_path, "r") as f:
+        with open(temp_path) as f:
             new_content = f.read()
 
         # Strip title line if present

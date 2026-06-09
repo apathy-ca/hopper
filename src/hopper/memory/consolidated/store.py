@@ -3,12 +3,13 @@ Consolidated store for managing routing patterns.
 """
 
 import logging
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
+
+from hopper.timeutils import utc_now_naive
 
 from .models import RoutingPattern
 
@@ -99,9 +100,7 @@ class ConsolidatedStore:
         active_only: bool = True,
     ) -> list[RoutingPattern]:
         """Get all patterns targeting an instance."""
-        query = select(RoutingPattern).where(
-            RoutingPattern.target_instance == instance_id
-        )
+        query = select(RoutingPattern).where(RoutingPattern.target_instance == instance_id)
 
         if active_only:
             query = query.where(RoutingPattern.is_active == True)  # noqa: E712
@@ -200,7 +199,9 @@ class ConsolidatedStore:
         pattern.record_usage(success)
         self.session.flush()
 
-        logger.info(f"Updated pattern {pattern_id}: success={success}, confidence={pattern.confidence}")
+        logger.info(
+            f"Updated pattern {pattern_id}: success={success}, confidence={pattern.confidence}"
+        )
 
         return pattern
 
@@ -294,7 +295,7 @@ class ConsolidatedStore:
         if new_confidence is not None:
             pattern.confidence = new_confidence
 
-        pattern.last_refined_at = datetime.utcnow()
+        pattern.last_refined_at = utc_now_naive()
         self.session.flush()
 
         logger.info(f"Refined pattern {pattern_id}")
@@ -307,8 +308,7 @@ class ConsolidatedStore:
         active_count = sum(1 for p in all_patterns if p.is_active)
         total_usage = sum(p.usage_count for p in all_patterns)
         avg_confidence = (
-            sum(p.confidence for p in all_patterns) / len(all_patterns)
-            if all_patterns else 0.0
+            sum(p.confidence for p in all_patterns) / len(all_patterns) if all_patterns else 0.0
         )
 
         # By pattern type

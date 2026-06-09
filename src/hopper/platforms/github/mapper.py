@@ -6,7 +6,6 @@ from typing import Any
 
 from ..base import GitHubIssue
 
-
 # Priority label prefixes that map to Hopper priorities
 PRIORITY_LABELS = {
     "priority:urgent": "urgent",

@@ -9,12 +9,10 @@ running UTC while the dev machine runs a different timezone.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
-
-import pytest
 
 from hopper.upstream.protocol import SyncResponse, SyncTask
 from hopper.upstream.storage import UpstreamStorage
@@ -25,14 +23,13 @@ from hopper.upstream.sync import (
     sync_with_upstream,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
 def _make_sync_task(task_id: str, updated_ms: int, instance: str = "test-instance") -> SyncTask:
-    updated_at = datetime.fromtimestamp(updated_ms / 1000, tz=timezone.utc)
+    updated_at = datetime.fromtimestamp(updated_ms / 1000, tz=UTC)
     return SyncTask(
         id=task_id,
         title=f"Task {task_id}",
@@ -48,7 +45,7 @@ def _make_task_store(tasks: list[SyncTask] | None = None) -> Any:
     from hopper.storage.tasks import LocalTask
 
     local_tasks = []
-    for t in (tasks or []):
+    for t in tasks or []:
         lt = MagicMock(spec=LocalTask)
         lt.id = t.id
         lt.title = t.title
@@ -117,30 +114,33 @@ class TestPullCursor:
         state = SyncState.load(state_path.parent / ".sync_state_test-instance")
         assert state.last_server_time == server_time
 
-    def test_since_sent_on_second_sync_equals_previous_server_time(
-        self, tmp_path: Path
-    ) -> None:
+    def test_since_sent_on_second_sync_equals_previous_server_time(self, tmp_path: Path) -> None:
         """Second sync must send since == server_time from previous response."""
         T = int(time.time() * 1000)
         state_path = tmp_path / ".hopper" / ".sync_state"
 
         # Sync 1
         sync_with_upstream(
-            _make_task_store(), _make_client(server_time=T),
-            state_path, instance="test-instance",
+            _make_task_store(),
+            _make_client(server_time=T),
+            state_path,
+            instance="test-instance",
         )
 
         # Sync 2
         client2 = _make_client(server_time=T + 5000)
         sync_with_upstream(
-            _make_task_store(), client2, state_path, instance="test-instance",
+            _make_task_store(),
+            client2,
+            state_path,
+            instance="test-instance",
         )
 
         call_args = client2.sync.call_args
         since_sent = call_args.kwargs.get("since") or call_args.args[1]
-        assert since_sent == T, (
-            f"sync 2 should send since={T} (previous server_time), got {since_sent}"
-        )
+        assert (
+            since_sent == T
+        ), f"sync 2 should send since={T} (previous server_time), got {since_sent}"
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +225,7 @@ class TestServerIndexOnReceivedAt:
         # Simulate server restart by creating a fresh UpstreamStorage (drops
         # in-memory index and calls _rebuild_index from disk).
         storage2 = UpstreamStorage(tmp_path)
-        index_ts = storage2._index.get(
-            storage2._index_key("test-instance", "task-rebuild")
-        )
+        index_ts = storage2._index.get(storage2._index_key("test-instance", "task-rebuild"))
         assert index_ts is not None
         # Should recover server received_at, not the client's old timestamp.
         assert before <= index_ts <= after, (
@@ -251,12 +249,12 @@ class TestKindAndMemoryFieldRoundTrip:
     server's revision_writer always derived record_type="task".
     """
 
-    MEMORY_FIELDS = dict(
-        kind="memory",
-        subject="auth flow",
-        scope="project:hopper",
-        provenance="claude:acm-rewrite",
-    )
+    MEMORY_FIELDS = {
+        "kind": "memory",
+        "subject": "auth flow",
+        "scope": "project:hopper",
+        "provenance": "claude:acm-rewrite",
+    }
 
     @staticmethod
     def _markdown_store(tmp_path: Path) -> Any:
@@ -269,7 +267,7 @@ class TestKindAndMemoryFieldRoundTrip:
 
     def test_protocol_serialize_deserialize_preserves_fields(self) -> None:
         """model_dump -> model_validate round-trips all four fields (the wire)."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         task = SyncTask(
             id="mem-1",
             title="A memory",
@@ -300,7 +298,7 @@ class TestKindAndMemoryFieldRoundTrip:
         stored payload must carry kind="memory".
         """
         storage = UpstreamStorage(tmp_path)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         task = SyncTask(
             id="mem-store",
             title="A memory",

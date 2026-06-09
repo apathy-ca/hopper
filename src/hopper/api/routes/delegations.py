@@ -24,6 +24,8 @@ from hopper.api.schemas.task_delegation import (
     DelegationList,
     DelegationReject,
     DelegationResponse,
+)
+from hopper.api.schemas.task_delegation import (
     DelegationStatus as SchemaDelegationStatus,
 )
 from hopper.models import (
@@ -59,7 +61,11 @@ def _delegation_to_response(delegation: TaskDelegation) -> DelegationResponse:
     )
 
 
-@router.post("/tasks/{task_id}/delegate", response_model=DelegationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/tasks/{task_id}/delegate",
+    response_model=DelegationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def delegate_task(
     task_id: str,
     delegation_data: DelegationCreate,
@@ -89,7 +95,9 @@ async def delegate_task(
         raise NotFoundException("Task", task_id)
 
     # Get target instance
-    target_query = select(HopperInstance).where(HopperInstance.id == delegation_data.target_instance_id)
+    target_query = select(HopperInstance).where(
+        HopperInstance.id == delegation_data.target_instance_id
+    )
     target_result = await db.execute(target_query)
     target_instance = target_result.scalar_one_or_none()
 
@@ -376,8 +384,8 @@ async def get_instance_delegations(
         query = query.where(TaskDelegation.source_instance_id == instance_id)
     else:  # all
         query = query.where(
-            (TaskDelegation.target_instance_id == instance_id) |
-            (TaskDelegation.source_instance_id == instance_id)
+            (TaskDelegation.target_instance_id == instance_id)
+            | (TaskDelegation.source_instance_id == instance_id)
         )
 
     if status_filter:

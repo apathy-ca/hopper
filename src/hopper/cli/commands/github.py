@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import click
 
-from hopper.cli.config import load_config
 from hopper.cli.main import Context
 from hopper.cli.output import print_error, print_info, print_json, print_success, print_warning
 from hopper.platforms import (
@@ -35,12 +34,12 @@ def auth_github(ctx: Context, token: str, default_owner: str | None) -> None:
         user_data = client.test_connection()
         username = user_data.get("login", "unknown")
         client.close()
-    except PlatformAuthError:
+    except PlatformAuthError as e:
         print_error("Invalid GitHub token. Please check your token and try again.")
-        raise click.Abort()
+        raise click.Abort() from e
     except PlatformError as e:
         print_error(f"Failed to connect to GitHub: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
     # Save to config
     config = ctx.config
@@ -72,27 +71,32 @@ def list_issues(ctx: Context, repo: str, state: str, limit: int) -> None:
         owner, repo_name = mapper.parse_repo(repo)
     except ValueError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     try:
         client = GitHubClient(token)
         issues = client.list_issues(owner, repo_name, state=state, per_page=limit)
         client.close()
-    except PlatformNotFoundError:
+    except PlatformNotFoundError as e:
         print_error(f"Repository not found: {repo}")
-        raise click.Abort()
+        raise click.Abort() from e
     except PlatformError as e:
         print_error(f"GitHub error: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
-        print_json([{
-            "number": issue.number,
-            "title": issue.title,
-            "state": issue.state,
-            "labels": issue.labels,
-            "url": issue.html_url,
-        } for issue in issues])
+        print_json(
+            [
+                {
+                    "number": issue.number,
+                    "title": issue.title,
+                    "state": issue.state,
+                    "labels": issue.labels,
+                    "url": issue.html_url,
+                }
+                for issue in issues
+            ]
+        )
     else:
         if not issues:
             print_info(f"No {state} issues found in {repo}")
@@ -148,15 +152,15 @@ def import_issues(
         owner, repo_name = mapper.parse_repo(repo)
     except ValueError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     # Get task store
     if not ctx.is_local:
         print_error("GitHub import currently only works in local mode (--local)")
         raise click.Abort()
 
-    from hopper.cli.local_client import LocalClient
     from hopper.cli.config import get_storage_path
+    from hopper.cli.local_client import LocalClient
 
     storage_path = get_storage_path(ctx.config, force_local=True)
     local_client = LocalClient(storage_path)
@@ -192,14 +196,16 @@ def import_issues(
             )
 
             if ctx.json_output:
-                print_json({
-                    "imported": result.imported,
-                    "skipped": result.skipped,
-                    "errors": result.errors,
-                    "total_imported": result.total_imported,
-                    "total_skipped": result.total_skipped,
-                    "total_errors": result.total_errors,
-                })
+                print_json(
+                    {
+                        "imported": result.imported,
+                        "skipped": result.skipped,
+                        "errors": result.errors,
+                        "total_imported": result.total_imported,
+                        "total_skipped": result.total_skipped,
+                        "total_errors": result.total_errors,
+                    }
+                )
             else:
                 print_success(f"Imported {result.total_imported} issues from {repo}")
                 if result.total_skipped:
@@ -208,12 +214,12 @@ def import_issues(
                     print_warning(f"{result.total_errors} errors:")
                     for err in result.errors:
                         print_error(f"  {err}")
-    except PlatformNotFoundError:
+    except PlatformNotFoundError as e:
         print_error(f"Issue or repository not found: {repo}")
-        raise click.Abort()
+        raise click.Abort() from e
     except PlatformError as e:
         print_error(f"GitHub error: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
     finally:
         client.close()
 
@@ -224,7 +230,9 @@ def import_issues(
 @click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
 @click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
 @click.pass_obj
-def export_task(ctx: Context, task_id: str, repo: str, author_did: str | None, author_location: str | None) -> None:
+def export_task(
+    ctx: Context, task_id: str, repo: str, author_did: str | None, author_location: str | None
+) -> None:
     """Export a Hopper task as a GitHub issue.
 
     TASK_ID is the Hopper task ID to export.
@@ -236,15 +244,15 @@ def export_task(ctx: Context, task_id: str, repo: str, author_did: str | None, a
         owner, repo_name = mapper.parse_repo(repo)
     except ValueError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     # Get task store
     if not ctx.is_local:
         print_error("GitHub export currently only works in local mode (--local)")
         raise click.Abort()
 
-    from hopper.cli.local_client import LocalClient
     from hopper.cli.config import get_storage_path
+    from hopper.cli.local_client import LocalClient
 
     storage_path = get_storage_path(ctx.config, force_local=True)
     local_client = LocalClient(storage_path)
@@ -259,12 +267,14 @@ def export_task(ctx: Context, task_id: str, repo: str, author_did: str | None, a
         result = sync.export_task(task_id, owner, repo_name)
 
         if ctx.json_output:
-            print_json({
-                "success": result.success,
-                "issue_number": result.issue_number,
-                "issue_url": result.issue_url,
-                "error": result.error,
-            })
+            print_json(
+                {
+                    "success": result.success,
+                    "issue_number": result.issue_number,
+                    "issue_url": result.issue_url,
+                    "error": result.error,
+                }
+            )
         else:
             if result.success:
                 print_success(f"Created issue #{result.issue_number}")
@@ -274,7 +284,7 @@ def export_task(ctx: Context, task_id: str, repo: str, author_did: str | None, a
                 raise click.Abort()
     except PlatformError as e:
         print_error(f"GitHub error: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
     finally:
         client.close()
 
@@ -296,11 +306,13 @@ def github_status(ctx: Context) -> None:
         client.close()
 
         if ctx.json_output:
-            print_json({
-                "authenticated": True,
-                "username": user_data.get("login"),
-                "default_owner": profile.github.default_owner,
-            })
+            print_json(
+                {
+                    "authenticated": True,
+                    "username": user_data.get("login"),
+                    "default_owner": profile.github.default_owner,
+                }
+            )
         else:
             print_success(f"Authenticated as: {user_data.get('login')}")
             if profile.github.default_owner:

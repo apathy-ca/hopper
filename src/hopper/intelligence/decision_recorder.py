@@ -9,7 +9,6 @@ Records all routing decisions to enable:
 """
 
 import logging
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +18,7 @@ from hopper.intelligence.types import (
     RoutingContext,
     RoutingDecision,
 )
+from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class DecisionRecord:
         self.decision = decision
         self.context = context
         self.metadata = metadata or {}
-        self.recorded_at = datetime.utcnow()
+        self.recorded_at = utc_now_naive()
         self.feedback: DecisionFeedback | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -361,7 +361,7 @@ class DecisionRecorder:
         """
         from datetime import timedelta
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utc_now_naive() - timedelta(days=days)
 
         old_decision_ids = [
             did for did, record in self._records.items() if record.recorded_at < cutoff

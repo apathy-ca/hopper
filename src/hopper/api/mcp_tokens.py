@@ -208,15 +208,17 @@ class MCPTokenStore:
             if did is not None and metadata["did"] != did:
                 continue
 
-            result.append({
-                "token_prefix": token[:12],  # hpr_ + 8 hex chars
-                "did": metadata["did"],
-                "instance": metadata.get("instance", "default"),
-                "instance_path": metadata.get("instance_path"),
-                "created_at": metadata["created_at"],
-                "label": metadata.get("label", ""),
-                "last_used_at": metadata.get("last_used_at", metadata["created_at"]),
-            })
+            result.append(
+                {
+                    "token_prefix": token[:12],  # hpr_ + 8 hex chars
+                    "did": metadata["did"],
+                    "instance": metadata.get("instance", "default"),
+                    "instance_path": metadata.get("instance_path"),
+                    "created_at": metadata["created_at"],
+                    "label": metadata.get("label", ""),
+                    "last_used_at": metadata.get("last_used_at", metadata["created_at"]),
+                }
+            )
 
         # Sort by created_at descending (newest first)
         result.sort(key=lambda x: x["created_at"], reverse=True)
@@ -258,7 +260,7 @@ class MCPTokenStore:
             return {}
 
         try:
-            with open(self.token_file, "r", encoding="utf-8") as f:
+            with open(self.token_file, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             # Return empty dict on error - don't crash

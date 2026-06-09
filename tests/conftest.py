@@ -25,12 +25,12 @@ from sqlalchemy.pool import StaticPool
 # Import models (will be available after integration)
 try:
     from hopper.models.base import Base
-    from hopper.models.external_mapping import ExternalMapping
-    from hopper.models.hopper_instance import HopperInstance
-    from hopper.models.project import Project
-    from hopper.models.routing_decision import RoutingDecision
-    from hopper.models.task import Task
-    from hopper.models.task_feedback import TaskFeedback
+    from hopper.models.external_mapping import ExternalMapping  # noqa: F401
+    from hopper.models.hopper_instance import HopperInstance  # noqa: F401
+    from hopper.models.project import Project  # noqa: F401
+    from hopper.models.routing_decision import RoutingDecision  # noqa: F401
+    from hopper.models.task import Task  # noqa: F401
+    from hopper.models.task_feedback import TaskFeedback  # noqa: F401
 except ImportError:
     # Models not yet integrated, create mock Base
     from sqlalchemy.orm import DeclarativeBase
@@ -179,7 +179,7 @@ def _seed_local_instance(session: Session) -> None:
     """
     try:
         from hopper.models.enums import HopperScope, InstanceStatus, InstanceType
-        from hopper.models.hopper_instance import HopperInstance
+        from hopper.models.hopper_instance import HopperInstance  # noqa: F401
     except ImportError:
         return
     if session.get(HopperInstance, "local") is not None:

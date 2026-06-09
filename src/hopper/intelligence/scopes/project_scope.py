@@ -61,27 +61,21 @@ class ProjectScopeBehavior(BaseScopeBehavior):
                 return TaskAction.delegate(
                     target_instance_id=target.id,
                     reason=f"Task complexity ({self.estimate_task_complexity(task)}) "
-                           f"exceeds threshold, delegating to orchestration",
+                    f"exceeds threshold, delegating to orchestration",
                 )
             else:
                 # No orchestration available, check if we can create one
-                auto_create = self.get_config_value(
-                    instance, "auto_create_orchestrations", True
-                )
+                auto_create = self.get_config_value(instance, "auto_create_orchestrations", True)
                 if auto_create:
                     return TaskAction.reject(
                         reason="No orchestration instance available and auto-create not implemented"
                     )
                 else:
                     # Handle directly even though complex
-                    return TaskAction.handle(
-                        reason="No orchestration available, handling directly"
-                    )
+                    return TaskAction.handle(reason="No orchestration available, handling directly")
 
         # Handle directly - task is simple enough
-        return TaskAction.handle(
-            reason="Task complexity within threshold, handling directly"
-        )
+        return TaskAction.handle(reason="Task complexity within threshold, handling directly")
 
     async def should_delegate(
         self,
@@ -121,11 +115,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
             select(HopperInstance)
             .where(HopperInstance.parent_id == instance.id)
             .where(HopperInstance.scope == HopperScope.ORCHESTRATION)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         orchestrations = list(result.scalars().all())
@@ -149,9 +139,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
 
         Updates metrics and may bubble up to global.
         """
-        logger.info(
-            f"Task {task.id} completed at project instance {instance.id}"
-        )
+        logger.info(f"Task {task.id} completed at project instance {instance.id}")
 
         # Update metrics
         metadata = instance.runtime_metadata or {}
@@ -172,9 +160,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
             select(Task)
             .where(Task.instance_id == instance.id)
             .where(
-                Task.status.in_(
-                    [TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS]
-                )
+                Task.status.in_([TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS])
             )
             .order_by(Task.created_at.asc())
         )
@@ -195,7 +181,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
         tasks = instance.tasks or []
         status_counts = {}
         for task in tasks:
-            status = task.status.value if hasattr(task.status, 'value') else str(task.status)
+            status = task.status.value if hasattr(task.status, "value") else str(task.status)
             status_counts[status] = status_counts.get(status, 0) + 1
 
         # Count orchestration instances

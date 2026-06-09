@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -192,8 +192,7 @@ class Config(BaseSettings):
             import sys
 
             print(
-                f"Error: {config_path} contains invalid YAML. "
-                f"Using defaults.",
+                f"Error: {config_path} contains invalid YAML. " f"Using defaults.",
                 file=sys.stderr,
             )
             return cls(config_path=config_path)

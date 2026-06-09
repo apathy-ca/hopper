@@ -219,7 +219,8 @@ def get_table_row_counts(engine: Engine | None = None) -> dict[str, int]:
 
     with engine.connect() as conn:
         for table_name in inspector.get_table_names():
-            result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
+            # table_name comes from the SQLAlchemy inspector, not user input
+            result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))  # nosec B608
             counts[table_name] = result.scalar() or 0
 
     return counts

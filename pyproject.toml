@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hopper-memory"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Persistent memory and task management for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -78,6 +78,9 @@ hopper = "hopper.cli.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.dynamic]
+version = {attr = "hopper.__version__"}
+
 [tool.black]
 line-length = 100
 target-version = ["py311"]
@@ -100,10 +103,14 @@ select = [
 ignore = [
     "E501",  # line too long, handled by black
     "B008",  # do not perform function calls in argument defaults
+    "UP042", # (str, Enum) -> StrEnum changes str(member) semantics; enums feed SQL columns and JSON
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+# Command modules import Context back from main, so the command-group imports
+# must come after its definition.
+"src/hopper/cli/main.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -124,12 +131,9 @@ strict_equality = true
 [[tool.mypy.overrides]]
 # Server-extra and optional packages — not present in a core install
 module = [
-    "opensearch_py",
     "anthropic",
     "fastapi",
     "redis",
-    "jose",
-    "passlib",
     "mcp",
     "nacl",
 ]
@@ -143,7 +147,5 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=hopper",
-    "--cov-report=term-missing",
 ]
 asyncio_mode = "auto"

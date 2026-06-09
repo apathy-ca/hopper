@@ -9,7 +9,7 @@ Enables continuous improvement by:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from hopper.intelligence.decision_recorder import (
@@ -17,6 +17,7 @@ from hopper.intelligence.decision_recorder import (
     get_decision_recorder,
 )
 from hopper.intelligence.types import DecisionFeedback, DecisionStrategy
+from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ class FeedbackCollector:
 
         # Filter by time if specified
         if days:
-            cutoff = datetime.utcnow() - timedelta(days=days)
+            cutoff = utc_now_naive() - timedelta(days=days)
             records = [r for r in records if r.recorded_at >= cutoff]
 
         # Collect statistics
@@ -175,7 +176,7 @@ class FeedbackCollector:
         """
         # Get all unique destinations
         all_records = await self.recorder.get_recent_decisions(limit=10000)
-        destinations = set(r.decision.destination for r in all_records)
+        destinations = {r.decision.destination for r in all_records}
 
         problematic = []
 
@@ -218,7 +219,7 @@ class FeedbackCollector:
         """
         # Get all unique destinations
         all_records = await self.recorder.get_recent_decisions(limit=10000)
-        destinations = set(r.decision.destination for r in all_records)
+        destinations = {r.decision.destination for r in all_records}
 
         high_performing = []
 
@@ -316,14 +317,14 @@ class FeedbackCollector:
         """
         all_records = await self.recorder.get_recent_decisions(limit=10000)
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utc_now_naive() - timedelta(days=days)
         recent_records = [r for r in all_records if r.recorded_at >= cutoff]
 
         # Create time intervals
         intervals = []
         current_start = cutoff
 
-        while current_start < datetime.utcnow():
+        while current_start < utc_now_naive():
             current_end = current_start + timedelta(days=interval_days)
             intervals.append((current_start, current_end))
             current_start = current_end

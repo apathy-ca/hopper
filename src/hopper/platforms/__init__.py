@@ -9,7 +9,7 @@ from .base import (
     PlatformRateLimitError,
 )
 from .github import GitHubClient, GitHubMapper
-from .sync import GitHubSyncService, ImportResult, ExportResult
+from .sync import ExportResult, GitHubSyncService, ImportResult
 
 __all__ = [
     "GitHubIssue",

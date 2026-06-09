@@ -39,9 +39,7 @@ def repo(db_session):
 
 
 def _create(repo, **payload):
-    return repo.create(
-        payload, author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION
-    )
+    return repo.create(payload, author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION)
 
 
 class TestCreatePersistsKind:
@@ -170,9 +168,7 @@ class TestListSegmentsByKind:
 
 class TestUpdateMerges:
     def test_update_merges_changes(self, repo):
-        created = _create(
-            repo, title="orig", description="keep me", status="pending"
-        )
+        created = _create(repo, title="orig", description="keep me", status="pending")
         updated = repo.update(
             created["id"],
             {"status": "in_progress", "title": "changed"},
@@ -197,8 +193,10 @@ class TestUpdateMerges:
     def test_update_missing_returns_none(self, repo):
         assert (
             repo.update(
-                "nope", {"status": "done"},
-                author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION,
+                "nope",
+                {"status": "done"},
+                author_did=AUTHOR_DID,
+                author_location=AUTHOR_LOCATION,
             )
             is None
         )
@@ -207,9 +205,7 @@ class TestUpdateMerges:
 class TestSoftDeleteTombstones:
     def test_soft_delete_excludes_from_list_and_get(self, repo, db_session):
         created = _create(repo, title="delete me", kind="task")
-        ok = repo.soft_delete(
-            created["id"], author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION
-        )
+        ok = repo.soft_delete(created["id"], author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION)
         assert ok is True
 
         record = db_session.get(Record, created["id"])
@@ -222,9 +218,7 @@ class TestSoftDeleteTombstones:
 
     def test_soft_delete_missing_returns_false(self, repo):
         assert (
-            repo.soft_delete(
-                "nope", author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION
-            )
+            repo.soft_delete("nope", author_did=AUTHOR_DID, author_location=AUTHOR_LOCATION)
             is False
         )
 

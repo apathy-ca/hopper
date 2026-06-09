@@ -13,16 +13,19 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from hopper.models.record import Record
 from hopper.models.task import Task
+from hopper.storage.revision_writer import AuthorContext, tombstone_revision, write_revision
 from hopper.storage.tasks import LocalTask, _utc_now
-from hopper.storage.revision_writer import AuthorContext, write_revision, tombstone_revision
+
+if TYPE_CHECKING:
+    from .sqlite import SQLiteStorage
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +55,12 @@ def _orm_to_local(row: Task, kind: str = "task") -> LocalTask:
             return None
         if isinstance(v, datetime):
             if v.tzinfo is None:
-                return v.replace(tzinfo=timezone.utc)
+                return v.replace(tzinfo=UTC)
             return v
         # Stored as string (shouldn't happen with ORM, but guard anyway)
         dt = datetime.fromisoformat(str(v))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
 
     tags = row.tags
@@ -120,7 +123,9 @@ def _local_to_orm(task: LocalTask, existing: Task | None = None) -> Task:
     # looks like an actual DB row ID (not the bare hopper dir name like '.hopper').
     # Treat 'local' and bare dot-prefixed names as unmapped — leave NULL.
     inst = task.instance
-    row.instance_id = inst if (inst and inst not in ("local",) and not inst.startswith(".")) else None
+    row.instance_id = (
+        inst if (inst and inst not in ("local",) and not inst.startswith(".")) else None
+    )
     row.source = task.source
     row.depends_on = task.depends_on or []
     row.created_at = task.created_at
@@ -146,7 +151,7 @@ class TaskSQLiteStore:
     backends transparently.
     """
 
-    def __init__(self, storage: "SQLiteStorage"):  # noqa: F821
+    def __init__(self, storage: SQLiteStorage):
         """Initialise with a SQLiteStorage backend (owns the engine)."""
         self._storage = storage
 
@@ -214,11 +219,14 @@ class TaskSQLiteStore:
             session.add(row)
             if author is not None:
                 session.flush()  # flush so FK on Record.id is satisfiable
-                write_revision(session, task.to_frontmatter(), author,
-                               instance_id=task.instance or "local")
+                write_revision(
+                    session, task.to_frontmatter(), author, instance_id=task.instance or "local"
+                )
             session.commit()
 
-    def save(self, task: LocalTask, author: AuthorContext | None = None, preserve_timestamp: bool = False) -> None:
+    def save(
+        self, task: LocalTask, author: AuthorContext | None = None, preserve_timestamp: bool = False
+    ) -> None:
         """Upsert a task (create or update).
 
         If author is provided, a Revision row is appended in the same transaction.
@@ -234,8 +242,9 @@ class TaskSQLiteStore:
             session.merge(row)
             if author is not None:
                 session.flush()
-                write_revision(session, task.to_frontmatter(), author,
-                               instance_id=task.instance or "local")
+                write_revision(
+                    session, task.to_frontmatter(), author, instance_id=task.instance or "local"
+                )
             session.commit()
 
     def delete(self, task_id: str, author: AuthorContext | None = None) -> bool:
@@ -250,8 +259,13 @@ class TaskSQLiteStore:
             if author is not None:
                 kind = _resolve_kinds(session, [resolved]).get(resolved, "task")
                 task = _orm_to_local(row, kind)
-                tombstone_revision(session, resolved, author, task.to_frontmatter(),
-                                   instance_id=task.instance or "local")
+                tombstone_revision(
+                    session,
+                    resolved,
+                    author,
+                    task.to_frontmatter(),
+                    instance_id=task.instance or "local",
+                )
             session.delete(row)
             session.commit()
             return True
@@ -380,11 +394,7 @@ class TaskSQLiteStore:
         if resolved is None:
             return []
         with self._storage.session() as session:
-            stmt = (
-                select(Task)
-                .where(Task.parent_id == resolved)
-                .where(Task.deleted.is_(False))
-            )
+            stmt = select(Task).where(Task.parent_id == resolved).where(Task.deleted.is_(False))
             rows = session.execute(stmt).scalars().all()
             kinds = _resolve_kinds(session, [r.id for r in rows])
             return [_orm_to_local(r, kinds.get(r.id, "task")) for r in rows]
@@ -398,8 +408,9 @@ class TaskSQLiteStore:
     def get_by_project(self, project: str) -> list[LocalTask]:
         return self.list(project=project)
 
-    def update_status(self, task_id: str, status: str,
-                      author: AuthorContext | None = None) -> LocalTask | None:
+    def update_status(
+        self, task_id: str, status: str, author: AuthorContext | None = None
+    ) -> LocalTask | None:
         task = self.get(task_id)
         if task is None:
             return None
@@ -407,8 +418,9 @@ class TaskSQLiteStore:
         self.save(task, author=author)
         return task
 
-    def add_tags(self, task_id: str, tags: list[str],
-                 author: AuthorContext | None = None) -> LocalTask | None:
+    def add_tags(
+        self, task_id: str, tags: list[str], author: AuthorContext | None = None
+    ) -> LocalTask | None:
         task = self.get(task_id)
         if task is None:
             return None
@@ -418,8 +430,9 @@ class TaskSQLiteStore:
         self.save(task, author=author)
         return task
 
-    def remove_tags(self, task_id: str, tags: list[str],
-                    author: AuthorContext | None = None) -> LocalTask | None:
+    def remove_tags(
+        self, task_id: str, tags: list[str], author: AuthorContext | None = None
+    ) -> LocalTask | None:
         task = self.get(task_id)
         if task is None:
             return None

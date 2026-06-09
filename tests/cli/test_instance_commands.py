@@ -1,8 +1,8 @@
 """Tests for instance management commands."""
 
-import pytest
 from unittest.mock import Mock
 
+import pytest
 from click.testing import CliRunner
 
 from hopper.cli.main import cli
@@ -11,13 +11,12 @@ from hopper.cli.main import cli
 pytestmark = pytest.mark.skip(reason="CLI integration: Requires running API or complex mocking")
 
 
-
 def test_instance_create(runner: CliRunner, mock_client: Mock, mock_context) -> None:
     """Test creating an instance."""
     result = runner.invoke(
         cli,
         ["instance", "create", "test-instance", "--scope", "project", "--json"],
-        obj=mock_config,
+        obj=mock_context,
     )
 
     assert result.exit_code == 0
@@ -41,7 +40,7 @@ def test_instance_create_with_parent(runner: CliRunner, mock_client: Mock, mock_
             "parent-123",
             "--json",
         ],
-        obj=mock_config,
+        obj=mock_context,
     )
 
     assert result.exit_code == 0
@@ -57,10 +56,12 @@ def test_instance_list(runner: CliRunner, mock_client: Mock, mock_context) -> No
     mock_client.list_instances.assert_called_once()
 
 
-def test_instance_list_with_scope_filter(runner: CliRunner, mock_client: Mock, mock_context) -> None:
+def test_instance_list_with_scope_filter(
+    runner: CliRunner, mock_client: Mock, mock_context
+) -> None:
     """Test listing instances with scope filter."""
     result = runner.invoke(
-        cli, ["instance", "list", "--scope", "project", "--json"], obj=mock_config
+        cli, ["instance", "list", "--scope", "project", "--json"], obj=mock_context
     )
 
     assert result.exit_code == 0
@@ -106,7 +107,7 @@ def test_instance_stop(runner: CliRunner, mock_client: Mock, mock_context) -> No
     mock_client.stop_instance.return_value = {"id": "inst-123", "status": "inactive"}
 
     result = runner.invoke(
-        cli, ["instance", "stop", "inst-123", "--force", "--json"], obj=mock_config
+        cli, ["instance", "stop", "inst-123", "--force", "--json"], obj=mock_context
     )
 
     assert result.exit_code == 0

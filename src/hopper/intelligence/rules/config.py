@@ -67,11 +67,11 @@ class RuleConfigLoader:
             with open(file_path) as f:
                 config = yaml.safe_load(f)
 
-        except FileNotFoundError:
-            raise RuleConfigError(f"Configuration file not found: {file_path}")
+        except FileNotFoundError as e:
+            raise RuleConfigError(f"Configuration file not found: {file_path}") from e
 
         except yaml.YAMLError as e:
-            raise RuleConfigError(f"Invalid YAML in {file_path}: {e}")
+            raise RuleConfigError(f"Invalid YAML in {file_path}: {e}") from e
 
         return self.load_rules_from_dict(config)
 
@@ -108,7 +108,7 @@ class RuleConfigLoader:
                 logger.debug(f"Loaded rule: {rule.name}")
 
             except Exception as e:
-                raise RuleConfigError(f"Error loading rule {i}: {e}")
+                raise RuleConfigError(f"Error loading rule {i}: {e}") from e
 
         logger.info(f"Loaded {len(rules)} rules from configuration")
 
@@ -217,8 +217,8 @@ class RuleConfigLoader:
         operator_str = config["operator"].upper()
         try:
             operator = CompositeOperator[operator_str]
-        except KeyError:
-            raise RuleConfigError(f"Unknown operator: {config['operator']}")
+        except KeyError as e:
+            raise RuleConfigError(f"Unknown operator: {config['operator']}") from e
 
         # Create sub-rules recursively
         sub_rules = []
@@ -261,7 +261,7 @@ class RuleConfigLoader:
             logger.info(f"Successfully saved rules to {file_path}")
 
         except Exception as e:
-            raise RuleConfigError(f"Failed to save rules: {e}")
+            raise RuleConfigError(f"Failed to save rules: {e}") from e
 
     def _rule_to_config_dict(self, rule: Rule) -> dict[str, Any]:
         """

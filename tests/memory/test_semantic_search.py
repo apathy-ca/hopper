@@ -2,12 +2,13 @@
 Tests for semantic search functionality.
 """
 
-import pytest
-from datetime import datetime
 from uuid import uuid4
 
-from hopper.memory.search import TaskSimilarity, SimilarityResult, TaskSearcher
+import pytest
+
+from hopper.memory.search import SimilarityResult, TaskSearcher, TaskSimilarity
 from hopper.models import Task, TaskStatus
+from hopper.timeutils import utc_now_naive
 
 
 class TestTaskSimilarity:
@@ -215,7 +216,7 @@ class TestTaskSearcher:
                 project="backend",
                 status=TaskStatus.PENDING,
                 tags={"api": True, "auth": True, "bug": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             ),
             Task(
                 id=f"task-{uuid4().hex[:8]}",
@@ -224,7 +225,7 @@ class TestTaskSearcher:
                 project="backend",
                 status=TaskStatus.DONE,
                 tags={"api": True, "feature": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             ),
             Task(
                 id=f"task-{uuid4().hex[:8]}",
@@ -233,7 +234,7 @@ class TestTaskSearcher:
                 project="frontend",
                 status=TaskStatus.PENDING,
                 tags={"frontend": True, "css": True, "ui": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             ),
             Task(
                 id=f"task-{uuid4().hex[:8]}",
@@ -242,7 +243,7 @@ class TestTaskSearcher:
                 project="backend",
                 status=TaskStatus.IN_PROGRESS,
                 tags={"database": True, "performance": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             ),
         ]
 
@@ -334,7 +335,7 @@ class TestTaskSearcher:
             project="backend",
             status=TaskStatus.PENDING,
             tags={"feature": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(new_task)
         db_session.flush()
@@ -397,7 +398,7 @@ class TestTaskSearcher:
         searcher = TaskSearcher(db_session)
 
         # Search without explicit indexing
-        results = searcher.search("API")
+        searcher.search("API")
 
         # Should have indexed automatically
         assert searcher.get_index_size() > 0
@@ -414,7 +415,7 @@ class TestTaskSearcher:
             description="This task was added after indexing",
             project="backend",
             status=TaskStatus.PENDING,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(new_task)
         db_session.flush()

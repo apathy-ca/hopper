@@ -3,12 +3,10 @@ Tests for Working Memory implementation.
 """
 
 import time
-import pytest
-from datetime import datetime
 
 from hopper.memory.working import RoutingContext, WorkingMemory
 from hopper.memory.working.backends import LocalBackend
-from hopper.memory.working.context import InstanceInfo, RecentDecision, SimilarTask
+from hopper.memory.working.context import SimilarTask
 
 
 class TestLocalBackend:
@@ -135,9 +133,7 @@ class TestRoutingContext:
         assert restored.task_title == sample_routing_context.task_title
         assert restored.task_tags == sample_routing_context.task_tags
         assert len(restored.similar_tasks) == len(sample_routing_context.similar_tasks)
-        assert len(restored.available_instances) == len(
-            sample_routing_context.available_instances
-        )
+        assert len(restored.available_instances) == len(sample_routing_context.available_instances)
 
     def test_get_successful_routings(self, sample_routing_context: RoutingContext):
         """Test getting successful routing references."""
@@ -244,9 +240,7 @@ class TestWorkingMemory:
                 outcome_success=True,
             )
         ]
-        result = working_memory.add_similar_tasks(
-            sample_routing_context.task_id, similar
-        )
+        result = working_memory.add_similar_tasks(sample_routing_context.task_id, similar)
 
         assert result is True
         retrieved = working_memory.get_context(sample_routing_context.task_id)

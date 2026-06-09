@@ -106,10 +106,10 @@ def _lerp_color(ratio: float) -> tuple[int, int, int]:
     ratio = max(0.0, min(ratio, 1.0))
     if ratio <= 0.5:
         t = ratio / 0.5
-        return (int(0x22 + (0xcc - 0x22) * t), 0xcc, 0x22)
+        return (int(0x22 + (0xCC - 0x22) * t), 0xCC, 0x22)
     else:
         t = (ratio - 0.5) / 0.5
-        return (0xcc, int(0xcc - (0xcc - 0x22) * t), 0x22)
+        return (0xCC, int(0xCC - (0xCC - 0x22) * t), 0x22)
 
 
 def gradient_text(text: str, ratio: float) -> str:
@@ -378,7 +378,9 @@ def print_instance_tree(instances: list[dict[str, Any]], show_tasks: bool = True
                 if task_count > 0:
                     label += f" [dim]│[/dim] [cyan]{task_count} task(s)[/cyan]"
                     if active_task_count > 0:
-                        label += f" [dim]([/dim][yellow]{active_task_count} active[/yellow][dim])[/dim]"
+                        label += (
+                            f" [dim]([/dim][yellow]{active_task_count} active[/yellow][dim])[/dim]"
+                        )
 
             # Add child instance count if available
             child_count = instance.get("child_instance_count", len(by_parent.get(instance_id, [])))

@@ -12,7 +12,7 @@ from pathlib import Path
 import click
 import httpx
 
-from hopper.cli.output import print_error, print_info, print_json, print_success, print_warning
+from hopper.cli.output import print_error, print_info, print_json, print_success
 
 
 @click.group()
@@ -188,7 +188,7 @@ def test() -> None:
 
     # Check if MCP module can be imported
     try:
-        import hopper.mcp
+        import hopper.mcp  # noqa: F401
 
         click.echo("✓ Hopper MCP module found")
     except ImportError as e:
@@ -197,7 +197,7 @@ def test() -> None:
 
     # Check required dependencies
     try:
-        import mcp
+        import mcp  # noqa: F401
 
         click.echo("✓ MCP SDK installed")
     except ImportError:
@@ -205,7 +205,7 @@ def test() -> None:
         sys.exit(1)
 
     try:
-        import httpx
+        import httpx  # noqa: F401
 
         click.echo("✓ httpx installed")
     except ImportError:
@@ -293,7 +293,9 @@ def _get_default_server() -> str:
     default=None,
     help="Path to instance storage directory",
 )
-def mcp_init_token(server: str | None, label: str, instance: str | None, instance_path: str | None) -> None:
+def mcp_init_token(
+    server: str | None, label: str, instance: str | None, instance_path: str | None
+) -> None:
     """Register for MCP access and get a Bearer token.
 
     Creates a token linked to your DID and a specific Hopper instance.
@@ -305,9 +307,9 @@ def mcp_init_token(server: str | None, label: str, instance: str | None, instanc
         hopper mcp init-token -s https://hopper.example.com -i work
         hopper mcp init-token -s https://hopper.example.com -i project -p /path/to/project/.hopper
     """
-    from hopper.upstream.did import sign_request
     from hopper.cli.config import detect_embedded_hopper
     from hopper.storage.base import StorageConfig
+    from hopper.upstream.did import sign_request
 
     # Get server URL
     server_url = server or _get_default_server()
@@ -376,13 +378,13 @@ def mcp_init_token(server: str | None, label: str, instance: str | None, instanc
             print_error(f"Server error ({response.status_code}): {response.text}")
             raise click.Abort()
 
-    except httpx.ConnectError:
+    except httpx.ConnectError as e:
         print_error(f"Could not connect to server: {server_url}")
         print_info("Check that the server URL is correct and the server is running.")
-        raise click.Abort()
+        raise click.Abort() from e
     except httpx.RequestError as e:
         print_error(f"Request failed: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @mcp.command(name="tokens")
@@ -466,12 +468,12 @@ def mcp_tokens(server: str | None, json_output: bool) -> None:
             print_error(f"Server error ({response.status_code}): {response.text}")
             raise click.Abort()
 
-    except httpx.ConnectError:
+    except httpx.ConnectError as e:
         print_error(f"Could not connect to server: {server_url}")
-        raise click.Abort()
+        raise click.Abort() from e
     except httpx.RequestError as e:
         print_error(f"Request failed: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @mcp.command(name="revoke")
@@ -552,9 +554,9 @@ def mcp_revoke(token_prefix: str, server: str | None, force: bool) -> None:
             print_error(f"Server error ({response.status_code}): {response.text}")
             raise click.Abort()
 
-    except httpx.ConnectError:
+    except httpx.ConnectError as e:
         print_error(f"Could not connect to server: {server_url}")
-        raise click.Abort()
+        raise click.Abort() from e
     except httpx.RequestError as e:
         print_error(f"Request failed: {e}")
-        raise click.Abort()
+        raise click.Abort() from e

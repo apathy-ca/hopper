@@ -83,9 +83,10 @@ class SQLiteStorage(StorageBackend):
         """Run any pending Alembic migrations in-process."""
         try:
             import os
-            import alembic.config
-            import alembic.command
             from pathlib import Path as _Path
+
+            import alembic.command
+            import alembic.config
 
             # Locate alembic.ini relative to this package
             # src/hopper/storage/sqlite.py -> project root is 4 levels up
@@ -94,9 +95,7 @@ class SQLiteStorage(StorageBackend):
             alembic_ini = project_root / "alembic.ini"
 
             if not alembic_ini.exists():
-                logger.warning(
-                    "alembic.ini not found at %s — skipping migration", alembic_ini
-                )
+                logger.warning("alembic.ini not found at %s — skipping migration", alembic_ini)
                 return
 
             # env.py reads DATABASE_URL from the environment; set it so our
@@ -106,9 +105,7 @@ class SQLiteStorage(StorageBackend):
             try:
                 alembic_cfg = alembic.config.Config(str(alembic_ini))
                 alembic_cfg.set_main_option("sqlalchemy.url", self._url)
-                alembic_cfg.set_main_option(
-                    "script_location", str(project_root / "alembic")
-                )
+                alembic_cfg.set_main_option("script_location", str(project_root / "alembic"))
                 alembic.command.upgrade(alembic_cfg, "head")
             finally:
                 if prev_db_url is None:

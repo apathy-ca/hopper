@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -58,11 +59,13 @@ def init_upstream(ctx: Context, key_path: str | None, server: str | None, force:
     config.save()
 
     if ctx.json_output:
-        print_json({
-            "did": did_key.did,
-            "key_path": str(path),
-            "server": profile.upstream.server,
-        })
+        print_json(
+            {
+                "did": did_key.did,
+                "key_path": str(path),
+                "server": profile.upstream.server,
+            }
+        )
     else:
         print_success(f"Generated DID key: {did_key.did}")
         print_info(f"Key saved to: {path}")
@@ -124,7 +127,7 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
         did_key = load_did_key(key_path)
     except Exception as e:
         print_error(f"Failed to load DID key: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
     # Get storage path
     storage_path = ctx.get_storage_path()
@@ -155,15 +158,17 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
         )
     except UpstreamError as e:
         print_error(f"Sync failed: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
-        print_json({
-            "pushed": result.pushed,
-            "pulled": result.pulled,
-            "conflicts": result.conflicts,
-            "errors": result.errors,
-        })
+        print_json(
+            {
+                "pushed": result.pushed,
+                "pulled": result.pulled,
+                "conflicts": result.conflicts,
+                "errors": result.errors,
+            }
+        )
     else:
         if result.errors:
             for error in result.errors:
@@ -197,7 +202,7 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
 
 
 @upstream.command(name="server")
-@click.option("--host", "-h", default="0.0.0.0", help="Host to bind to")
+@click.option("--host", "-h", default="0.0.0.0", help="Host to bind to")  # nosec B104
 @click.option("--port", "-p", default=8080, help="Port to listen on")
 @click.option(
     "--storage",
@@ -219,7 +224,7 @@ def run_server(host: str, port: int, storage: str) -> None:
             f"Missing server dependency: {e.name}. "
             "Install server extras with: pip install 'hopper-memory[server]'"
         )
-        raise click.Abort()
+        raise click.Abort() from e
 
     storage_path = Path(storage).expanduser().resolve()
     storage_path.mkdir(parents=True, exist_ok=True)
@@ -324,16 +329,16 @@ def _print_upstream_status(ctx: Context) -> None:
     if info["state_path"]:
         print_info(f"Sync state: {info['state_path']}")
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     if info["last_sync"]:
-        dt = datetime.fromtimestamp(info["last_sync"] / 1000, tz=timezone.utc)
+        dt = datetime.fromtimestamp(info["last_sync"] / 1000, tz=UTC)
         print_info(f"Last sync: {dt.isoformat()}")
     else:
         print_info("Last sync: never")
 
     if info["last_server_time"]:
-        dt = datetime.fromtimestamp(info["last_server_time"] / 1000, tz=timezone.utc)
+        dt = datetime.fromtimestamp(info["last_server_time"] / 1000, tz=UTC)
         print_info(f"Last server time: {dt.isoformat()}")
 
 
@@ -416,7 +421,7 @@ def whoami(ctx: Context) -> None:
         did_key = load_did_key(key_path)
     except Exception as e:
         print_error(f"Failed to load DID key: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
         print_json({"did": did_key.did, "key_path": str(key_path)})
@@ -456,7 +461,7 @@ def _get_admin_client(ctx: Context, server: str | None = None, admin_key: str | 
         did_key = load_did_key(key_path)
     except Exception as e:
         print_error(f"Failed to load DID key: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
     return UpstreamClient(server_url=server_url, did_key=did_key), did_key
 
@@ -472,7 +477,9 @@ def admin() -> None:
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.option("--namespace", "-n", default=None, help="Filter to a specific namespace")
 @click.pass_obj
-def admin_list(ctx: Context, server: str | None, admin_key: str | None, namespace: str | None) -> None:
+def admin_list(
+    ctx: Context, server: str | None, admin_key: str | None, namespace: str | None
+) -> None:
     """List all registered DIDs."""
     from hopper.upstream.client import UpstreamError
 
@@ -482,7 +489,7 @@ def admin_list(ctx: Context, server: str | None, admin_key: str | None, namespac
         result = client.list_dids(namespace=namespace)
     except UpstreamError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
         print_json(result)
@@ -514,7 +521,9 @@ def admin_list(ctx: Context, server: str | None, admin_key: str | None, namespac
 @click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
 @click.option("--namespace", "-n", default=None, help="Filter to a specific namespace")
 @click.pass_obj
-def admin_pending(ctx: Context, server: str | None, admin_key: str | None, namespace: str | None) -> None:
+def admin_pending(
+    ctx: Context, server: str | None, admin_key: str | None, namespace: str | None
+) -> None:
     """List DIDs pending approval."""
     from hopper.upstream.client import NotAdminError, UpstreamError
 
@@ -522,12 +531,12 @@ def admin_pending(ctx: Context, server: str | None, admin_key: str | None, names
 
     try:
         result = client.list_pending(namespace=namespace)
-    except NotAdminError:
+    except NotAdminError as e:
         print_error("Only admin can view pending DIDs.")
-        raise click.Abort()
+        raise click.Abort() from e
     except UpstreamError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
         print_json(result)
@@ -589,10 +598,10 @@ def admin_approve(
         result = client.approve_did(did, namespace=ns, role=role)
     except NotAdminError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
     except UpstreamError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
         print_json(result)
@@ -628,10 +637,10 @@ def admin_revoke(
         result = client.revoke_did(did, namespace=ns)
     except NotAdminError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
     except UpstreamError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
         print_json(result)
@@ -676,7 +685,12 @@ def invite() -> None:
     default="approved",
     help="Role to grant on redeem (default: approved). 'approver' is admin-only.",
 )
-@click.option("--expires", "-e", default="7d", help="Expiry window, e.g. 7d, 24h, 30m. Use 'never' to disable.")
+@click.option(
+    "--expires",
+    "-e",
+    default="7d",
+    help="Expiry window, e.g. 7d, 24h, 30m. Use 'never' to disable.",
+)
 @click.option("--uses", "-u", default=1, type=int, help="Max redemptions (default: 1)")
 @click.option("--server", "-s", help="Upstream server URL")
 @click.option("--key", "-k", type=click.Path(), help="Path to issuer DID key")
@@ -702,9 +716,9 @@ def invite_create(
     else:
         try:
             expires_in_ms = _parse_duration(expires) * 1000
-        except ValueError:
+        except ValueError as e:
             print_error(f"Invalid --expires value: {expires!r}")
-            raise click.Abort()
+            raise click.Abort() from e
 
     client, _ = _get_admin_client(ctx, server, key)
 
@@ -714,7 +728,7 @@ def invite_create(
         )
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     token = result["token"]
     inv = result["invite"]
@@ -730,11 +744,12 @@ def invite_create(
     click.echo(f"  Uses:      {inv['uses']}/{inv['max_uses']}")
     exp = inv.get("expires_at")
     if exp:
-        from datetime import datetime, timezone
-        dt = datetime.fromtimestamp(exp / 1000, tz=timezone.utc)
+        from datetime import datetime
+
+        dt = datetime.fromtimestamp(exp / 1000, tz=UTC)
         click.echo(f"  Expires:   {dt.isoformat()}")
     else:
-        click.echo(f"  Expires:   never")
+        click.echo("  Expires:   never")
     click.echo("")
     print_warning("This token is shown only once. Share it over a secure channel.")
     click.echo("")
@@ -761,7 +776,7 @@ def invite_list(
         result = client.list_invites(namespace=namespace)
     except UpstreamError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     invites = result.get("invites", [])
 
@@ -773,7 +788,8 @@ def invite_list(
         print_info("No invites.")
         return
 
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     now_ms = int(__import__("time").time() * 1000)
     for inv in invites:
         exp = inv.get("expires_at")
@@ -784,9 +800,11 @@ def invite_list(
             status_bits.append("expired")
         status = ", ".join(status_bits) if status_bits else "active"
 
-        click.echo(f"  {inv['token_hash'][:12]}…  ns={inv['namespace']}  role={inv['role']}  uses={inv['uses']}/{inv['max_uses']}  [{status}]")
+        click.echo(
+            f"  {inv['token_hash'][:12]}…  ns={inv['namespace']}  role={inv['role']}  uses={inv['uses']}/{inv['max_uses']}  [{status}]"
+        )
         if exp:
-            dt = datetime.fromtimestamp(exp / 1000, tz=timezone.utc)
+            dt = datetime.fromtimestamp(exp / 1000, tz=UTC)
             click.echo(f"    expires: {dt.isoformat()}")
         click.echo(f"    issued_by: {inv['issued_by']}")
 
@@ -811,7 +829,7 @@ def invite_revoke_cmd(
         result = client.revoke_invite(token_hash_prefix)
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     if ctx.json_output:
         print_json(result)
@@ -838,10 +856,10 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
         result = client.redeem_invite(token)
     except NotAuthorizedError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
     except UpstreamError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
     namespace = result.get("namespace")
 
@@ -857,6 +875,7 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
     storage_path = ctx.get_storage_path() if namespace else None
     if namespace and storage_path:
         from hopper.storage.markdown import MarkdownStorage
+
         storage = MarkdownStorage(StorageConfig.embedded(storage_path, instance_name=namespace))
         storage.initialize()
 
@@ -867,7 +886,9 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
         if namespace and storage_path:
             print_info(f"Instance id set to '{namespace}' in {storage_path}/config.yaml")
         elif namespace:
-            print_info(f"Namespace: {namespace} — run 'hopper init --name {namespace}' to configure this project.")
+            print_info(
+                f"Namespace: {namespace} — run 'hopper init --name {namespace}' to configure this project."
+            )
         print_info("Run 'hopper sync' to pull tasks.")
 
 

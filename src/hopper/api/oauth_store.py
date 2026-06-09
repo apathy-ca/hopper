@@ -190,7 +190,7 @@ class OAuthStore:
         if not self.oauth_file.exists():
             return {"clients": {}, "codes": {}, "tokens": {}}
         try:
-            with open(self.oauth_file, "r", encoding="utf-8") as f:
+            with open(self.oauth_file, encoding="utf-8") as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError):
             return {"clients": {}, "codes": {}, "tokens": {}}

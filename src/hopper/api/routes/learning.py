@@ -4,8 +4,7 @@ Learning API endpoints.
 Provides endpoints for feedback, patterns, and learning statistics.
 """
 
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
@@ -27,6 +26,7 @@ from hopper.api.schemas.learning import (
     RoutingAccuracyStats,
 )
 from hopper.models import Task, TaskFeedback
+from hopper.timeutils import utc_now_naive
 
 router = APIRouter()
 
@@ -155,9 +155,7 @@ async def get_task_feedback(
     Raises:
         NotFoundException: If feedback not found
     """
-    result = await db.execute(
-        select(TaskFeedback).where(TaskFeedback.task_id == task_id)
-    )
+    result = await db.execute(select(TaskFeedback).where(TaskFeedback.task_id == task_id))
     feedback = result.scalar_one_or_none()
 
     if not feedback:
@@ -236,7 +234,7 @@ async def get_routing_accuracy(
 
     def _get_accuracy(session):
         components = _get_sync_components(db)
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utc_now_naive() - timedelta(days=days)
         return components["feedback_analytics"].get_routing_accuracy(since=since)
 
     report = await db.run_sync(lambda s: _get_accuracy(s))
@@ -421,9 +419,7 @@ async def get_pattern(
     """
     from hopper.memory.consolidated import RoutingPattern
 
-    result = await db.execute(
-        select(RoutingPattern).where(RoutingPattern.id == pattern_id)
-    )
+    result = await db.execute(select(RoutingPattern).where(RoutingPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
 
     if not pattern:
@@ -477,9 +473,7 @@ async def update_pattern(
     """
     from hopper.memory.consolidated import RoutingPattern
 
-    result = await db.execute(
-        select(RoutingPattern).where(RoutingPattern.id == pattern_id)
-    )
+    result = await db.execute(select(RoutingPattern).where(RoutingPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
 
     if not pattern:
@@ -501,7 +495,7 @@ async def update_pattern(
     if pattern_data.is_active is not None:
         pattern.is_active = pattern_data.is_active
 
-    pattern.last_refined_at = datetime.utcnow()
+    pattern.last_refined_at = utc_now_naive()
 
     await db.flush()
 
@@ -548,9 +542,7 @@ async def delete_pattern(
     """
     from hopper.memory.consolidated import RoutingPattern
 
-    result = await db.execute(
-        select(RoutingPattern).where(RoutingPattern.id == pattern_id)
-    )
+    result = await db.execute(select(RoutingPattern).where(RoutingPattern.id == pattern_id))
     pattern = result.scalar_one_or_none()
 
     if not pattern:
@@ -587,7 +579,7 @@ async def find_matching_patterns(
 
     def _find_matches(session):
         components = _get_sync_components(db)
-        tag_dict = {t: True for t in tags} if tags else None
+        tag_dict = dict.fromkeys(tags, True) if tags else None
         return components["consolidated_store"].find_matching_patterns(
             tags=tag_dict,
             priority=priority,
@@ -687,7 +679,7 @@ async def run_consolidation(
 
     def _consolidate(session):
         components = _get_sync_components(db)
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utc_now_naive() - timedelta(days=days)
         return components["learning_engine"].run_consolidation(since=since)
 
     result = await db.run_sync(lambda s: _consolidate(s))
@@ -698,6 +690,6 @@ async def run_consolidation(
         created_pattern_ids=[],
         total_patterns=0,
         active_patterns=0,
-        since=(datetime.utcnow() - timedelta(days=days)).isoformat(),
-        ran_at=datetime.utcnow().isoformat(),
+        since=(utc_now_naive() - timedelta(days=days)).isoformat(),
+        ran_at=utc_now_naive().isoformat(),
     )

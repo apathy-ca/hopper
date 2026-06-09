@@ -22,7 +22,7 @@ yet. Later migration phases wire it into ``routes/tasks.py``.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -41,7 +41,7 @@ _PASSTHROUGH_OPTIONAL = ("subject", "scope", "provenance")
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _normalize_kind(raw: str | None) -> str:
@@ -346,9 +346,7 @@ class RecordTaskRepository:
     # Search
     # ------------------------------------------------------------------
 
-    def search(
-        self, query: str, **filters: Any
-    ) -> tuple[list[dict[str, Any]], int]:
+    def search(self, query: str, **filters: Any) -> tuple[list[dict[str, Any]], int]:
         """Substring search over title/description/tags (mirrors sqlite_tasks).
 
         Accepts the same keyword filters as ``list`` (kind, all_kinds, status,

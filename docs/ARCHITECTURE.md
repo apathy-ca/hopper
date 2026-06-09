@@ -235,5 +235,5 @@ src/hopper/
 
 For more details, see:
 - [Specification](Hopper.Specification.md)
-- [Implementation Plan](../plans/Hopper-Implementation-Plan.md)
+- [Implementation Plan](history/plans/Hopper-Implementation-Plan.md)
 - [Contributing Guide](../CONTRIBUTING.md)

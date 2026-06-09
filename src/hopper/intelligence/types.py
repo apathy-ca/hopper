@@ -9,6 +9,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from hopper.timeutils import utc_now_naive
+
 
 class DecisionStrategy(Enum):
     """
@@ -53,7 +55,7 @@ class RoutingContext:
     user_preferences: dict[str, Any] = field(default_factory=dict)
 
     # Timing information
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now_naive)
 
     # Additional context
     source: str | None = None  # Where the task came from (MCP, CLI, API, etc.)
@@ -81,7 +83,7 @@ class RoutingDecision:
 
     # Metadata
     decision_id: str | None = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now_naive)
     intelligence_version: str | None = None
 
     # Alternative suggestions
@@ -126,7 +128,7 @@ class DecisionFeedback:
     feedback_by: str | None = None  # User ID
 
     # When
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utc_now_naive)
 
     # Metadata
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -149,8 +151,8 @@ class RoutingRule:
     priority: int = 0  # Higher priority rules evaluated first
 
     # Metadata
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now_naive)
+    updated_at: datetime = field(default_factory=utc_now_naive)
     created_by: str | None = None
 
     # Statistics

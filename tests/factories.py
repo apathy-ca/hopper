@@ -15,10 +15,11 @@ Usage:
 """
 
 import uuid
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
+
+from hopper.timeutils import utc_now_naive
 
 # Import models (will be available after integration)
 try:
@@ -153,8 +154,8 @@ class TaskFactory(BaseFactory):
             "owner": None,
             "source": "test",
             "tags": {"test": True, "automated": True},
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
+            "updated_at": utc_now_naive(),
         }
 
     @classmethod
@@ -210,8 +211,8 @@ class ProjectFactory(BaseFactory):
                 "default_priority": "medium",
                 "auto_routing": True,
             },
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
+            "updated_at": utc_now_naive(),
         }
 
     @classmethod
@@ -241,8 +242,8 @@ class HopperInstanceFactory(BaseFactory):
                 "llm_fallback": True,
                 "confidence_threshold": 0.7,
             },
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
+            "updated_at": utc_now_naive(),
         }
 
     @classmethod
@@ -283,7 +284,7 @@ class RoutingDecisionFactory(BaseFactory):
                 "matched_rules": ["keyword_match"],
                 "execution_time_ms": 50,
             },
-            "created_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
         }
 
     @classmethod
@@ -330,7 +331,7 @@ class TaskFeedbackFactory(BaseFactory):
             "confidence_rating": 4,
             "comments": "The routing was appropriate for this task",
             "suggested_destination": None,
-            "created_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
         }
 
     @classmethod
@@ -377,8 +378,8 @@ class ExternalMappingFactory(BaseFactory):
                 "repository": "test/repo",
                 "issue_number": seq,
             },
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": utc_now_naive(),
+            "updated_at": utc_now_naive(),
         }
 
     @classmethod

@@ -22,7 +22,6 @@ from hopper.mcp.tools.task_tools import (
     list_tasks,
 )
 
-
 # ---------------------------------------------------------------------------
 # stdio server (REST-backed) — assert the outbound HTTP payload/params
 # ---------------------------------------------------------------------------
@@ -99,14 +98,10 @@ class TestStdioListSegmentsByKind:
         assert params["kind"] == "task"
 
     @pytest.mark.asyncio
-    async def test_list_explicit_kind_overrides_default(
-        self, mock_http_client, mock_http_response
-    ):
+    async def test_list_explicit_kind_overrides_default(self, mock_http_client, mock_http_response):
         mock_http_client.get.return_value = mock_http_response(json_data={"tasks": [], "total": 0})
 
-        await list_tasks(
-            client=mock_http_client, args={"kind": "memory"}, default_limit=10
-        )
+        await list_tasks(client=mock_http_client, args={"kind": "memory"}, default_limit=10)
 
         params = mock_http_client.get.call_args[1]["params"]
         assert params["kind"] == "memory"
@@ -117,9 +112,7 @@ class TestStdioListSegmentsByKind:
     ):
         mock_http_client.get.return_value = mock_http_response(json_data={"tasks": [], "total": 0})
 
-        await list_tasks(
-            client=mock_http_client, args={"all_kinds": True}, default_limit=10
-        )
+        await list_tasks(client=mock_http_client, args={"all_kinds": True}, default_limit=10)
 
         params = mock_http_client.get.call_args[1]["params"]
         assert "kind" not in params
@@ -196,9 +189,7 @@ def sse_local_client(tmp_path, monkeypatch):
 
 
 class TestSseMemoryFirstClass:
-    def test_create_memory_has_real_kind_and_roundtrips_structured_fields(
-        self, sse_local_client
-    ):
+    def test_create_memory_has_real_kind_and_roundtrips_structured_fields(self, sse_local_client):
         sse = sse_local_client
 
         res = sse.hopper_create_memory(
@@ -240,9 +231,7 @@ class TestSseListSegmentsByKind:
     def test_list_tasks_excludes_memory_by_default(self, sse_local_client):
         sse = sse_local_client
         sse.hopper_create_task(title="real task", kind="task")
-        sse.hopper_create_memory(
-            title="a memory", content="x", subject="self", scope="private"
-        )
+        sse.hopper_create_memory(title="a memory", content="x", subject="self", scope="private")
 
         default = sse.hopper_list_tasks()
         assert default["status"] == "success"
@@ -255,9 +244,7 @@ class TestSseListSegmentsByKind:
     def test_all_kinds_escape_hatch_reveals_memory(self, sse_local_client):
         sse = sse_local_client
         sse.hopper_create_task(title="real task", kind="task")
-        sse.hopper_create_memory(
-            title="a memory", content="x", subject="self", scope="private"
-        )
+        sse.hopper_create_memory(title="a memory", content="x", subject="self", scope="private")
 
         revealed = sse.hopper_list_tasks(all_kinds=True)
         titles = {t["title"] for t in revealed["tasks"]}
@@ -267,9 +254,7 @@ class TestSseListSegmentsByKind:
     def test_kind_filter_selects_memory(self, sse_local_client):
         sse = sse_local_client
         sse.hopper_create_task(title="real task", kind="task")
-        sse.hopper_create_memory(
-            title="a memory", content="x", subject="self", scope="private"
-        )
+        sse.hopper_create_memory(title="a memory", content="x", subject="self", scope="private")
 
         only_mem = sse.hopper_list_tasks(kind="memory")
         titles = {t["title"] for t in only_mem["tasks"]}

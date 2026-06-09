@@ -5,14 +5,11 @@ Tests task delegation, acceptance, rejection, and completion.
 """
 
 import pytest
-from datetime import datetime
 
-from hopper.delegation.delegator import Delegator, DelegationError
+from hopper.delegation.delegator import DelegationError, Delegator
 from hopper.models import (
     DelegationStatus,
     DelegationType,
-    InstanceStatus,
-    TaskDelegation,
 )
 
 
@@ -211,7 +208,7 @@ class TestDelegator:
         )
         delegator.accept_delegation(del1)
 
-        del2 = delegator.delegate_task(
+        delegator.delegate_task(
             task=sample_task,
             target_instance=orchestration_instance,
         )

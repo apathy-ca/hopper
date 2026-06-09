@@ -11,10 +11,6 @@ Tests API endpoints with real database operations including:
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Integration test: Requires running API server")
-
-
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -30,6 +26,8 @@ from tests.utils import (
     validate_project_schema,
     validate_task_schema,
 )
+
+pytestmark = pytest.mark.skip(reason="Integration test: Requires running API server")
 
 
 @pytest.mark.integration
@@ -91,7 +89,7 @@ class TestTaskCRUDAPI:
     def test_list_tasks(self, api_client: TestClient, db_session: Session):
         """Test listing tasks via API from database."""
         # Create multiple tasks in database
-        tasks = TaskFactory.create_batch(5, session=db_session, project="hopper")
+        TaskFactory.create_batch(5, session=db_session, project="hopper")
 
         # List via API
         response = api_client.get("/api/v1/tasks")

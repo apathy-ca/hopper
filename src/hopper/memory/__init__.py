@@ -10,12 +10,12 @@ Plus:
 - Learning Loop: Integrates all components for continuous improvement
 """
 
-from .working import RoutingContext, WorkingMemory
+from .consolidated import ConsolidatedStore, PatternExtractor, RoutingPattern
 from .episodic import EpisodicStore, RoutingEpisode
-from .search import TaskSimilarity, SimilarityResult, TaskSearcher
-from .feedback import FeedbackStore, FeedbackAnalytics
-from .consolidated import RoutingPattern, ConsolidatedStore, PatternExtractor
+from .feedback import FeedbackAnalytics, FeedbackStore
 from .learning import LearningEngine, RoutingSuggestion, SuggestionSource
+from .search import SimilarityResult, TaskSearcher, TaskSimilarity
+from .working import RoutingContext, WorkingMemory
 
 __all__ = [
     # Working Memory

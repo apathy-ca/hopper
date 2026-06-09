@@ -47,10 +47,17 @@ class InstanceType(str, Enum):
 class InstanceCreate(BaseModel):
     """Schema for creating a new Hopper instance."""
 
-    id: str | None = Field(None, min_length=1, max_length=100, description="Instance ID (auto-generated if not provided)")
+    id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="Instance ID (auto-generated if not provided)",
+    )
     name: str = Field(..., min_length=1, max_length=100, description="Instance name")
     scope: HopperScope = Field(..., description="Instance scope level")
-    instance_type: InstanceType = Field(default=InstanceType.PERSISTENT, description="Instance type")
+    instance_type: InstanceType = Field(
+        default=InstanceType.PERSISTENT, description="Instance type"
+    )
 
     parent_id: str | None = Field(None, description="Parent instance ID")
 
@@ -58,9 +65,7 @@ class InstanceCreate(BaseModel):
     config: dict[str, Any] = Field(
         default_factory=dict, description="Instance-specific configuration"
     )
-    runtime_metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Runtime metadata"
-    )
+    runtime_metadata: dict[str, Any] = Field(default_factory=dict, description="Runtime metadata")
 
     # Metadata
     description: str | None = Field(None, description="Instance description")

@@ -557,5 +557,5 @@ echo $PYTHONPATH
 - [FastAPI Testing](https://fastapi.tiangolo.com/tutorial/testing/)
 - [Click Testing](https://click.palletsprojects.com/en/latest/testing/)
 - [SQLAlchemy Testing](https://docs.sqlalchemy.org/en/latest/core/testing.html)
-- [Hopper Implementation Plan](/plans/Hopper-Implementation-Plan.md)
-- [Hopper Testing Strategy](/plans/Hopper-Testing-and-Deployment.md)
+- [Hopper Implementation Plan](history/plans/Hopper-Implementation-Plan.md)
+- [Hopper Testing Strategy](history/plans/Hopper-Testing-and-Deployment.md)

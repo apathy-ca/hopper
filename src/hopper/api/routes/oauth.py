@@ -34,8 +34,6 @@ from pydantic import BaseModel, Field
 
 from hopper.api.mcp_tokens import get_token_store
 from hopper.api.oauth_store import (
-    ACCESS_TOKEN_TTL_SECONDS,
-    CLIENT_PREFIX,
     get_oauth_store,
 )
 
@@ -187,6 +185,7 @@ def _authorize_form_html(
     All user-controlled strings are HTML-escaped — never inject raw URLs
     or scopes into the response body.
     """
+
     def esc(s: str) -> str:
         return html.escape(s or "", quote=True)
 
@@ -278,20 +277,27 @@ async def authorize_get(
     resource: Annotated[str | None, Query()] = None,
 ) -> HTMLResponse:
     client, _ = _validate_authorize_params(
-        client_id, redirect_uri, response_type,
-        code_challenge, code_challenge_method, resource, request,
+        client_id,
+        redirect_uri,
+        response_type,
+        code_challenge,
+        code_challenge_method,
+        resource,
+        request,
     )
-    return HTMLResponse(_authorize_form_html(
-        client_id=client_id,
-        redirect_uri=redirect_uri,
-        response_type=response_type,
-        code_challenge=code_challenge or "",
-        code_challenge_method=code_challenge_method,
-        scope=scope,
-        state=state,
-        resource=resource or "",
-        client_name=client["client_name"],
-    ))
+    return HTMLResponse(
+        _authorize_form_html(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            response_type=response_type,
+            code_challenge=code_challenge or "",
+            code_challenge_method=code_challenge_method,
+            scope=scope,
+            state=state,
+            resource=resource or "",
+            client_name=client["client_name"],
+        )
+    )
 
 
 @router.post("/oauth/authorize")
@@ -308,8 +314,13 @@ async def authorize_post(
     state: Annotated[str, Form()] = "",
 ):
     client, _ = _validate_authorize_params(
-        client_id, redirect_uri, response_type,
-        code_challenge, code_challenge_method, resource, request,
+        client_id,
+        redirect_uri,
+        response_type,
+        code_challenge,
+        code_challenge_method,
+        resource,
+        request,
     )
 
     token_store = get_token_store()

@@ -22,7 +22,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +73,7 @@ def ensure_instance(session: Session, instance_id: str) -> None:
     ).first()
     if found is not None:
         return
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     session.execute(
         text(
             "INSERT INTO hopper_instances "
@@ -105,7 +105,7 @@ def backfill_one(
     if session.get(Record, task_id) is not None:
         return "skipped"
 
-    created_at = parse_iso(task.get("created_at")) or datetime.utcnow()
+    created_at = parse_iso(task.get("created_at")) or datetime.now(timezone.utc).replace(tzinfo=None)
     updated_at = parse_iso(task.get("updated_at")) or created_at
 
     if dry_run:

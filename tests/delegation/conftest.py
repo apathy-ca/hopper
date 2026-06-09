@@ -7,23 +7,23 @@ Provides fixtures for:
 - Scope behavior testing
 """
 
-import pytest
-from datetime import datetime
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.orm import Session
 
 from hopper.models import (
+    DelegationStatus,
+    DelegationType,
     HopperInstance,
     HopperScope,
     InstanceStatus,
     InstanceType,
     Task,
-    TaskStatus,
     TaskDelegation,
-    DelegationType,
-    DelegationStatus,
+    TaskStatus,
 )
+from hopper.timeutils import utc_now_naive
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def global_instance(db_session: Session) -> HopperInstance:
             "llm_fallback": True,
             "auto_routing": True,
         },
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(instance)
     db_session.flush()
@@ -61,7 +61,7 @@ def project_instance(db_session: Session, global_instance: HopperInstance) -> Ho
             "capabilities": ["python", "fastapi", "testing"],
             "max_concurrent_tasks": 5,
         },
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(instance)
     db_session.flush()
@@ -82,7 +82,7 @@ def orchestration_instance(db_session: Session, project_instance: HopperInstance
             "max_concurrent_tasks": 10,
             "worker_type": "execution",
         },
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(instance)
     db_session.flush()
@@ -115,7 +115,7 @@ def sample_task(db_session: Session, global_instance: HopperInstance) -> Task:
         priority="medium",
         instance_id=global_instance.id,
         tags={"feature": True, "backend": True},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(task)
     db_session.flush()
@@ -134,7 +134,7 @@ def high_priority_task(db_session: Session, global_instance: HopperInstance) -> 
         priority="urgent",
         instance_id=global_instance.id,
         tags={"bug": True, "critical": True},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(task)
     db_session.flush()
@@ -156,7 +156,7 @@ def task_with_delegation(
         target_instance_id=project_instance.id,
         delegation_type=DelegationType.ROUTE,
         status=DelegationStatus.PENDING,
-        delegated_at=datetime.utcnow(),
+        delegated_at=utc_now_naive(),
     )
     db_session.add(delegation)
     db_session.flush()
@@ -177,7 +177,7 @@ def multiple_tasks(db_session: Session, global_instance: HopperInstance) -> list
             status=TaskStatus.PENDING,
             priority=priorities[i],
             instance_id=global_instance.id,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         tasks.append(task)
@@ -199,7 +199,7 @@ def second_project_instance(db_session: Session, global_instance: HopperInstance
             "capabilities": ["rust", "systems", "performance"],
             "max_concurrent_tasks": 3,
         },
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(instance)
     db_session.flush()
@@ -217,7 +217,7 @@ def stopped_instance(db_session: Session, global_instance: HopperInstance) -> Ho
         status=InstanceStatus.STOPPED,
         parent_id=global_instance.id,
         config={},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(instance)
     db_session.flush()

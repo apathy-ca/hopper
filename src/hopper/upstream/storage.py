@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .protocol import SyncTask
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class DIDStatus(str, Enum):
     """Status of a DID for a given namespace."""
 
-    ADMIN = "admin"        # Server admin — implicitly approved for all namespaces
+    ADMIN = "admin"  # Server admin — implicitly approved for all namespaces
     APPROVER = "approver"  # Authorized for namespace AND can approve/invite others for it
     APPROVED = "approved"
     PENDING = "pending"
@@ -95,8 +95,7 @@ class DIDRegistry:
                         self._registry.setdefault(GLOBAL_NS, {})[did] = DIDStatus(status)
             else:
                 self._registry = {
-                    ns: {did: DIDStatus(s) for did, s in dids.items()}
-                    for ns, dids in raw.items()
+                    ns: {did: DIDStatus(s) for did, s in dids.items()} for ns, dids in raw.items()
                 }
         except (json.JSONDecodeError, OSError):
             self._admin_did = None
@@ -241,9 +240,7 @@ class DIDRegistry:
         self._save_record(record)
         return DIDStatus.PENDING, True
 
-    def set_status(
-        self, did: str, namespace: str, status: DIDStatus, by_did: str
-    ) -> None:
+    def set_status(self, did: str, namespace: str, status: DIDStatus, by_did: str) -> None:
         """Write a status transition to both registry and per-DID record."""
         now = int(time.time() * 1000)
         self._registry.setdefault(namespace, {})[did] = status
@@ -321,8 +318,9 @@ class DIDRegistry:
         """List all DID records, optionally filtered to a namespace."""
         seen: set[str] = set()
         if namespace:
-            dids = set(self._registry.get(namespace, {}).keys()) | \
-                   set(self._registry.get(GLOBAL_NS, {}).keys())
+            dids = set(self._registry.get(namespace, {}).keys()) | set(
+                self._registry.get(GLOBAL_NS, {}).keys()
+            )
             if self._admin_did:
                 dids.add(self._admin_did)
         else:
@@ -469,6 +467,7 @@ class InviteStore:
     ) -> tuple[str, Invite]:
         """Create an invite and return (token, record). Token is only returned here."""
         import secrets
+
         token = "hinv_" + secrets.token_urlsafe(24)
         now = int(time.time() * 1000)
         invite = Invite(
@@ -513,8 +512,7 @@ class InviteStore:
     def revoke(self, token_hash_prefix: str) -> tuple[bool, str]:
         """Revoke by full hash or unique prefix."""
         matches = [
-            p for p in self.invites_dir.glob("*.json")
-            if p.stem.startswith(token_hash_prefix)
+            p for p in self.invites_dir.glob("*.json") if p.stem.startswith(token_hash_prefix)
         ]
         if not matches:
             return False, "no matching invite"
@@ -562,7 +560,7 @@ class UpstreamStorage:
     _index_by_time: list[tuple[int, str]] = field(default_factory=list)
     did_registry: DIDRegistry = field(init=False)
     invites: InviteStore = field(init=False)
-    shadow_writer: "RevisionShadowWriter | None" = field(default=None)
+    shadow_writer: RevisionShadowWriter | None = field(default=None)
 
     def __post_init__(self) -> None:
         self.tasks_dir = self.storage_path / "tasks"
@@ -577,7 +575,8 @@ class UpstreamStorage:
         """Flatten legacy tasks/{did_hash}/{instance}/ into tasks/{instance}/."""
         # Detect old layout: subdirs whose names look like 16-char hex hashes
         import re
-        did_hash_re = re.compile(r'^[0-9a-f]{16}$')
+
+        did_hash_re = re.compile(r"^[0-9a-f]{16}$")
         for did_dir in list(self.tasks_dir.iterdir()):
             if not did_dir.is_dir() or not did_hash_re.match(did_dir.name):
                 continue
@@ -671,6 +670,7 @@ class UpstreamStorage:
                     if updated_at:
                         if isinstance(updated_at, str):
                             from datetime import datetime
+
                             dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
                             index_ts = int(dt.timestamp() * 1000)
                         else:
@@ -715,6 +715,7 @@ class UpstreamStorage:
         if task.updated_at:
             if isinstance(task.updated_at, str):
                 from datetime import datetime
+
                 dt = datetime.fromisoformat(task.updated_at.replace("Z", "+00:00"))
                 incoming_ts = int(dt.timestamp() * 1000)
             else:
@@ -730,12 +731,16 @@ class UpstreamStorage:
                 stored_updated_at = stored_task.task.updated_at
                 if isinstance(stored_updated_at, str):
                     from datetime import datetime
+
                     stored_updated_at = datetime.fromisoformat(
                         stored_updated_at.replace("Z", "+00:00")
                     )
                 stored_ts = int(stored_updated_at.timestamp() * 1000)
                 if incoming_ts <= stored_ts:
-                    return False, f"conflict: server has newer version ({stored_ts} >= {incoming_ts})"
+                    return (
+                        False,
+                        f"conflict: server has newer version ({stored_ts} >= {incoming_ts})",
+                    )
 
         stored = StoredTask(task=task, received_at=now, from_did=from_did)
         path = self._task_path(instance, task_id)
@@ -764,11 +769,10 @@ class UpstreamStorage:
         # Maintain sorted index: remove old entry if exists, insert new one
         if old_ts is not None:
             # Remove old entry (linear scan, but updates are infrequent)
-            self._index_by_time = [
-                (ts, k) for ts, k in self._index_by_time if k != key
-            ]
+            self._index_by_time = [(ts, k) for ts, k in self._index_by_time if k != key]
         # Insert in sorted position using bisect
         import bisect
+
         bisect.insort(self._index_by_time, (now, key))
 
         # Phase 4a shadow write (fail-soft; JSON above is authoritative)
@@ -821,9 +825,7 @@ class UpstreamStorage:
             self._index.pop(key, None)
             self._save_index()
             # Remove from sorted index
-            self._index_by_time = [
-                (ts, k) for ts, k in self._index_by_time if k != key
-            ]
+            self._index_by_time = [(ts, k) for ts, k in self._index_by_time if k != key]
             return True
         return False
 

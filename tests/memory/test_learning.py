@@ -2,18 +2,21 @@
 Tests for the learning loop integration.
 """
 
-import pytest
-from datetime import datetime
 from uuid import uuid4
 
+import pytest
+
 from hopper.memory.learning import LearningEngine, RoutingSuggestion, SuggestionSource
-from hopper.memory.working import WorkingMemory
-from hopper.memory.working.context import InstanceInfo, SimilarTask
-from hopper.memory.episodic import EpisodicStore
-from hopper.memory.search import TaskSearcher
-from hopper.memory.consolidated import ConsolidatedStore
-from hopper.memory.feedback import FeedbackStore
-from hopper.models import Task, TaskStatus, HopperInstance, HopperScope, InstanceStatus, InstanceType
+from hopper.memory.working.context import InstanceInfo
+from hopper.models import (
+    HopperInstance,
+    HopperScope,
+    InstanceStatus,
+    InstanceType,
+    Task,
+    TaskStatus,
+)
+from hopper.timeutils import utc_now_naive
 
 
 @pytest.fixture
@@ -27,7 +30,7 @@ def test_instances(db_session):
             instance_type=InstanceType.PERSISTENT,
             status=InstanceStatus.RUNNING,
             config={},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         ),
         HopperInstance(
             id="web-instance",
@@ -36,7 +39,7 @@ def test_instances(db_session):
             instance_type=InstanceType.PERSISTENT,
             status=InstanceStatus.RUNNING,
             config={},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         ),
     ]
     for inst in instances:
@@ -62,7 +65,7 @@ def sample_task(db_session) -> Task:
         status=TaskStatus.PENDING,
         priority="high",
         tags={"api": True, "python": True, "backend": True},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(task)
     db_session.flush()
@@ -82,7 +85,7 @@ def tasks_with_history(db_session, test_instances) -> list[Task]:
             status=TaskStatus.DONE,
             instance_id="api-instance",
             tags={"api": True, "python": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         tasks.append(task)
@@ -401,7 +404,7 @@ class TestLearningIntegration:
                 status=TaskStatus.DONE,
                 instance_id="api-instance",
                 tags={"api": True, "python": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             )
             db_session.add(task)
             db_session.flush()
@@ -426,7 +429,7 @@ class TestLearningIntegration:
             project="backend",
             status=TaskStatus.PENDING,
             tags={"api": True, "python": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(new_task)
         db_session.flush()

@@ -20,7 +20,6 @@ from hopper.cli.output import (
     print_warning,
 )
 
-
 # Default agent-knowledge source
 DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
 
@@ -39,7 +38,9 @@ DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
     default=True,
     help="Auto-detect project type for relevant knowledge",
 )
-@click.option("--name", "-n", default=None, help="Instance name (defaults to current directory name)")
+@click.option(
+    "--name", "-n", default=None, help="Instance name (defaults to current directory name)"
+)
 @click.option("--profile", default="default", help="Profile name (for server mode)")
 @click.option("--endpoint", help="API endpoint URL (for server mode)")
 @click.option("--server", "-s", is_flag=True, help="Initialize for server mode instead of local")
@@ -102,12 +103,12 @@ def _init_local_mode(
     allow_git: bool = False,
 ) -> None:
     """Initialize local/embedded Hopper storage with knowledge."""
-    from hopper.storage import StorageConfig, MarkdownStorage
+    from hopper.storage import MarkdownStorage, StorageConfig
     from hopper.storage.knowledge import (
+        DEFAULT_KNOWLEDGE_SOURCE,
         initialize_knowledge,
         write_agent_files,
         write_global_agent_files,
-        DEFAULT_KNOWLEDGE_SOURCE,
     )
 
     # Determine storage path
@@ -133,9 +134,9 @@ def _init_local_mode(
     storage.initialize()
 
     print_success("Storage initialized")
-    console.print(f"  [dim]tasks/[/dim]")
-    console.print(f"  [dim]memory/[/dim]")
-    console.print(f"  [dim]knowledge/[/dim]")
+    console.print("  [dim]tasks/[/dim]")
+    console.print("  [dim]memory/[/dim]")
+    console.print("  [dim]knowledge/[/dim]")
 
     # Initialize knowledge
     knowledge_path = storage_path / "knowledge"
@@ -206,7 +207,9 @@ def _init_local_mode(
 
     console.print("\n[bold green]Hopper initialized![/bold green]")
     console.print("[dim]Try: hopper task add 'My first task'[/dim]")
-    console.print("[dim]Run: hopper knowledge update-agent-files  # sync AGENTS.md/CLAUDE.md[/dim]\n")
+    console.print(
+        "[dim]Run: hopper knowledge update-agent-files  # sync AGENTS.md/CLAUDE.md[/dim]\n"
+    )
 
 
 def _init_server_mode(
@@ -353,7 +356,9 @@ def _set_profile_attr(prof: "ProfileConfig", key: str, value: str) -> bool:
 
     # Coerce value to the field's type
     current = getattr(section, attr_name)
-    if isinstance(current, bool) or (current is None and attr_name in ("enabled", "auto_detect", "auto_detect_embedded")):
+    if isinstance(current, bool) or (
+        current is None and attr_name in ("enabled", "auto_detect", "auto_detect_embedded")
+    ):
         coerced: Any = value.lower() in ("true", "1", "yes")
     elif isinstance(current, int):
         coerced = int(value)
@@ -589,7 +594,7 @@ def login(
             print_success("Authentication successful!")
         except APIError as e:
             print_error(f"Authentication failed: {e.message}")
-            raise click.Abort()
+            raise click.Abort() from e
 
 
 @auth.command(name="logout")

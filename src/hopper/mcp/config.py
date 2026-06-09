@@ -5,7 +5,6 @@ Handles configuration for the Hopper MCP server including API client setup,
 authentication, and server metadata.
 """
 
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

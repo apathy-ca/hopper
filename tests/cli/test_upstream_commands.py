@@ -9,7 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from hopper.cli.config import Config, LocalConfig, ProfileConfig, UpstreamConfig
-from hopper.cli.main import cli, Context
+from hopper.cli.main import Context, cli
 
 
 @pytest.fixture

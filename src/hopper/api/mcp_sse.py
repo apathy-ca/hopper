@@ -43,20 +43,26 @@ if TYPE_CHECKING:
     from hopper.upstream.protocol import SyncTask
     from hopper.upstream.storage import UpstreamStorage
 
-logger = logging.getLogger(__name__)
-
 from mcp.server.fastmcp import FastMCP
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 
 from hopper.cli.local_client import LocalClient, LocalClientError
+from hopper.timeutils import utc_now_naive
 
+logger = logging.getLogger(__name__)
 
 # Authentication configuration
 MCP_AUTH_TOKEN = os.getenv("HOPPER_MCP_TOKEN")
-MCP_ALLOWED_DIDS = os.getenv("HOPPER_MCP_ALLOWED_DIDS", "").split(",") if os.getenv("HOPPER_MCP_ALLOWED_DIDS") else []
+MCP_ALLOWED_DIDS = (
+    os.getenv("HOPPER_MCP_ALLOWED_DIDS", "").split(",")
+    if os.getenv("HOPPER_MCP_ALLOWED_DIDS")
+    else []
+)
 MCP_DID_OPEN_ACCESS = os.getenv("HOPPER_MCP_DID_OPEN", "").lower() in ("1", "true", "yes")
 
 # Session ID ContextVar — set once at SSE connect, inherited by all tool calls
@@ -104,6 +110,7 @@ class UpstreamNamespaceClient:
 
     def _dict_to_sync_task(self, d: dict) -> "SyncTask":
         from hopper.upstream.protocol import SyncTask
+
         return SyncTask(**d)
 
     def _all_tasks(self, include_deleted: bool = False) -> list[dict]:
@@ -131,7 +138,9 @@ class UpstreamNamespaceClient:
         st = self._dict_to_sync_task(task_dict)
         self._storage.put(st, from_did=self._did())
 
-    def list_tasks(self, status=None, priority=None, tags=None, kind=None, limit=50, **_) -> list[dict]:
+    def list_tasks(
+        self, status=None, priority=None, tags=None, kind=None, limit=50, **_
+    ) -> list[dict]:
         tasks = self._all_tasks()
         if status:
             tasks = [t for t in tasks if t.get("status") == status]
@@ -144,7 +153,8 @@ class UpstreamNamespaceClient:
             # legacy kind-tag so memories/ideas created before the kind field
             # existed (and not yet migrated) remain findable.
             tasks = [
-                t for t in tasks
+                t
+                for t in tasks
                 if (t.get("kind") or "task") == kind
                 or (kind != "task" and kind in (t.get("tags") or []))
             ]
@@ -161,9 +171,10 @@ class UpstreamNamespaceClient:
         return t
 
     def create_task(self, data: dict) -> dict:
-        import uuid as _uuid, datetime as _dt
+        import uuid as _uuid
+
         task_id = "t" + _uuid.uuid4().hex[:8]
-        now = _dt.datetime.utcnow().isoformat() + "Z"
+        now = utc_now_naive().isoformat() + "Z"
         kind = data.get("kind", "task")
         task = {
             "id": task_id,
@@ -191,7 +202,6 @@ class UpstreamNamespaceClient:
         return task
 
     def update_task(self, task_id: str, data: dict) -> dict:
-        import datetime as _dt
         task = self.get_task(task_id)
         if "add_tags" in data:
             task["tags"] = list(set(task.get("tags") or []) | set(data.pop("add_tags")))
@@ -200,7 +210,7 @@ class UpstreamNamespaceClient:
         for k, v in data.items():
             if k not in ("add_tags", "remove_tags"):
                 task[k] = v
-        task["updated_at"] = _dt.datetime.utcnow().isoformat() + "Z"
+        task["updated_at"] = utc_now_naive().isoformat() + "Z"
         self._put(task)
         return task
 
@@ -209,23 +219,28 @@ class UpstreamNamespaceClient:
 
     def search_tasks(self, query: str, status=None, limit=20, **_) -> list[dict]:
         q = query.lower()
-        tasks = [t for t in self._all_tasks()
-                 if q in (t.get("title") or "").lower() or q in (t.get("description") or "").lower()]
+        tasks = [
+            t
+            for t in self._all_tasks()
+            if q in (t.get("title") or "").lower() or q in (t.get("description") or "").lower()
+        ]
         if status:
             tasks = [t for t in tasks if t.get("status") == status]
         return tasks[:limit]
 
     def heartbeat_task(self, task_id: str, expect_minutes=None) -> dict:
         import datetime as _dt
-        data = {"last_heartbeat": _dt.datetime.utcnow().isoformat() + "Z"}
+
+        data = {"last_heartbeat": utc_now_naive().isoformat() + "Z"}
         if expect_minutes:
-            exp = _dt.datetime.utcnow() + _dt.timedelta(minutes=expect_minutes)
+            exp = utc_now_naive() + _dt.timedelta(minutes=expect_minutes)
             data["expected_heartbeat"] = exp.isoformat() + "Z"
         return self.update_task(task_id, data)
 
     def list_stale_tasks(self, minutes: int = 30) -> list[dict]:
         import datetime as _dt
-        threshold = _dt.datetime.utcnow() - _dt.timedelta(minutes=minutes)
+
+        threshold = utc_now_naive() - _dt.timedelta(minutes=minutes)
         stale = []
         for t in self._all_tasks():
             if not t.get("assigned_to"):
@@ -245,13 +260,26 @@ class UpstreamNamespaceClient:
         task["children"] = {"total": len(children), "done": done}
         return task
 
-    def list_projects(self) -> list: return []
-    def list_instances(self) -> list: return [{"id": self._ns, "name": self._ns}]
-    def match_patterns(self, **_) -> list: return []
-    def submit_feedback(self, task_id, data): return {"status": "ok"}
-    def get_learning_statistics(self) -> dict: return {}
-    def list_patterns(self, active_only=True) -> dict: return {"patterns": [], "total": 0}
-    def create_pattern(self, data) -> dict: return data
+    def list_projects(self) -> list:
+        return []
+
+    def list_instances(self) -> list:
+        return [{"id": self._ns, "name": self._ns}]
+
+    def match_patterns(self, **_) -> list:
+        return []
+
+    def submit_feedback(self, task_id, data):
+        return {"status": "ok"}
+
+    def get_learning_statistics(self) -> dict:
+        return {}
+
+    def list_patterns(self, active_only=True) -> dict:
+        return {"patterns": [], "total": 0}
+
+    def create_pattern(self, data) -> dict:
+        return data
 
 
 def _did_has_upstream_association(did: str | None) -> bool:
@@ -271,6 +299,7 @@ def _did_has_upstream_association(did: str | None) -> bool:
     # 1. Durable registry affinity.
     try:
         from hopper.upstream.server import get_storage
+
         if get_storage().did_registry.get_last_instance(did):
             return True
     except Exception:
@@ -278,6 +307,7 @@ def _did_has_upstream_association(did: str | None) -> bool:
     # 2. Registered hpr_ tokens that carry an instance scope.
     try:
         from hopper.api.mcp_tokens import get_token_store
+
         tokens = get_token_store().list_tokens(did=did)
         if any(t.get("instance") for t in tokens):
             return True
@@ -308,6 +338,7 @@ def _resolve_instance_name(sid: str | None, did: str | None) -> str | None:
     if did:
         try:
             from hopper.upstream.server import get_storage
+
             recovered = get_storage().did_registry.get_last_instance(did)
         except Exception:
             recovered = None
@@ -316,7 +347,9 @@ def _resolve_instance_name(sid: str | None, did: str | None) -> str | None:
                 "MCP session %s for DID %s missed the in-memory instance cache; "
                 "recovered instance '%s' from DID registry (cross-worker/reconnect). "
                 "Repopulating session cache.",
-                sid, did, recovered,
+                sid,
+                did,
+                recovered,
             )
             if sid:
                 _session_instances[sid] = (None, recovered)
@@ -350,6 +383,7 @@ def _get_client():
     instance_name = _resolve_instance_name(sid, did)
     if instance_name:
         from hopper.upstream.server import get_storage
+
         try:
             storage = get_storage()
         except Exception:
@@ -363,12 +397,13 @@ def _get_client():
         logger.warning(
             "MCP session %s for DID %s has an upstream instance association but "
             "no instance could be resolved; refusing silent fallback to local data.",
-            sid, did,
+            sid,
+            did,
         )
         raise LocalClientError(
             "No Hopper instance is selected for this session. Your identity is "
             "scoped to an upstream instance, so serving the server's local data "
-            "would return the wrong records. Call hopper_switch_instance(\"<name>\") "
+            'would return the wrong records. Call hopper_switch_instance("<name>") '
             "to select your instance (e.g. the one you last used), then retry."
         )
 
@@ -431,14 +466,16 @@ def hopper_create_task(
         from hopper.location import resolve_location
 
         with _get_client() as client:
-            result = client.create_task({
-                "title": title,
-                "description": description,
-                "priority": priority,
-                "tags": list(tags or []),
-                "kind": kind,
-                "source": resolve_location(override=location, transport="mcp"),
-            })
+            result = client.create_task(
+                {
+                    "title": title,
+                    "description": description,
+                    "priority": priority,
+                    "tags": list(tags or []),
+                    "kind": kind,
+                    "source": resolve_location(override=location, transport="mcp"),
+                }
+            )
             return {"status": "created", "task": result}
     except LocalClientError as e:
         return {"status": "error", "message": e.message}
@@ -485,17 +522,19 @@ def hopper_create_memory(
         from hopper.location import resolve_location
 
         with _get_client() as client:
-            result = client.create_task({
-                "title": title,
-                "description": content,
-                "priority": priority,
-                "tags": list(tags or []),
-                "kind": "memory",
-                "subject": subject,
-                "scope": scope,
-                "provenance": provenance,
-                "source": resolve_location(override=location, transport="mcp"),
-            })
+            result = client.create_task(
+                {
+                    "title": title,
+                    "description": content,
+                    "priority": priority,
+                    "tags": list(tags or []),
+                    "kind": "memory",
+                    "subject": subject,
+                    "scope": scope,
+                    "provenance": provenance,
+                    "source": resolve_location(override=location, transport="mcp"),
+                }
+            )
             return {"status": "created", "memory": result}
     except LocalClientError as e:
         return {"status": "error", "message": e.message}
@@ -903,6 +942,7 @@ def hopper_switch_instance(instance_name: str) -> dict:
         if did:
             try:
                 from hopper.upstream.server import get_storage
+
                 get_storage().did_registry.update_last_instance(did, instance_name)
             except Exception:
                 pass  # Best effort
@@ -911,10 +951,15 @@ def hopper_switch_instance(instance_name: str) -> dict:
     # Fall back to a registered hpr_ token with a local path
     try:
         from hopper.api.mcp_tokens import get_token_store
+
         store = get_token_store()
         all_tokens = store.list_tokens(did=did) if did else []
         match = next(
-            (t for t in all_tokens if t.get("instance") == instance_name and t.get("instance_path")),
+            (
+                t
+                for t in all_tokens
+                if t.get("instance") == instance_name and t.get("instance_path")
+            ),
             None,
         )
     except Exception as e:
@@ -935,6 +980,7 @@ def hopper_switch_instance(instance_name: str) -> dict:
     if did:
         try:
             from hopper.upstream.server import get_storage
+
             get_storage().did_registry.update_last_instance(did, instance_name)
         except Exception:
             pass  # Best effort
@@ -1139,7 +1185,7 @@ def hopper_instructions() -> str:
     elif _did_has_upstream_association(did):
         instance_line = (
             "Active instance: **none selected** — your identity is scoped to an "
-            "upstream instance. Call hopper_switch_instance(\"<name>\") before "
+            'upstream instance. Call hopper_switch_instance("<name>") before '
             "reading or writing, or tools will return a 'no instance selected' error."
         )
     else:
@@ -1333,7 +1379,9 @@ def _bearer_challenge(request, error: str | None = None) -> dict[str, str]:
     return {"WWW-Authenticate": ", ".join(parts)}
 
 
-def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | None, Path | None, str | None]:
+def _check_auth(
+    request, body: bytes = b""
+) -> tuple[JSONResponse | None, str | None, Path | None, str | None]:
     """Check authentication (DID, OAuth access token, or legacy Bearer).
 
     Returns (error_response, authenticated_id, instance_path, instance_name) where:
@@ -1358,15 +1406,21 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
     if not auth_header:
         if not auth_required:
             return None, None, None, None  # No auth required, allow
-        return JSONResponse(
-            {"error": "Missing Authorization header"},
-            status_code=401,
-            headers=_bearer_challenge(request),
-        ), None, None, None
+        return (
+            JSONResponse(
+                {"error": "Missing Authorization header"},
+                status_code=401,
+                headers=_bearer_challenge(request),
+            ),
+            None,
+            None,
+            None,
+        )
 
     # Try DID auth first
     if auth_header.startswith("DID "):
         from hopper.upstream.did import verify_signature
+
         valid, did = verify_signature(
             auth_header=auth_header,
             method=request.method,
@@ -1374,20 +1428,31 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
             body=body,
         )
         if not valid or not did:
-            return JSONResponse(
-                {"error": "Invalid DID signature"},
-                status_code=401,
-                headers={"WWW-Authenticate": "DID"},
-            ), None, None, None
+            return (
+                JSONResponse(
+                    {"error": "Invalid DID signature"},
+                    status_code=401,
+                    headers={"WWW-Authenticate": "DID"},
+                ),
+                None,
+                None,
+                None,
+            )
         if MCP_ALLOWED_DIDS and did not in MCP_ALLOWED_DIDS:
-            return JSONResponse(
-                {"error": f"DID not authorized: {did}"},
-                status_code=403,
-            ), None, None, None
+            return (
+                JSONResponse(
+                    {"error": f"DID not authorized: {did}"},
+                    status_code=403,
+                ),
+                None,
+                None,
+                None,
+            )
         # Restore last instance for this DID
         last_instance = None
         try:
             from hopper.upstream.server import get_storage
+
             storage = get_storage()
             last_instance = storage.did_registry.get_last_instance(did)
         except Exception:
@@ -1401,26 +1466,39 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
         # OAuth 2.1 access token (issued by /oauth/token)
         if token.startswith("hpo_"):
             from hopper.api.oauth_store import get_oauth_store
+
             try:
                 record = get_oauth_store().lookup_access_token(token)
             except Exception:
                 record = None
             if not record:
-                return JSONResponse(
-                    {"error": "Invalid or expired access token"},
-                    status_code=401,
-                    headers=_bearer_challenge(request, error="invalid_token"),
-                ), None, None, None
+                return (
+                    JSONResponse(
+                        {"error": "Invalid or expired access token"},
+                        status_code=401,
+                        headers=_bearer_challenge(request, error="invalid_token"),
+                    ),
+                    None,
+                    None,
+                    None,
+                )
             canonical = _canonical_base_url(request)
             recorded = str(record.get("resource", "")).rstrip("/")
-            if not (recorded == canonical
-                    or recorded == f"{canonical}/mcp"
-                    or recorded == f"{canonical}/mcp/sse"):
-                return JSONResponse(
-                    {"error": "Token audience does not match this resource"},
-                    status_code=401,
-                    headers=_bearer_challenge(request, error="invalid_token"),
-                ), None, None, None
+            if not (
+                recorded == canonical
+                or recorded == f"{canonical}/mcp"
+                or recorded == f"{canonical}/mcp/sse"
+            ):
+                return (
+                    JSONResponse(
+                        {"error": "Token audience does not match this resource"},
+                        status_code=401,
+                        headers=_bearer_challenge(request, error="invalid_token"),
+                    ),
+                    None,
+                    None,
+                    None,
+                )
             did = record["did"]
             instance_path = record.get("instance_path")
             instance_name = record.get("instance")
@@ -1433,6 +1511,7 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
         # Registered hpr_ token (maps to DID + instance)
         if token.startswith("hpr_"):
             from hopper.api.mcp_tokens import get_token_store
+
             try:
                 store = get_token_store()
                 token_info = store.lookup_full(token)
@@ -1447,29 +1526,45 @@ def _check_auth(request, body: bytes = b"") -> tuple[JSONResponse | None, str | 
                     return None, did, instance_path, instance_name
             except Exception:
                 pass
-            return JSONResponse(
-                {"error": "Invalid or expired token"},
-                status_code=401,
-                headers=_bearer_challenge(request, error="invalid_token"),
-            ), None, None, None
+            return (
+                JSONResponse(
+                    {"error": "Invalid or expired token"},
+                    status_code=401,
+                    headers=_bearer_challenge(request, error="invalid_token"),
+                ),
+                None,
+                None,
+                None,
+            )
 
         # Legacy: check against simple HOPPER_MCP_TOKEN env var
         if MCP_AUTH_TOKEN and token == MCP_AUTH_TOKEN:
             import hashlib
+
             token_id = f"bearer:{hashlib.sha256(token.encode()).hexdigest()[:16]}"
             return None, token_id, None, None
 
-        return JSONResponse(
-            {"error": "Invalid token"},
-            status_code=401,
-            headers=_bearer_challenge(request, error="invalid_token"),
-        ), None, None, None
+        return (
+            JSONResponse(
+                {"error": "Invalid token"},
+                status_code=401,
+                headers=_bearer_challenge(request, error="invalid_token"),
+            ),
+            None,
+            None,
+            None,
+        )
 
-    return JSONResponse(
-        {"error": "Unsupported Authorization scheme. Use 'DID' or 'Bearer'"},
-        status_code=401,
-        headers=_bearer_challenge(request),
-    ), None, None, None
+    return (
+        JSONResponse(
+            {"error": "Unsupported Authorization scheme. Use 'DID' or 'Bearer'"},
+            status_code=401,
+            headers=_bearer_challenge(request),
+        ),
+        None,
+        None,
+        None,
+    )
 
 
 def create_sse_server():
@@ -1491,6 +1586,7 @@ def create_sse_server():
         if auth_id and instance_name:
             try:
                 from hopper.upstream.server import get_storage
+
                 get_storage().did_registry.update_last_instance(auth_id, instance_name)
             except Exception:
                 pass  # Best effort
@@ -1528,9 +1624,6 @@ def create_sse_server():
         ]
     )
 
-
-from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
-from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 # Module-level session manager — started by the main app lifespan (see app.py)
 _streamable_session_manager: StreamableHTTPSessionManager | None = None
@@ -1580,6 +1673,7 @@ class _StreamableHTTPASGIHandler:
             return
 
         from starlette.requests import Request as StarletteRequest
+
         request = StarletteRequest(scope, receive)
 
         # Read body once for auth (may be empty for GET/DELETE)
@@ -1609,10 +1703,13 @@ class _StreamableHTTPASGIHandler:
         if _use_stateless:
             try:
                 import json as _json
+
                 _method = _json.loads(body).get("method", "unknown")
             except Exception:
                 _method = "unknown"
-            logger.info("MCP session %s not found, method=%s — handling statelessly", raw_sid, _method)
+            logger.info(
+                "MCP session %s not found, method=%s — handling statelessly", raw_sid, _method
+            )
 
         sid = raw_sid or str(uuid.uuid4())
 
@@ -1623,6 +1720,7 @@ class _StreamableHTTPASGIHandler:
             if auth_id and instance_name:
                 try:
                     from hopper.upstream.server import get_storage
+
                     get_storage().did_registry.update_last_instance(auth_id, instance_name)
                 except Exception:
                     pass  # Best effort - storage may not be configured
@@ -1655,16 +1753,24 @@ class _StreamableHTTPASGIHandler:
 
         async def keepalive_loop():
             import anyio
+
             while True:
                 await anyio.sleep(_SSE_KEEPALIVE_INTERVAL)
                 if not _is_sse:
                     continue
                 try:
-                    await send({"type": "http.response.body", "body": _SSE_KEEPALIVE_PING, "more_body": True})
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": _SSE_KEEPALIVE_PING,
+                            "more_body": True,
+                        }
+                    )
                 except Exception:
                     break
 
         import anyio
+
         active_sm = get_stateless_session_manager() if _use_stateless else sm
         try:
             async with anyio.create_task_group() as tg:

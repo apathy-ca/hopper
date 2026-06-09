@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     )
 
     # ===== API Configuration =====
-    api_host: str = Field(default="0.0.0.0", description="API host")
+    api_host: str = Field(default="0.0.0.0", description="API host")  # nosec B104
     api_port: int = Field(default=8000, description="API port")
     api_workers: int = Field(default=1, description="Number of API workers")
     api_reload: bool = Field(

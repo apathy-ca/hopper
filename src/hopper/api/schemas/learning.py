@@ -10,7 +10,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ============================================================================
 # Feedback Schemas
 # ============================================================================
@@ -26,17 +25,11 @@ class FeedbackCreate(BaseModel):
     )
     estimated_duration: str | None = Field(None, description="Estimated task duration")
     actual_duration: str | None = Field(None, description="Actual task duration")
-    complexity_rating: int | None = Field(
-        None, ge=1, le=5, description="Complexity rating 1-5"
-    )
-    quality_score: float | None = Field(
-        None, ge=0.0, le=5.0, description="Quality score 0.0-5.0"
-    )
+    complexity_rating: int | None = Field(None, ge=1, le=5, description="Complexity rating 1-5")
+    quality_score: float | None = Field(None, ge=0.0, le=5.0, description="Quality score 0.0-5.0")
     required_rework: bool | None = Field(None, description="Whether rework was needed")
     rework_reason: str | None = Field(None, description="Reason for rework")
-    unexpected_blockers: list[str] | None = Field(
-        None, description="List of unexpected blockers"
-    )
+    unexpected_blockers: list[str] | None = Field(None, description="List of unexpected blockers")
     required_skills_not_tagged: list[str] | None = Field(
         None, description="Skills needed but not tagged"
     )

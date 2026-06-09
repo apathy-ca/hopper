@@ -2,7 +2,7 @@
 Task model for Hopper.
 """
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -10,6 +10,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .base import Base, TimestampMixin
+
+if TYPE_CHECKING:
+    from .external_mapping import ExternalMapping
+    from .hopper_instance import HopperInstance
+    from .routing_decision import RoutingDecision
+    from .task_delegation import TaskDelegation
+    from .task_feedback import TaskFeedback
 
 
 class Task(Base, TimestampMixin):

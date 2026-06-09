@@ -39,18 +39,114 @@ class TaskSimilarity:
 
     # Common stop words to filter out
     STOP_WORDS = {
-        "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-        "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
-        "be", "have", "has", "had", "do", "does", "did", "will", "would",
-        "could", "should", "may", "might", "must", "shall", "can", "need",
-        "this", "that", "these", "those", "it", "its", "i", "me", "my",
-        "we", "us", "our", "you", "your", "he", "him", "his", "she", "her",
-        "they", "them", "their", "what", "which", "who", "whom", "when",
-        "where", "why", "how", "all", "each", "every", "both", "few", "more",
-        "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-        "same", "so", "than", "too", "very", "just", "also", "now", "here",
-        "there", "then", "once", "if", "else", "any", "into", "out", "up",
-        "down", "over", "under", "again", "further", "about", "through",
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "is",
+        "was",
+        "are",
+        "were",
+        "been",
+        "be",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "need",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "i",
+        "me",
+        "my",
+        "we",
+        "us",
+        "our",
+        "you",
+        "your",
+        "he",
+        "him",
+        "his",
+        "she",
+        "her",
+        "they",
+        "them",
+        "their",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "when",
+        "where",
+        "why",
+        "how",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "no",
+        "nor",
+        "not",
+        "only",
+        "own",
+        "same",
+        "so",
+        "than",
+        "too",
+        "very",
+        "just",
+        "also",
+        "now",
+        "here",
+        "there",
+        "then",
+        "once",
+        "if",
+        "else",
+        "any",
+        "into",
+        "out",
+        "up",
+        "down",
+        "over",
+        "under",
+        "again",
+        "further",
+        "about",
+        "through",
     }
 
     def __init__(
@@ -95,10 +191,7 @@ class TaskSimilarity:
         words = re.findall(r"\b[a-z][a-z0-9_-]*\b", text)
 
         # Filter stop words and short tokens
-        tokens = [
-            w for w in words
-            if w not in self.STOP_WORDS and len(w) >= self.min_token_length
-        ]
+        tokens = [w for w in words if w not in self.STOP_WORDS and len(w) >= self.min_token_length]
 
         return tokens
 
@@ -328,8 +421,7 @@ class TaskSimilarity:
 
             # Compute TF-IDF for corpus document
             corpus_tfidf = {
-                term: tf_score * self.compute_idf(term)
-                for term, tf_score in corpus_tf.items()
+                term: tf_score * self.compute_idf(term) for term, tf_score in corpus_tf.items()
             }
 
             # Text similarity
@@ -340,10 +432,7 @@ class TaskSimilarity:
             tag_score = self.jaccard_similarity(query_tags, corpus_tags)
 
             # Combined score
-            score = (
-                self.text_weight * text_score
-                + self.tag_weight * tag_score
-            )
+            score = self.text_weight * text_score + self.tag_weight * tag_score
 
             if score >= min_score:
                 results.append(

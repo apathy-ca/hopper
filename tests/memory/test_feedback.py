@@ -2,13 +2,15 @@
 Tests for feedback collection and analytics.
 """
 
-import pytest
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
-from hopper.memory.feedback import FeedbackStore, FeedbackAnalytics
+import pytest
+
 from hopper.memory.episodic import EpisodicStore
-from hopper.models import Task, TaskFeedback, TaskStatus
+from hopper.memory.feedback import FeedbackAnalytics, FeedbackStore
+from hopper.models import Task, TaskStatus
+from hopper.timeutils import utc_now_naive
 
 
 @pytest.fixture
@@ -42,7 +44,7 @@ def test_instances(db_session):
             instance_type=InstanceType.PERSISTENT,
             status=InstanceStatus.RUNNING,
             config={},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         ),
         HopperInstance(
             id="web-instance",
@@ -51,7 +53,7 @@ def test_instances(db_session):
             instance_type=InstanceType.PERSISTENT,
             status=InstanceStatus.RUNNING,
             config={},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         ),
     ]
     for inst in instances:
@@ -71,7 +73,7 @@ def sample_task(db_session, test_instances) -> Task:
         status=TaskStatus.DONE,
         instance_id="api-instance",
         tags={"api": True, "python": True},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(task)
     db_session.flush()
@@ -91,7 +93,7 @@ def multiple_tasks(db_session, test_instances) -> list[Task]:
             status=TaskStatus.DONE,
             instance_id="api-instance" if i < 3 else "web-instance",
             tags={"api": True} if i < 3 else {"frontend": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         tasks.append(task)
@@ -292,7 +294,9 @@ class TestFeedbackStore:
         assert data["routing_feedback"] == "Good routing"
         assert data["quality_score"] == 4.5
 
-    def test_feedback_updates_episode(self, db_session, feedback_store, episodic_store, sample_task):
+    def test_feedback_updates_episode(
+        self, db_session, feedback_store, episodic_store, sample_task
+    ):
         """Test that feedback updates linked episode."""
         # Create episode
         episode = episodic_store.record_episode(
@@ -352,7 +356,7 @@ class TestFeedbackAnalytics:
         analytics = FeedbackAnalytics(db_session)
 
         # Filter by recent period
-        since = datetime.utcnow() - timedelta(hours=1)
+        since = utc_now_naive() - timedelta(hours=1)
         report = analytics.get_routing_accuracy(since=since)
 
         assert report.total_feedback == 5

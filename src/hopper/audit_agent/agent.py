@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,7 @@ def _get_or_create_agent_did(hopper_path: Path) -> str:
     user's own did.key.
     """
     from hopper.upstream.did import DIDKey
+
     key_path = hopper_path / "audit-agent.key"
     if key_path.exists():
         return DIDKey.load(key_path).did
@@ -49,6 +50,7 @@ def _get_or_create_agent_did(hopper_path: Path) -> str:
 def _get_client(hopper_path: Path) -> Any:
     """Return a LocalClient for the given hopper path."""
     from hopper.cli.local_client import LocalClient
+
     return LocalClient(hopper_path)
 
 
@@ -59,6 +61,7 @@ def run_tag_normalization(client: Any, hopper_path: Path) -> dict[str, Any]:
     <hopper_path>/auto-apply-rules.yaml.
     """
     from hopper.intelligence.auto_apply import run_auto_apply
+
     result = run_auto_apply(hopper_path, client)
     logger.info("Tag normalization: %s", result)
     return result
@@ -85,15 +88,15 @@ def run_idea_synthesis(
 
     # Collect type=idea records updated in the last 7 days
     if since is None:
-        since = datetime.now(timezone.utc) - timedelta(days=7)
+        since = datetime.now(UTC) - timedelta(days=7)
 
-    from hopper.storage.sqlite import SQLiteStorage
     from hopper.storage.revision_writer import AuthorContext
+    from hopper.storage.sqlite import SQLiteStorage
+
     if not isinstance(client.storage, SQLiteStorage):
         return {"skipped": True, "reason": "SQLite backend required"}
 
-    from sqlalchemy import select, text
-    from hopper.models import Record
+    from sqlalchemy import text
 
     with client.storage.session() as session:
         rows = session.execute(
@@ -111,6 +114,7 @@ def run_idea_synthesis(
         payload = row[2] or {}
         if isinstance(payload, str):
             import json
+
             try:
                 payload = json.loads(payload)
             except Exception:
@@ -137,6 +141,7 @@ def run_idea_synthesis(
 
     try:
         import anthropic
+
         anth = anthropic.Anthropic(api_key=api_key)
         message = anth.messages.create(
             model="claude-haiku-4-5",
@@ -150,7 +155,6 @@ def run_idea_synthesis(
 
     # Write the digest as a proposal (type=note, action=propose)
     from hopper.storage.tasks import LocalTask
-    from hopper.storage.revision_writer import propose_revision, write_revision
 
     title = f"Idea digest — week of {since.strftime('%Y-%m-%d')}"
     author = AuthorContext(did=agent_did, location=_AGENT_LOCATION)
@@ -189,7 +193,10 @@ def run_loop(hopper_path: Path) -> None:
     agent_did = _get_or_create_agent_did(hopper_path)
     logger.info(
         "Audit agent loop starting — DID: %s  location: %s  poll=%ds  digest=%ds",
-        agent_did[:20], _AGENT_LOCATION, _POLL_INTERVAL_SECONDS, _DIGEST_INTERVAL_SECONDS,
+        agent_did[:20],
+        _AGENT_LOCATION,
+        _POLL_INTERVAL_SECONDS,
+        _DIGEST_INTERVAL_SECONDS,
     )
 
     last_digest_at: datetime | None = None
@@ -201,7 +208,7 @@ def run_loop(hopper_path: Path) -> None:
                 run_tag_normalization(client, hopper_path)
 
                 # Job 2: idea synthesis — weekly
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 digest_due = (
                     last_digest_at is None
                     or (now - last_digest_at).total_seconds() >= _DIGEST_INTERVAL_SECONDS

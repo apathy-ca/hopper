@@ -10,15 +10,13 @@ Tests CLI integration including:
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Integration test: Requires running API server")
-
-
-import pytest
 from click.testing import CliRunner
 from sqlalchemy.orm import Session
 
 from tests.factories import ProjectFactory, TaskFactory
 from tests.utils import assert_cli_success
+
+pytestmark = pytest.mark.skip(reason="Integration test: Requires running API server")
 
 
 @pytest.mark.integration

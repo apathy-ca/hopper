@@ -5,14 +5,20 @@ Defines the RoutingEpisode model for recording routing decisions.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, Boolean
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from hopper.models.base import Base, TimestampMixin
+from hopper.timeutils import utc_now_naive
+
+if TYPE_CHECKING:
+    from hopper.models.routing_decision import RoutingDecision
+    from hopper.models.task import Task
+    from hopper.models.task_feedback import TaskFeedback
 
 
 class RoutingEpisode(Base, TimestampMixin):
@@ -63,9 +69,7 @@ class RoutingEpisode(Base, TimestampMixin):
     chosen_instance: Mapped[str | None] = mapped_column(String(100), nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
-    strategy_used: Mapped[str] = mapped_column(
-        String(50), default="rules", nullable=False
-    )
+    strategy_used: Mapped[str] = mapped_column(String(50), default="rules", nullable=False)
 
     # Factors that influenced the decision
     decision_factors: Mapped[dict[str, Any] | None] = mapped_column(
@@ -86,9 +90,7 @@ class RoutingEpisode(Base, TimestampMixin):
     )
 
     # Timestamps
-    routed_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    routed_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Instance context at routing time
@@ -102,9 +104,7 @@ class RoutingEpisode(Base, TimestampMixin):
     decision: Mapped["RoutingDecision"] = relationship(
         "RoutingDecision", foreign_keys=[decision_task_id]
     )
-    feedback: Mapped["TaskFeedback"] = relationship(
-        "TaskFeedback", foreign_keys=[feedback_id]
-    )
+    feedback: Mapped["TaskFeedback"] = relationship("TaskFeedback", foreign_keys=[feedback_id])
 
     def __repr__(self) -> str:
         return (
@@ -119,7 +119,7 @@ class RoutingEpisode(Base, TimestampMixin):
     ) -> None:
         """Mark episode as successful."""
         self.outcome_success = True
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         if duration:
             self.outcome_duration = duration
         if notes:
@@ -131,7 +131,7 @@ class RoutingEpisode(Base, TimestampMixin):
     ) -> None:
         """Mark episode as failed."""
         self.outcome_success = False
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         if notes:
             self.outcome_notes = notes
 

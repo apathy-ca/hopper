@@ -717,7 +717,7 @@ print(explanation)
 
 For questions, issues, or feature requests:
 - Documentation: `/docs/Hopper.Specification.md`
-- Implementation Plan: `/plans/Hopper-Implementation-Plan.md`
+- Implementation Plan: `docs/history/plans/Hopper-Implementation-Plan.md`
 - GitHub Issues: TBD
 
 ---

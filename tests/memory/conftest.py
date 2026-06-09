@@ -2,12 +2,14 @@
 Phase 3 specific fixtures for memory system testing.
 """
 
-import pytest
-from datetime import datetime
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.orm import Session
 
+from hopper.memory.working import RoutingContext, WorkingMemory
+from hopper.memory.working.backends import LocalBackend
+from hopper.memory.working.context import InstanceInfo, RecentDecision, SimilarTask
 from hopper.models import (
     HopperInstance,
     HopperScope,
@@ -17,9 +19,7 @@ from hopper.models import (
     Task,
     TaskStatus,
 )
-from hopper.memory.working import RoutingContext, WorkingMemory
-from hopper.memory.working.backends import LocalBackend
-from hopper.memory.working.context import InstanceInfo, RecentDecision, SimilarTask
+from hopper.timeutils import utc_now_naive
 
 
 @pytest.fixture
@@ -88,13 +88,13 @@ def sample_routing_context() -> RoutingContext:
                 task_id="task-recent-1",
                 task_title="Fix API bug",
                 routed_to="api-project",
-                routed_at=datetime.utcnow(),
+                routed_at=utc_now_naive(),
                 confidence=0.9,
                 outcome="success",
             ),
         ],
         session_id="session-123",
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
 
 
@@ -109,7 +109,7 @@ def sample_task_for_memory(db_session: Session) -> Task:
         status=TaskStatus.PENDING,
         priority="medium",
         tags={"python": True, "dashboard": True},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(task)
     db_session.flush()
@@ -131,7 +131,7 @@ def instances_for_memory(db_session: Session) -> list[HopperInstance]:
                 "max_concurrent_tasks": 10,
             },
             runtime_metadata={"active_tasks": 2},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         ),
         HopperInstance(
             id=f"mem-inst-{uuid4().hex[:8]}",
@@ -144,7 +144,7 @@ def instances_for_memory(db_session: Session) -> list[HopperInstance]:
                 "max_concurrent_tasks": 8,
             },
             runtime_metadata={"active_tasks": 5},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         ),
     ]
     for inst in instances:
@@ -166,7 +166,7 @@ def routing_decisions_for_memory(
             strategy_used="rules",
             target_project="webapp-project",
             confidence_score=0.8 + (i * 0.05),
-            decided_at=datetime.utcnow(),
+            decided_at=utc_now_naive(),
         )
         db_session.add(decision)
         decisions.append(decision)

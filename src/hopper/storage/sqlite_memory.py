@@ -13,22 +13,23 @@ in a later phase once the tables are defined.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 from .memory import (
     EpisodeMarkdownStore,
     LocalFeedback,
-    LocalEpisode,
-    LocalPattern,
     PatternMarkdownStore,
 )
+
+if TYPE_CHECKING:
+    from .sqlite import SQLiteStorage
 
 logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ class EpisodeSQLiteStore(EpisodeMarkdownStore):
     SQL-backed episodes will be added when the episodes table lands.
     The markdown delegate needs a MarkdownStorage instance passed in.
     """
+
     # Inherits everything from EpisodeMarkdownStore unchanged.
     pass
 
@@ -56,6 +58,7 @@ class PatternSQLiteStore(PatternMarkdownStore):
 
     SQL-backed patterns will be added when the patterns table lands.
     """
+
     pass
 
 
@@ -72,7 +75,7 @@ class FeedbackSQLiteStore:
     via raw SQL to avoid importing the full ORM stack here.
     """
 
-    def __init__(self, storage: "SQLiteStorage"):  # noqa: F821
+    def __init__(self, storage: SQLiteStorage):
         self._storage = storage
 
     # ------------------------------------------------------------------
@@ -115,17 +118,20 @@ class FeedbackSQLiteStore:
         """)
 
         with self._storage.session() as session:
-            session.execute(upsert_sql, {
-                "task_id": task_id,
-                "was_good_match": was_good_match,
-                "routing_feedback": routing_feedback,
-                "should_have_routed_to": should_have_routed_to,
-                "quality_score": quality_score,
-                "complexity_rating": complexity_rating,
-                "required_rework": required_rework,
-                "notes": notes,
-                "created_at": now,
-            })
+            session.execute(
+                upsert_sql,
+                {
+                    "task_id": task_id,
+                    "was_good_match": was_good_match,
+                    "routing_feedback": routing_feedback,
+                    "should_have_routed_to": should_have_routed_to,
+                    "quality_score": quality_score,
+                    "complexity_rating": complexity_rating,
+                    "required_rework": required_rework,
+                    "notes": notes,
+                    "created_at": now,
+                },
+            )
             session.commit()
 
         return LocalFeedback(
@@ -169,12 +175,13 @@ class FeedbackSQLiteStore:
         elif good_only is False:
             where = "WHERE was_good_match = 0"
 
+        # `where` is one of three string literals above, never user input
         sql = text(f"""
             SELECT task_id, was_good_match, routing_feedback, should_have_routed_to,
                    quality_score, complexity_rating, required_rework, notes, created_at
             FROM task_feedback {where}
             ORDER BY created_at DESC LIMIT :limit
-        """)
+        """)  # nosec B608
 
         with self._storage.session() as session:
             rows = session.execute(sql, {"limit": limit}).mappings().all()
@@ -221,7 +228,7 @@ class FeedbackSQLiteStore:
         if isinstance(created, str):
             created = datetime.fromisoformat(created)
         if isinstance(created, datetime) and created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
+            created = created.replace(tzinfo=UTC)
 
         return LocalFeedback(
             id=f"f{row['task_id']}",

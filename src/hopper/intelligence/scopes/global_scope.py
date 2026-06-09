@@ -6,7 +6,6 @@ Project instances. They never execute tasks directly.
 """
 
 import logging
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -73,9 +72,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
                 reason="No suitable project found and auto-create not implemented"
             )
 
-        return TaskAction.reject(
-            reason="No suitable project found for task routing"
-        )
+        return TaskAction.reject(reason="No suitable project found for task routing")
 
     async def should_delegate(
         self,
@@ -126,9 +123,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
         Global instances track completion metrics and can trigger
         follow-up actions.
         """
-        logger.info(
-            f"Task {task.id} completed, bubbled up to global instance {instance.id}"
-        )
+        logger.info(f"Task {task.id} completed, bubbled up to global instance {instance.id}")
 
         # Update metrics in runtime_metadata
         metadata = instance.runtime_metadata or {}
@@ -165,11 +160,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
             .where(HopperInstance.parent_id == parent_id)
             .where(HopperInstance.scope == HopperScope.PROJECT)
             .where(HopperInstance.name == project_name)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         return result.scalar_one_or_none()
@@ -184,11 +175,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
             select(HopperInstance)
             .where(HopperInstance.parent_id == parent_id)
             .where(HopperInstance.scope == HopperScope.PROJECT)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         projects = result.scalars().all()
@@ -214,11 +201,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
             select(HopperInstance)
             .where(HopperInstance.parent_id == parent_id)
             .where(HopperInstance.scope == HopperScope.PROJECT)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         projects = list(result.scalars().all())

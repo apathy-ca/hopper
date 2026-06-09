@@ -2,17 +2,16 @@
 Tests for TaskDelegation model.
 """
 
-import pytest
 from sqlalchemy.orm import Session
 
 from hopper.models import (
+    DelegationStatus,
+    DelegationType,
     HopperInstance,
     HopperScope,
     InstanceStatus,
     Task,
     TaskDelegation,
-    DelegationType,
-    DelegationStatus,
 )
 
 

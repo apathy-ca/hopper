@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from hopper.api.app import create_app
 from hopper.api import mcp_tokens as mcp_tokens_mod
 from hopper.api import oauth_store as oauth_store_mod
+from hopper.api.app import create_app
 
 
 @pytest.fixture
@@ -48,9 +48,9 @@ def bearer_token(isolated_stores) -> tuple[str, str]:
 
 def _pkce() -> tuple[str, str]:
     verifier = secrets.token_urlsafe(48)
-    challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(verifier.encode()).digest()
-    ).rstrip(b"=").decode()
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    )
     return verifier, challenge
 
 
@@ -76,7 +76,7 @@ class TestMetadata:
         resp = client.get("/.well-known/oauth-protected-resource")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["resource"] == "https://test.example.com"
+        assert body["resource"] == "https://test.example.com/mcp/"
         assert body["authorization_servers"] == ["https://test.example.com"]
         assert "mcp" in body["scopes_supported"]
 
@@ -171,9 +171,7 @@ class TestAuthorize:
         )
         assert resp.status_code == 400
 
-    def test_post_with_valid_bearer_issues_code(
-        self, client: TestClient, bearer_token
-    ):
+    def test_post_with_valid_bearer_issues_code(self, client: TestClient, bearer_token):
         token, _did = bearer_token
         client_id = _register_client(client)
         _, challenge = _pkce()
@@ -375,7 +373,7 @@ class TestSSEAudienceBinding:
             method = "GET"
             url = FakeURL()
 
-        err, did, _inst = mcp_sse._check_auth(FakeRequest())
+        err, did, _inst_path, _inst_name = mcp_sse._check_auth(FakeRequest())
         assert err is None, err.body if err else ""
         assert did is not None
 
@@ -414,13 +412,11 @@ class TestSSEAudienceBinding:
             method = "GET"
             url = FakeURL()
 
-        err, _did, _inst = mcp_sse._check_auth(FakeRequest())
+        err, _did, _inst_path, _inst_name = mcp_sse._check_auth(FakeRequest())
         assert err is not None
         assert err.status_code == 401
 
-    def test_unauth_request_includes_resource_metadata_hint(
-        self, monkeypatch
-    ):
+    def test_unauth_request_includes_resource_metadata_hint(self, monkeypatch):
         """401 responses must advertise RFC 9728 metadata URL for client discovery."""
         from hopper.api import mcp_sse
 
@@ -437,7 +433,7 @@ class TestSSEAudienceBinding:
             method = "GET"
             url = FakeURL()
 
-        err, _did, _inst = mcp_sse._check_auth(FakeRequest())
+        err, _did, _inst_path, _inst_name = mcp_sse._check_auth(FakeRequest())
         assert err is not None
         assert err.status_code == 401
         www_auth = err.headers["www-authenticate"]

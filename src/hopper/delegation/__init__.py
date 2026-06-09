@@ -6,7 +6,7 @@ and bubbling completion status back up.
 """
 
 from .completion import CompletionBubbler
-from .delegator import Delegator, DelegationError
+from .delegator import DelegationError, Delegator
 from .policies import DelegationPolicy, get_policy_for_scope
 from .router import InstanceRouter, RoutingError
 

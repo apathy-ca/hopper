@@ -3,14 +3,19 @@ Task Feedback model for Hopper.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
+from hopper.timeutils import utc_now_naive
+
 from .base import Base
+
+if TYPE_CHECKING:
+    from .task import Task
 
 
 class TaskFeedback(Base):
@@ -46,7 +51,7 @@ class TaskFeedback(Base):
 
     # Additional notes
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
 
     # Relationships
     task: Mapped["Task"] = relationship("Task", back_populates="feedback")

@@ -5,17 +5,17 @@ Memory storage implementations for episodes, patterns, and feedback.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .markdown import MarkdownDocument, MarkdownStorage
+
 
 def _utc_now() -> datetime:
     """Get current UTC time (timezone-aware)."""
-    return datetime.now(timezone.utc)
-
-from .markdown import MarkdownDocument, MarkdownStorage
+    return datetime.now(UTC)
 
 
 # =============================================================================
@@ -56,7 +56,7 @@ class LocalEpisode:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "LocalEpisode":
+    def from_dict(cls, data: dict[str, Any]) -> LocalEpisode:
         """Create from dict."""
         routed = data.get("routed_at")
         completed = data.get("completed_at")
@@ -72,7 +72,9 @@ class LocalEpisode:
             outcome_success=data.get("outcome_success"),
             outcome_duration=data.get("outcome_duration"),
             routed_at=datetime.fromisoformat(routed) if isinstance(routed, str) else routed,
-            completed_at=datetime.fromisoformat(completed) if isinstance(completed, str) else completed,
+            completed_at=(
+                datetime.fromisoformat(completed) if isinstance(completed, str) else completed
+            ),
         )
 
 
@@ -279,7 +281,7 @@ class LocalPattern:
         text_criteria: dict[str, Any] | None = None,
         priority_criteria: str | None = None,
         confidence: float = 0.5,
-    ) -> "LocalPattern":
+    ) -> LocalPattern:
         """Create a new pattern with generated ID."""
         return cls(
             id=f"pat-{uuid4().hex[:8]}",
@@ -322,7 +324,7 @@ class LocalPattern:
         }
 
     @classmethod
-    def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> "LocalPattern":
+    def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> LocalPattern:
         """Create from frontmatter dict."""
         created = fm.get("created_at")
         last_used = fm.get("last_used_at")
@@ -342,7 +344,9 @@ class LocalPattern:
             failure_count=fm.get("failure_count", 0),
             is_active=fm.get("is_active", True),
             created_at=datetime.fromisoformat(created) if isinstance(created, str) else created,
-            last_used_at=datetime.fromisoformat(last_used) if isinstance(last_used, str) else last_used,
+            last_used_at=(
+                datetime.fromisoformat(last_used) if isinstance(last_used, str) else last_used
+            ),
         )
 
 
@@ -567,7 +571,7 @@ class LocalFeedback:
         }
 
     @classmethod
-    def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> "LocalFeedback":
+    def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> LocalFeedback:
         """Create from frontmatter dict."""
         created = fm.get("created_at")
 

@@ -5,32 +5,37 @@ Tracks the full delegation chain as tasks flow through the instance hierarchy.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
+from hopper.timeutils import utc_now_naive
+
 from .base import Base, TimestampMixin
-from .enums import TaskStatus
+
+if TYPE_CHECKING:
+    from .hopper_instance import HopperInstance
+    from .task import Task
 
 
 class DelegationType(str):
     """Types of task delegation."""
 
-    ROUTE = "route"          # Routing to appropriate instance
+    ROUTE = "route"  # Routing to appropriate instance
     DECOMPOSE = "decompose"  # Breaking task into subtasks
-    ESCALATE = "escalate"    # Escalating to parent instance
-    REASSIGN = "reassign"    # Reassigning to different instance
+    ESCALATE = "escalate"  # Escalating to parent instance
+    REASSIGN = "reassign"  # Reassigning to different instance
 
 
 class DelegationStatus(str):
     """Status of a delegation."""
 
-    PENDING = "pending"      # Delegation created, not yet accepted
-    ACCEPTED = "accepted"    # Target instance accepted the delegation
-    REJECTED = "rejected"    # Target instance rejected the delegation
+    PENDING = "pending"  # Delegation created, not yet accepted
+    ACCEPTED = "accepted"  # Target instance accepted the delegation
+    REJECTED = "rejected"  # Target instance rejected the delegation
     COMPLETED = "completed"  # Task completed at target instance
     CANCELLED = "cancelled"  # Delegation was cancelled
 
@@ -86,7 +91,7 @@ class TaskDelegation(Base, TimestampMixin):
     # Timestamps
     delegated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=utc_now_naive,
         nullable=False,
     )
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -104,9 +109,7 @@ class TaskDelegation(Base, TimestampMixin):
     delegated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Composite index for queries filtering by target instance and status together
-    __table_args__ = (
-        Index("idx_delegations_target_status", "target_instance_id", "status"),
-    )
+    __table_args__ = (Index("idx_delegations_target_status", "target_instance_id", "status"),)
 
     # Relationships
     task: Mapped["Task"] = relationship(
@@ -133,7 +136,7 @@ class TaskDelegation(Base, TimestampMixin):
     def accept(self) -> None:
         """Accept this delegation."""
         self.status = DelegationStatus.ACCEPTED
-        self.accepted_at = datetime.utcnow()
+        self.accepted_at = utc_now_naive()
 
     def reject(self, reason: str | None = None) -> None:
         """Reject this delegation."""
@@ -143,7 +146,7 @@ class TaskDelegation(Base, TimestampMixin):
     def complete(self, result: dict[str, Any] | None = None) -> None:
         """Mark this delegation as completed."""
         self.status = DelegationStatus.COMPLETED
-        self.completed_at = datetime.utcnow()
+        self.completed_at = utc_now_naive()
         if result:
             self.result = result
 

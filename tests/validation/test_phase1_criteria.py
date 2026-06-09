@@ -13,10 +13,6 @@ Validates all Phase 1 success criteria from the implementation plan:
 Each criterion has a dedicated test that validates end-to-end functionality.
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Integration test: Phase 1 validation requires running services")
-
-
 from unittest.mock import Mock
 
 import pytest
@@ -28,6 +24,10 @@ from tests.utils import (
     assert_cli_success,
     assert_response_success,
     validate_task_schema,
+)
+
+pytestmark = pytest.mark.skip(
+    reason="Integration test: Phase 1 validation requires running services"
 )
 
 
@@ -81,7 +81,7 @@ class TestPhase1SuccessCriteria:
         """
         from tests.utils import build_mcp_tool_call
 
-        tool_call = build_mcp_tool_call(
+        build_mcp_tool_call(
             "hopper_create_task",
             {
                 "title": "Phase 1 Test Task - MCP",

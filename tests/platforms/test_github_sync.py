@@ -1,12 +1,12 @@
 """Tests for GitHub sync service."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from hopper.platforms.base import GitHubIssue
-from hopper.platforms.sync import GitHubSyncService, ImportResult, ExportResult
+from hopper.platforms.sync import ExportResult, GitHubSyncService, ImportResult
 
 
 @pytest.fixture
@@ -39,8 +39,8 @@ def sample_issue():
         state="open",
         labels=["bug", "priority:high"],
         html_url="https://github.com/owner/repo/issues/42",
-        created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
-        updated_at=datetime(2024, 1, 16, 14, 30, 0, tzinfo=timezone.utc),
+        created_at=datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC),
+        updated_at=datetime(2024, 1, 16, 14, 30, 0, tzinfo=UTC),
     )
 
 
@@ -109,7 +109,9 @@ class TestGitHubSyncService:
             mock_client.get_issue.assert_called_once_with("owner", "repo", 42)
             mock_task_store.create.assert_called_once_with(mock_task, author=None)
 
-    def test_import_issue_skip_existing(self, sync_service, mock_client, mock_task_store, sample_issue):
+    def test_import_issue_skip_existing(
+        self, sync_service, mock_client, mock_task_store, sample_issue
+    ):
         """Test skipping already imported issue."""
         # Create an existing task that matches the issue
         existing_task = MagicMock()
@@ -123,7 +125,9 @@ class TestGitHubSyncService:
         assert task_id is None
         mock_client.get_issue.assert_not_called()
 
-    def test_import_issue_force_reimport(self, sync_service, mock_client, mock_task_store, sample_issue):
+    def test_import_issue_force_reimport(
+        self, sync_service, mock_client, mock_task_store, sample_issue
+    ):
         """Test force reimporting an issue."""
         mock_client.get_issue.return_value = sample_issue
 
@@ -145,8 +149,8 @@ class TestGitHubSyncService:
             state="open",
             labels=[],
             html_url="https://github.com/owner/repo/issues/43",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         mock_client.list_all_issues.return_value = [sample_issue, issue2]
         mock_client.get_issue.side_effect = [sample_issue, issue2]
@@ -164,7 +168,9 @@ class TestGitHubSyncService:
             assert "task-1" in result.imported
             assert "task-2" in result.imported
 
-    def test_import_all_issues_with_errors(self, sync_service, mock_client, mock_task_store, sample_issue):
+    def test_import_all_issues_with_errors(
+        self, sync_service, mock_client, mock_task_store, sample_issue
+    ):
         """Test importing issues with some errors."""
         mock_client.list_all_issues.return_value = [sample_issue]
         mock_client.get_issue.side_effect = Exception("API error")
@@ -196,8 +202,8 @@ class TestGitHubSyncService:
             state="open",
             labels=["feature", "priority:high"],
             html_url="https://github.com/owner/repo/issues/99",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         mock_client.create_issue.return_value = created_issue
 
@@ -281,8 +287,8 @@ class TestGitHubSyncService:
             state="open",
             labels=[],
             html_url="https://github.com/owner/repo/issues/42",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         mock_client.get_issue.return_value = open_issue
 

@@ -10,10 +10,6 @@ Tests routing-related API endpoints including:
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="Integration test: Requires running API server with routing configured")
-
-
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -26,6 +22,10 @@ from tests.utils import (
     assert_response_error,
     assert_response_success,
     validate_routing_decision_schema,
+)
+
+pytestmark = pytest.mark.skip(
+    reason="Integration test: Requires running API server with routing configured"
 )
 
 
@@ -182,7 +182,7 @@ class TestRoutingDecisions:
     def test_list_routing_decisions(self, api_client: TestClient, db_session: Session):
         """Test listing all routing decisions."""
         # Create multiple decisions
-        for i in range(5):
+        for _i in range(5):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create(session=db_session, task_id=task.id)
 
@@ -218,9 +218,7 @@ class TestRoutingFeedback:
     def test_provide_positive_feedback(self, api_client: TestClient, db_session: Session):
         """Test providing positive feedback on routing."""
         task = TaskFactory.create(session=db_session, project="hopper")
-        decision = RoutingDecisionFactory.create(
-            session=db_session, task_id=task.id, destination="hopper"
-        )
+        RoutingDecisionFactory.create(session=db_session, task_id=task.id, destination="hopper")
 
         feedback_data = {
             "routing_correct": True,
@@ -244,9 +242,7 @@ class TestRoutingFeedback:
     ):
         """Test providing negative feedback with alternative suggestion."""
         task = TaskFactory.create(session=db_session, project="hopper")
-        decision = RoutingDecisionFactory.create(
-            session=db_session, task_id=task.id, destination="hopper"
-        )
+        RoutingDecisionFactory.create(session=db_session, task_id=task.id, destination="hopper")
 
         feedback_data = {
             "routing_correct": False,
@@ -268,9 +264,7 @@ class TestRoutingFeedback:
         task1 = TaskFactory.create(
             session=db_session, title="Task about orchestration", project="hopper"
         )
-        decision1 = RoutingDecisionFactory.create(
-            session=db_session, task_id=task1.id, destination="hopper"
-        )
+        RoutingDecisionFactory.create(session=db_session, task_id=task1.id, destination="hopper")
         TaskFeedbackFactory.create_negative(
             session=db_session, task_id=task1.id, suggested_destination="czarina"
         )
@@ -287,7 +281,7 @@ class TestRoutingFeedback:
 
         # Feedback should influence routing (may route to czarina instead)
         # Note: This behavior depends on implementation
-        response_data = response.json()
+        response.json()
         # Could verify confidence is lower or destination changed
 
     def test_get_routing_feedback(self, api_client: TestClient, db_session: Session):
@@ -310,11 +304,11 @@ class TestRoutingAnalytics:
     def test_get_routing_statistics(self, api_client: TestClient, db_session: Session):
         """Test getting overall routing statistics."""
         # Create decisions with different strategies
-        for i in range(10):
+        for _i in range(10):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create_rules_based(session=db_session, task_id=task.id)
 
-        for i in range(5):
+        for _i in range(5):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create_llm_based(session=db_session, task_id=task.id)
 
@@ -331,14 +325,14 @@ class TestRoutingAnalytics:
     def test_get_routing_accuracy_metrics(self, api_client: TestClient, db_session: Session):
         """Test getting routing accuracy metrics based on feedback."""
         # Create tasks with feedback
-        for i in range(8):
+        for _i in range(8):
             task = TaskFactory.create(session=db_session)
-            decision = RoutingDecisionFactory.create(session=db_session, task_id=task.id)
+            RoutingDecisionFactory.create(session=db_session, task_id=task.id)
             TaskFeedbackFactory.create_positive(session=db_session, task_id=task.id)
 
-        for i in range(2):
+        for _i in range(2):
             task = TaskFactory.create(session=db_session)
-            decision = RoutingDecisionFactory.create(session=db_session, task_id=task.id)
+            RoutingDecisionFactory.create(session=db_session, task_id=task.id)
             TaskFeedbackFactory.create_negative(session=db_session, task_id=task.id)
 
         response = api_client.get("/api/v1/routing/accuracy")
@@ -353,11 +347,11 @@ class TestRoutingAnalytics:
     def test_get_destination_popularity(self, api_client: TestClient, db_session: Session):
         """Test getting most popular routing destinations."""
         # Create tasks routed to different projects
-        for i in range(10):
+        for _i in range(10):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create(session=db_session, task_id=task.id, destination="hopper")
 
-        for i in range(5):
+        for _i in range(5):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create(
                 session=db_session, task_id=task.id, destination="czarina"
@@ -377,13 +371,13 @@ class TestRoutingAnalytics:
     def test_get_average_confidence_by_strategy(self, api_client: TestClient, db_session: Session):
         """Test getting average confidence scores by strategy."""
         # Create decisions with different strategies and confidences
-        for i in range(5):
+        for _i in range(5):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create_rules_based(
                 session=db_session, task_id=task.id, confidence=0.9  # High confidence for rules
             )
 
-        for i in range(5):
+        for _i in range(5):
             task = TaskFactory.create(session=db_session)
             RoutingDecisionFactory.create_llm_based(
                 session=db_session, task_id=task.id, confidence=0.6  # Lower confidence for LLM

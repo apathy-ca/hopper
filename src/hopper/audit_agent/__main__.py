@@ -38,7 +38,8 @@ def main() -> None:
         print(f"ERROR: hopper path not found: {hopper_path}", file=sys.stderr)
         sys.exit(1)
 
-    from hopper.audit_agent.agent import run_once, run_loop
+    from hopper.audit_agent.agent import run_loop, run_once
+
     if args.once:
         run_once(hopper_path)
     else:

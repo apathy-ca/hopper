@@ -3,14 +3,19 @@ Routing Decision model for Hopper.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
+from hopper.timeutils import utc_now_naive
+
 from .base import Base
+
+if TYPE_CHECKING:
+    from .task import Task
 
 
 class RoutingDecision(Base):
@@ -33,7 +38,7 @@ class RoutingDecision(Base):
 
     # Decision metadata
     decided_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    decided_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
     decision_time_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Context snapshot

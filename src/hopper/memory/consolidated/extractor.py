@@ -10,9 +10,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from hopper.timeutils import utc_now_naive
+
 from ..episodic import EpisodicStore, RoutingEpisode
-from .store import ConsolidatedStore
 from .models import RoutingPattern
+from .store import ConsolidatedStore
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +116,7 @@ class PatternExtractor:
             if len(instance_episodes) < self.min_episodes:
                 continue
 
-            candidate = self._extract_pattern_for_instance(
-                instance_id, instance_episodes
-            )
+            candidate = self._extract_pattern_for_instance(instance_id, instance_episodes)
             if candidate and candidate.confidence >= min_confidence:
                 candidates.append(candidate)
 
@@ -159,11 +159,13 @@ class PatternExtractor:
         # Build tag criteria
         total_episodes = len(episodes)
         required_tags = [
-            tag for tag, count in tag_counter.items()
+            tag
+            for tag, count in tag_counter.items()
             if count >= total_episodes * 0.8  # Present in 80%+ of episodes
         ]
         optional_tags = [
-            tag for tag, count in tag_counter.items()
+            tag
+            for tag, count in tag_counter.items()
             if 0.3 <= count / total_episodes < 0.8  # Present in 30-80%
         ]
 
@@ -175,8 +177,7 @@ class PatternExtractor:
 
         # Build text criteria
         common_words = [
-            word for word, count in word_counter.most_common(5)
-            if count >= total_episodes * 0.5
+            word for word, count in word_counter.most_common(5) if count >= total_episodes * 0.5
         ]
         text_criteria = {}
         if common_words:
@@ -194,9 +195,7 @@ class PatternExtractor:
             return None
 
         # Calculate confidence based on pattern strength
-        confidence = self._calculate_confidence(
-            tag_criteria, text_criteria, total_episodes
-        )
+        confidence = self._calculate_confidence(tag_criteria, text_criteria, total_episodes)
 
         return PatternCandidate(
             target_instance=instance_id,
@@ -335,7 +334,7 @@ class PatternExtractor:
             Summary of consolidation
         """
         if since is None:
-            since = datetime.utcnow() - timedelta(days=30)
+            since = utc_now_naive() - timedelta(days=30)
 
         # Extract candidates
         candidates = self.extract_patterns(
@@ -356,5 +355,5 @@ class PatternExtractor:
             "total_patterns": stats["total_patterns"],
             "active_patterns": stats["active_patterns"],
             "since": since.isoformat(),
-            "ran_at": datetime.utcnow().isoformat(),
+            "ran_at": utc_now_naive().isoformat(),
         }

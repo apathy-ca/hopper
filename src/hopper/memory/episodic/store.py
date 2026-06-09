@@ -7,10 +7,11 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from hopper.models import RoutingDecision, Task, TaskFeedback
+from hopper.models import RoutingDecision, Task
+from hopper.timeutils import utc_now_naive
 
 from .models import RoutingEpisode
 
@@ -89,7 +90,7 @@ class EpisodicStore:
             strategy_used=strategy_used or (decision.decided_by if decision else "rules"),
             decision_factors=decision_factors,
             instance_context=instance_context,
-            routed_at=datetime.utcnow(),
+            routed_at=utc_now_naive(),
         )
 
         self.session.add(episode)
@@ -333,9 +334,7 @@ class EpisodicStore:
         # Average confidence
         avg_confidence_query = select(func.avg(RoutingEpisode.confidence))
         if since:
-            avg_confidence_query = avg_confidence_query.where(
-                RoutingEpisode.routed_at >= since
-            )
+            avg_confidence_query = avg_confidence_query.where(RoutingEpisode.routed_at >= since)
         avg_confidence = self.session.execute(avg_confidence_query).scalar() or 0.0
 
         return {
@@ -361,7 +360,7 @@ class EpisodicStore:
         Returns:
             Number of episodes deleted
         """
-        cutoff = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff = utc_now_naive() - timedelta(days=retention_days)
 
         query = select(RoutingEpisode).where(RoutingEpisode.routed_at < cutoff)
         result = self.session.execute(query)

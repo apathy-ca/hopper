@@ -102,9 +102,9 @@ class UpstreamClient:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
-            raise UpstreamError(f"Health check failed: {e.response.status_code}")
+            raise UpstreamError(f"Health check failed: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def sync(
         self,
@@ -140,12 +140,12 @@ class UpstreamClient:
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAuthorizedError(e.response.text)
-            raise UpstreamError(f"Sync failed: {e.response.status_code} - {e.response.text}")
+                raise NotAuthorizedError(e.response.text) from e
+            raise UpstreamError(f"Sync failed: {e.response.status_code} - {e.response.text}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def list_dids(self, namespace: str | None = None) -> dict:
         """List all registered DIDs, optionally filtered to a namespace."""
@@ -156,12 +156,12 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError("Only admin can list DIDs")
-            raise UpstreamError(f"Failed to list DIDs: {e.response.status_code}")
+                raise NotAdminError("Only admin can list DIDs") from e
+            raise UpstreamError(f"Failed to list DIDs: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def list_pending(self, namespace: str | None = None) -> dict:
         """List pending DIDs awaiting approval. Requires admin."""
@@ -172,16 +172,14 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError("Only admin can view pending DIDs")
-            raise UpstreamError(f"Failed to list pending: {e.response.status_code}")
+                raise NotAdminError("Only admin can view pending DIDs") from e
+            raise UpstreamError(f"Failed to list pending: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
-    def approve_did(
-        self, target_did: str, namespace: str = "*", role: str = "approved"
-    ) -> dict:
+    def approve_did(self, target_did: str, namespace: str = "*", role: str = "approved") -> dict:
         """Approve a DID for a namespace.
 
         Admin may set any role and namespace. An approver may set role=approved
@@ -197,12 +195,12 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized"))
-            raise UpstreamError(f"Failed to approve: {e.response.status_code}")
+                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            raise UpstreamError(f"Failed to approve: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def create_invite(
         self,
@@ -231,12 +229,12 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized"))
-            raise UpstreamError(f"Failed to create invite: {e.response.status_code}")
+                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            raise UpstreamError(f"Failed to create invite: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def redeem_invite(self, token: str) -> dict:
         """Redeem an invite token for this client's DID."""
@@ -250,12 +248,12 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code in (403, 404):
-                raise NotAuthorizedError(e.response.json().get("detail", "redeem failed"))
-            raise UpstreamError(f"Failed to redeem: {e.response.status_code}")
+                raise NotAuthorizedError(e.response.json().get("detail", "redeem failed")) from e
+            raise UpstreamError(f"Failed to redeem: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def list_invites(self, namespace: str | None = None) -> dict:
         """List invites. Admin sees all; approvers see invites for their namespaces."""
@@ -266,10 +264,10 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
-            raise UpstreamError(f"Failed to list invites: {e.response.status_code}")
+                raise AuthenticationError("DID authentication failed") from e
+            raise UpstreamError(f"Failed to list invites: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def revoke_invite(self, token_hash_prefix: str) -> dict:
         """Revoke an invite by token hash prefix."""
@@ -283,12 +281,12 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized"))
-            raise UpstreamError(f"Failed to revoke invite: {e.response.status_code}")
+                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            raise UpstreamError(f"Failed to revoke invite: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e
 
     def revoke_did(self, target_did: str, namespace: str = "*") -> dict:
         """Revoke a DID's access to a namespace (or all if namespace='*'). Requires admin."""
@@ -302,9 +300,9 @@ class UpstreamClient:
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                raise AuthenticationError("DID authentication failed")
+                raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized"))
-            raise UpstreamError(f"Failed to revoke: {e.response.status_code}")
+                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            raise UpstreamError(f"Failed to revoke: {e.response.status_code}") from e
         except httpx.RequestError as e:
-            raise UpstreamError(f"Connection error: {e}")
+            raise UpstreamError(f"Connection error: {e}") from e

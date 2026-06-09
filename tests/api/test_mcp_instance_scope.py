@@ -28,7 +28,6 @@ from hopper.api.mcp_sse import (
     _get_client,
     _session_did,
     _session_id,
-    _session_instances,
 )
 from hopper.cli.local_client import LocalClientError
 from hopper.upstream.storage import UpstreamStorage
@@ -54,9 +53,7 @@ def clean_session(monkeypatch):
 
 
 class TestDidAffinityRecovery:
-    def test_cache_miss_recovers_instance_from_did_registry(
-        self, upstream_storage, clean_session
-    ):
+    def test_cache_miss_recovers_instance_from_did_registry(self, upstream_storage, clean_session):
         """Session-map MISS + registry last_instance → UpstreamNamespaceClient,
         not LocalClient, and the session cache is repopulated."""
         did = "did:key:zRosetta"
@@ -110,11 +107,15 @@ class TestDidAffinityRecovery:
         with pytest.raises(LocalClientError) as exc:
             _get_client()
 
-        assert "switch_instance" in str(exc.value.message).lower() or \
-            "instance" in str(exc.value.message).lower()
+        assert (
+            "switch_instance" in str(exc.value.message).lower()
+            or "instance" in str(exc.value.message).lower()
+        )
         # Did NOT fall back to local data.
-        assert "local" not in str(exc.value.message).lower() or \
-            "wrong" in str(exc.value.message).lower()
+        assert (
+            "local" not in str(exc.value.message).lower()
+            or "wrong" in str(exc.value.message).lower()
+        )
 
     def test_anonymous_session_still_returns_local_client(self, clean_session):
         """No DID and no upstream association → LocalClient (no regression)."""

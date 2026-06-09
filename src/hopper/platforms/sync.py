@@ -10,6 +10,7 @@ from .github.client import GitHubClient
 from .github.mapper import GitHubMapper
 
 if TYPE_CHECKING:
+    from hopper.storage.revision_writer import AuthorContext
     from hopper.storage.tasks import TaskMarkdownStore
 
 
@@ -50,7 +51,12 @@ class ExportResult:
 class GitHubSyncService:
     """Service for syncing between GitHub and Hopper."""
 
-    def __init__(self, client: GitHubClient, task_store: "TaskMarkdownStore", author: "AuthorContext | None" = None):
+    def __init__(
+        self,
+        client: GitHubClient,
+        task_store: TaskMarkdownStore,
+        author: AuthorContext | None = None,
+    ):
         """Initialize sync service.
 
         Args:

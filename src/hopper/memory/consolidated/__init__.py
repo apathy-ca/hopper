@@ -6,9 +6,9 @@ Patterns are extracted from successful routing episodes and used
 to improve future routing decisions.
 """
 
+from .extractor import PatternExtractor
 from .models import RoutingPattern
 from .store import ConsolidatedStore
-from .extractor import PatternExtractor
 
 __all__ = [
     "RoutingPattern",

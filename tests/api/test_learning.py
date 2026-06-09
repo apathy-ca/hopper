@@ -4,28 +4,24 @@ Tests for learning API routes.
 Tests the learning API endpoints for feedback, patterns, and statistics.
 """
 
-from datetime import datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from hopper.api.schemas.learning import (
-    ConsolidationResult,
     EpisodicStats,
     FeedbackCreate,
-    FeedbackList,
     FeedbackResponse,
     LearningStats,
     PatternCreate,
-    PatternList,
-    PatternMatch,
-    PatternResponse,
     PatternStats,
     PatternType,
     PatternUpdate,
     RoutingAccuracyStats,
 )
+from hopper.memory.consolidated import RoutingPattern
 from hopper.models import (
     HopperInstance,
     HopperScope,
@@ -35,8 +31,7 @@ from hopper.models import (
     TaskFeedback,
     TaskStatus,
 )
-from hopper.memory.consolidated import RoutingPattern
-
+from hopper.timeutils import utc_now_naive
 
 # ============================================================================
 # Schema Tests
@@ -91,7 +86,7 @@ class TestFeedbackSchemas:
             was_good_match=True,
             routing_feedback="Good match",
             quality_score=4.5,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         response = FeedbackResponse.model_validate(feedback)
         assert response.task_id == "task-123"
@@ -162,8 +157,8 @@ class TestStatisticsSchemas:
             accuracy_rate=0.85,
             common_misrouting_targets=[{"target": "wrong-instance", "count": 5}],
             by_instance={"api-instance": {"total": 50, "accuracy": 0.9}},
-            period_start=datetime.utcnow(),
-            period_end=datetime.utcnow(),
+            period_start=utc_now_naive(),
+            period_end=utc_now_naive(),
         )
         assert data.accuracy_rate == 0.85
         assert len(data.common_misrouting_targets) == 1
@@ -210,7 +205,7 @@ class TestFeedbackModel:
             id=f"task-{uuid4().hex[:8]}",
             title="Test task",
             status=TaskStatus.PENDING,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(task)
         clean_db.flush()
@@ -220,7 +215,7 @@ class TestFeedbackModel:
             was_good_match=True,
             routing_feedback="Good routing",
             quality_score=4.0,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(feedback)
         clean_db.flush()
@@ -236,7 +231,7 @@ class TestFeedbackModel:
             id=f"task-{uuid4().hex[:8]}",
             title="Test task",
             status=TaskStatus.DONE,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(task)
         clean_db.flush()
@@ -252,7 +247,7 @@ class TestFeedbackModel:
             quality_score=2.5,
             required_rework=True,
             rework_reason="Scope was wrong",
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(feedback)
         clean_db.flush()
@@ -276,7 +271,7 @@ class TestPatternModel:
             tag_criteria={"required": ["api", "python"]},
             confidence=0.8,
             is_active=True,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(pattern)
         clean_db.flush()
@@ -297,7 +292,7 @@ class TestPatternModel:
             usage_count=0,
             success_count=0,
             failure_count=0,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(pattern)
         clean_db.flush()
@@ -326,7 +321,7 @@ class TestPatternModel:
             pattern_type="tag",
             target_instance="test-instance",
             is_active=True,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         clean_db.add(pattern)
         clean_db.flush()
@@ -350,7 +345,7 @@ class TestFeedbackIntegration:
 
     def test_feedback_with_learning_engine(self, db_session: Session):
         """Test feedback processed by learning engine."""
-        from hopper.memory import FeedbackStore, EpisodicStore, LearningEngine
+        from hopper.memory import EpisodicStore, FeedbackStore
 
         # Create test instance first (foreign key requirement)
         instance = HopperInstance(
@@ -359,7 +354,7 @@ class TestFeedbackIntegration:
             scope=HopperScope.PROJECT,
             instance_type=InstanceType.PERSISTENT,
             status=InstanceStatus.RUNNING,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(instance)
         db_session.flush()
@@ -372,7 +367,7 @@ class TestFeedbackIntegration:
             status=TaskStatus.DONE,
             instance_id="api-instance",
             tags={"api": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         db_session.flush()
@@ -382,7 +377,7 @@ class TestFeedbackIntegration:
         feedback_store = FeedbackStore(db_session, episodic_store)
 
         # Record routing first
-        episode = episodic_store.record_episode(
+        episodic_store.record_episode(
             task=task,
             chosen_instance="api-instance",
             confidence=0.8,
@@ -407,7 +402,7 @@ class TestFeedbackIntegration:
                 id=f"multi-task-{uuid4().hex[:8]}",
                 title=f"Task {i}",
                 status=TaskStatus.DONE,
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             )
             db_session.add(task)
             tasks.append(task)
@@ -419,7 +414,7 @@ class TestFeedbackIntegration:
                 task_id=task.id,
                 was_good_match=(i % 2 == 0),  # Alternate good/bad
                 quality_score=float(i + 1),
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             )
             db_session.add(feedback)
         db_session.flush()
@@ -472,7 +467,7 @@ class TestPatternIntegration:
             scope=HopperScope.PROJECT,
             instance_type=InstanceType.PERSISTENT,
             status=InstanceStatus.RUNNING,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(instance)
         db_session.flush()
@@ -489,7 +484,7 @@ class TestPatternIntegration:
                 status=TaskStatus.DONE,
                 instance_id="consol-api-instance",
                 tags={"api": True, "rest": True},
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             )
             db_session.add(task)
             db_session.flush()
@@ -526,7 +521,7 @@ class TestLearningStatistics:
                 id=f"stat-task-{uuid4().hex[:8]}",
                 title=f"Stat task {i}",
                 status=TaskStatus.DONE,
-                created_at=datetime.utcnow(),
+                created_at=utc_now_naive(),
             )
             db_session.add(task)
             db_session.flush()
@@ -595,12 +590,12 @@ class TestEdgeCases:
         feedback = TaskFeedback(
             task_id="nonexistent-task",
             was_good_match=True,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(feedback)
 
         # Should raise integrity error
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             db_session.flush()
         db_session.rollback()
 
@@ -610,7 +605,7 @@ class TestEdgeCases:
             id=f"dup-task-{uuid4().hex[:8]}",
             title="Duplicate test",
             status=TaskStatus.DONE,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         db_session.flush()
@@ -619,7 +614,7 @@ class TestEdgeCases:
         feedback1 = TaskFeedback(
             task_id=task.id,
             was_good_match=True,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(feedback1)
         db_session.flush()
@@ -628,11 +623,11 @@ class TestEdgeCases:
         feedback2 = TaskFeedback(
             task_id=task.id,
             was_good_match=False,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(feedback2)
 
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             db_session.flush()
         db_session.rollback()
 
@@ -646,7 +641,7 @@ class TestEdgeCases:
             tag_criteria={},
             text_criteria={},
             confidence=0.5,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(pattern)
         db_session.flush()
@@ -661,7 +656,7 @@ class TestEdgeCases:
             id=f"long-task-{uuid4().hex[:8]}",
             title="Long text test",
             status=TaskStatus.DONE,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task)
         db_session.flush()
@@ -673,7 +668,7 @@ class TestEdgeCases:
             was_good_match=True,
             routing_feedback=long_text,
             notes=long_text,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(feedback)
         db_session.flush()

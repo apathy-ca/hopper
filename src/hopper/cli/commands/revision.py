@@ -75,6 +75,7 @@ def auto_apply(ctx: Context, dry_run: bool) -> None:
                 raise click.Abort()
 
             from pathlib import Path
+
             hopper_path = client.storage_path or Path.home() / ".hopper"
 
             if dry_run:
@@ -88,8 +89,10 @@ def auto_apply(ctx: Context, dry_run: bool) -> None:
                     return
 
                 pending = client.list_pending_revisions(limit=500)
-                console.print(f"\n[bold cyan]Dry run: {len(pending)} pending proposal(s), "
-                               f"{len(rules)} rule(s)[/bold cyan]\n")
+                console.print(
+                    f"\n[bold cyan]Dry run: {len(pending)} pending proposal(s), "
+                    f"{len(rules)} rule(s)[/bold cyan]\n"
+                )
                 for proposal in pending:
                     record_type = "task"
                     if isinstance(client.storage, SQLiteStorage):
@@ -109,6 +112,7 @@ def auto_apply(ctx: Context, dry_run: bool) -> None:
                 return
 
             from hopper.intelligence.auto_apply import run_auto_apply
+
             result = run_auto_apply(hopper_path, client)
 
         if ctx.json_output:
@@ -128,7 +132,7 @@ def auto_apply(ctx: Context, dry_run: bool) -> None:
 
     except ClientError as e:
         print_error(f"auto-apply failed: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @revision.command(name="list")
@@ -167,6 +171,7 @@ def list_revisions(ctx: Context, pending: bool, record_id: str | None, limit: in
 
         from rich import box
         from rich.table import Table
+
         from hopper.cli.output import format_datetime
 
         _ACTION_STYLE = {
@@ -209,7 +214,7 @@ def list_revisions(ctx: Context, pending: bool, record_id: str | None, limit: in
 
     except ClientError as e:
         print_error(f"Failed to list revisions: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @revision.command(name="apply")
@@ -229,6 +234,7 @@ def apply_revision(ctx: Context, revision_id: str, author_did: str | None, force
     """
     if not force:
         from rich.prompt import Confirm
+
         if not Confirm.ask(f"Apply revision [bold]{revision_id[:12]}[/bold]?", default=True):
             print_info("Cancelled")
             return
@@ -243,14 +249,16 @@ def apply_revision(ctx: Context, revision_id: str, author_did: str | None, force
         if ctx.json_output:
             print_json(result)
         else:
-            print_success(f"Applied: proposal {revision_id[:12]} → apply revision {result.get('applied_revision_id', '')[:12]}")
+            print_success(
+                f"Applied: proposal {revision_id[:12]} → apply revision {result.get('applied_revision_id', '')[:12]}"
+            )
 
     except ClientError as e:
         print_error(f"Failed to apply revision: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
     except ValueError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @revision.command(name="reject")
@@ -259,8 +267,9 @@ def apply_revision(ctx: Context, revision_id: str, author_did: str | None, force
 @click.option("--author-did", envvar="HOPPER_DID", hidden=True)
 @click.option("--force", "-f", is_flag=True, help="Skip confirmation")
 @click.pass_obj
-def reject_revision(ctx: Context, revision_id: str, reason: str | None,
-                    author_did: str | None, force: bool) -> None:
+def reject_revision(
+    ctx: Context, revision_id: str, reason: str | None, author_did: str | None, force: bool
+) -> None:
     """Reject a pending proposal (the live record is unchanged).
 
     A 'reject' revision is inserted to close the proposal. The record's
@@ -272,6 +281,7 @@ def reject_revision(ctx: Context, revision_id: str, reason: str | None,
     """
     if not force:
         from rich.prompt import Confirm
+
         if not Confirm.ask(f"Reject revision [bold]{revision_id[:12]}[/bold]?", default=False):
             print_info("Cancelled")
             return
@@ -290,7 +300,7 @@ def reject_revision(ctx: Context, revision_id: str, reason: str | None,
 
     except ClientError as e:
         print_error(f"Failed to reject revision: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
     except ValueError as e:
         print_error(str(e))
-        raise click.Abort()
+        raise click.Abort() from e

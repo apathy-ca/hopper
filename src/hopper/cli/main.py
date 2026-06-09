@@ -1,11 +1,10 @@
 """Main CLI application entry point."""
 
-
 import click
 from rich.console import Console
 
 from hopper import __version__
-from hopper.cli.config import Config, load_config, is_local_mode, get_storage_path
+from hopper.cli.config import Config, get_storage_path, is_local_mode, load_config
 
 console = Console()
 
@@ -85,7 +84,9 @@ class Context:
     help="Use server mode instead of local storage",
 )
 @click.pass_context
-def cli(ctx: click.Context, config: str | None, verbose: bool, json_output: bool, server: bool) -> None:
+def cli(
+    ctx: click.Context, config: str | None, verbose: bool, json_output: bool, server: bool
+) -> None:
     """Hopper - Cross-agent persistent memory for human-AI workflows.
 
     Hopper gives every agent — opencode, Claude, Kilo Code, or human — a
@@ -125,13 +126,13 @@ from hopper.cli.commands.config import auth, config_group, init
 from hopper.cli.commands.context import context
 from hopper.cli.commands.github import github
 from hopper.cli.commands.instance import instance
+from hopper.cli.commands.kinds import register as register_kinds
 from hopper.cli.commands.knowledge import knowledge
 from hopper.cli.commands.learning import learning
 from hopper.cli.commands.maintenance import maintenance
 from hopper.cli.commands.project import project
-from hopper.cli.commands.server import server
-from hopper.cli.commands.kinds import register as register_kinds
 from hopper.cli.commands.revision import revision
+from hopper.cli.commands.server import server
 from hopper.cli.commands.task import add_shortcut, ls_shortcut, task
 from hopper.cli.commands.upstream import upstream
 from hopper.cli.mcp_commands import mcp
@@ -151,6 +152,7 @@ cli.add_command(maintenance)
 
 # Shortcut: `hopper sync` → `hopper upstream sync` (with `hopper sync status`)
 from hopper.cli.commands.upstream import sync_group  # noqa: E402
+
 cli.add_command(sync_group, name="sync")
 cli.add_command(config_group, name="config")
 cli.add_command(init)

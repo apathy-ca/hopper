@@ -12,11 +12,11 @@ Supports multiple rule types:
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from hopper.intelligence.types import RoutingContext
+from hopper.timeutils import utc_now_naive
 
 
 class RuleType(Enum):
@@ -94,8 +94,8 @@ class Rule(ABC):
         self.created_by = created_by
 
         # Timestamps
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.created_at = utc_now_naive()
+        self.updated_at = utc_now_naive()
 
         # Statistics
         self.times_matched = 0

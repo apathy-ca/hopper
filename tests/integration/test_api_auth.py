@@ -9,19 +9,20 @@ Tests authentication flows including:
 - Unauthorized access handling
 """
 
-import pytest
-pytestmark = pytest.mark.skip(reason="Phase 2 feature: Authentication/authorization not in Phase 1 scope")
-
-
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from hopper.timeutils import utc_now_naive
 from tests.utils import (
     assert_response_error,
     assert_response_success,
+)
+
+pytestmark = pytest.mark.skip(
+    reason="Phase 2 feature: Authentication/authorization not in Phase 1 scope"
 )
 
 
@@ -214,7 +215,7 @@ class TestAPIKeyAuthentication:
             "/api/v1/auth/api-keys",
             json={
                 "name": "Expiring Key",
-                "expires_at": (datetime.utcnow() - timedelta(days=1)).isoformat(),
+                "expires_at": (utc_now_naive() - timedelta(days=1)).isoformat(),
             },
         )
 
@@ -387,12 +388,12 @@ class TestUnauthorizedAccess:
         """Test that unauthenticated requests are rate-limited."""
         # Make many requests quickly
         responses = []
-        for i in range(100):
+        for _i in range(100):
             response = api_client.get("/api/v1/tasks")
             responses.append(response)
 
         # At least some should be rate-limited
-        rate_limited = [r for r in responses if r.status_code == 429]
+        [r for r in responses if r.status_code == 429]
         # Depending on implementation, verify rate limiting occurs
         # assert len(rate_limited) > 0
 

@@ -5,16 +5,15 @@ Tests Global, Project, and Orchestration scope behaviors.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from hopper.intelligence.scopes.base import TaskAction, TaskActionType
+from hopper.intelligence.scopes.base import TaskActionType
 from hopper.intelligence.scopes.factory import (
-    get_behavior_for_scope,
-    get_behavior_for_instance,
-    get_available_scopes,
     GlobalScopeBehavior,
-    ProjectScopeBehavior,
     OrchestrationScopeBehavior,
+    ProjectScopeBehavior,
+    get_available_scopes,
+    get_behavior_for_instance,
+    get_behavior_for_scope,
 )
 from hopper.models import HopperScope, TaskStatus
 
@@ -269,9 +268,7 @@ class TestOrchestrationScopeBehavior:
         assert next_task.priority == "urgent"  # Highest priority pending
 
     @pytest.mark.asyncio
-    async def test_claim_task_updates_status(
-        self, db_session, orchestration_instance, sample_task
-    ):
+    async def test_claim_task_updates_status(self, db_session, orchestration_instance, sample_task):
         """Test that claiming a task updates its status and owner."""
         behavior = OrchestrationScopeBehavior(db_session)
         sample_task.instance_id = orchestration_instance.id

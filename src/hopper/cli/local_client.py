@@ -7,22 +7,21 @@ from pathlib import Path
 from typing import Any
 
 from hopper.storage import (
-    StorageConfig,
-    MarkdownStorage,
-    TaskMarkdownStore,
     EpisodeMarkdownStore,
-    PatternMarkdownStore,
-    FeedbackMarkdownStore,
-    SQLiteStorage,
-    TaskSQLiteStore,
     EpisodeSQLiteStore,
-    PatternSQLiteStore,
+    FeedbackMarkdownStore,
     FeedbackSQLiteStore,
+    MarkdownStorage,
+    PatternMarkdownStore,
+    PatternSQLiteStore,
+    SQLiteStorage,
+    StorageConfig,
+    TaskMarkdownStore,
+    TaskSQLiteStore,
 )
-from hopper.storage.tasks import LocalTask
-from hopper.storage.memory import LocalPattern, LocalFeedback
+from hopper.storage.memory import LocalFeedback, LocalPattern
 from hopper.storage.revision_writer import AuthorContext
-from hopper.storage.sqlite import SQLiteStorage
+from hopper.storage.tasks import LocalTask
 
 
 def _read_storage_type(storage_path: Path) -> str:
@@ -35,6 +34,7 @@ def _read_storage_type(storage_path: Path) -> str:
         return "markdown"
     try:
         import yaml
+
         with open(config_file) as f:
             data = yaml.safe_load(f) or {}
         return data.get("storage", {}).get("type", "markdown")
@@ -126,6 +126,7 @@ class LocalClient:
             return None  # markdown backend — no revisions
 
         import os
+
         from hopper.location import resolve_location
 
         # --- DID resolution ---
@@ -135,11 +136,14 @@ class LocalClient:
             if key_path.exists():
                 try:
                     from hopper.upstream.did import DIDKey
+
                     did = DIDKey.load(key_path).did
                 except Exception:
                     pass
         if not did:
-            raise LocalClientError("No DID available. Agents must supply --author-did or HOPPER_DID. Humans should 'hopper init'.")
+            raise LocalClientError(
+                "No DID available. Agents must supply --author-did or HOPPER_DID. Humans should 'hopper init'."
+            )
 
         # --- Location resolution ---
         location = resolve_location(override=author_location)
@@ -229,8 +233,11 @@ class LocalClient:
 
         # Compute staleness ratio for in_progress tasks
         # 0.0 = just heartbeated, 1.0 = stale threshold reached, >1.0 = overdue
+        from datetime import datetime as dt
+        from datetime import timedelta
+
         from hopper.storage.tasks import _utc_now
-        from datetime import datetime as dt, timedelta
+
         now = _utc_now()
         default_window = timedelta(minutes=30)
         for t in result:
@@ -238,9 +245,10 @@ class LocalClient:
                 expected = t.get("expected_heartbeat")
                 heartbeat = t.get("last_heartbeat")
                 hb_dt = (
-                    dt.fromisoformat(heartbeat) if isinstance(heartbeat, str)
-                    else heartbeat
-                ) if heartbeat else None
+                    (dt.fromisoformat(heartbeat) if isinstance(heartbeat, str) else heartbeat)
+                    if heartbeat
+                    else None
+                )
 
                 if expected:
                     exp_dt = dt.fromisoformat(expected) if isinstance(expected, str) else expected
@@ -282,10 +290,12 @@ class LocalClient:
         # Default sort: status rank, then priority rank
         sort_by = params.get("sort_by", "status")
         if sort_by == "status":
-            result.sort(key=lambda t: (
-                self._STATUS_RANK.get(t.get("status", ""), 99),
-                self._PRIORITY_RANK.get(t.get("priority", ""), 99),
-            ))
+            result.sort(
+                key=lambda t: (
+                    self._STATUS_RANK.get(t.get("status", ""), 99),
+                    self._PRIORITY_RANK.get(t.get("priority", ""), 99),
+                )
+            )
 
         # Group children directly after their parent
         ordered: list[dict[str, Any]] = []
@@ -328,6 +338,7 @@ class LocalClient:
             Created task as dict
         """
         from hopper.location import resolve_location
+
         location = data.get("source") or resolve_location(transport="cli")
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
@@ -444,6 +455,7 @@ class LocalClient:
             task.assigned_to = data["assigned_to"]
             if task.assigned_to:
                 from hopper.storage.tasks import _utc_now
+
                 task.last_heartbeat = _utc_now()
             else:
                 task.last_heartbeat = None
@@ -502,8 +514,10 @@ class LocalClient:
         if task is None:
             raise LocalClientError(f"Task not found: {task_id}")
 
-        from hopper.storage.tasks import _utc_now
         from datetime import timedelta
+
+        from hopper.storage.tasks import _utc_now
+
         now = _utc_now()
         task.last_heartbeat = now
         if expect_minutes:
@@ -528,8 +542,9 @@ class LocalClient:
             minutes: Default minutes without heartbeat to consider stale
                 (only used when no expected_heartbeat is set).
         """
-        from hopper.storage.tasks import _utc_now
         from datetime import timedelta
+
+        from hopper.storage.tasks import _utc_now
 
         now = _utc_now()
         default_cutoff = now - timedelta(minutes=minutes)
@@ -565,6 +580,7 @@ class LocalClient:
 
         # Build the proposed payload (apply proposed fields to a copy)
         import copy
+
         proposed = copy.copy(task)
         if "title" in data:
             proposed.title = data["title"]
@@ -591,15 +607,18 @@ class LocalClient:
             raise LocalClientError("Proposals require author identity (SQLite backend)")
 
         from hopper.storage.revision_writer import propose_revision
+
         with self.storage.session() as session:
-            rev_id = propose_revision(session, proposed.to_frontmatter(), author,
-                                      instance_id=task.instance or "local")
+            rev_id = propose_revision(
+                session, proposed.to_frontmatter(), author, instance_id=task.instance or "local"
+            )
             session.commit()
 
         return {"revision_id": rev_id, "task_id": task_id, "status": "proposed"}
 
-    def list_pending_revisions(self, record_id: str | None = None,
-                               limit: int = 100) -> list[dict[str, Any]]:
+    def list_pending_revisions(
+        self, record_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
         """List all pending (propose) revisions awaiting apply/reject.
 
         Only available on the SQLite backend.
@@ -607,9 +626,10 @@ class LocalClient:
         if not isinstance(self.storage, SQLiteStorage):
             return []
 
-        from sqlalchemy import select, not_, exists
-        from hopper.models import Revision
+        from sqlalchemy import exists, not_, select
         from sqlalchemy.orm import aliased
+
+        from hopper.models import Revision
 
         with self.storage.session() as session:
             # A proposal is "pending" only when no subsequent apply/reject
@@ -660,13 +680,15 @@ class LocalClient:
             raise LocalClientError("apply_revision requires author identity")
 
         from hopper.storage.revision_writer import apply_revision as _apply
+
         with self.storage.session() as session:
             apply_rev_id = _apply(session, revision_id, author)
             session.commit()
         return {"applied_revision_id": apply_rev_id, "proposal_id": revision_id}
 
-    def reject_revision(self, revision_id: str, reason: str | None = None,
-                        author_did: str | None = None) -> dict[str, Any]:
+    def reject_revision(
+        self, revision_id: str, reason: str | None = None, author_did: str | None = None
+    ) -> dict[str, Any]:
         """Reject a pending proposal revision.
 
         Only available on the SQLite backend.
@@ -679,6 +701,7 @@ class LocalClient:
             raise LocalClientError("reject_revision requires author identity")
 
         from hopper.storage.revision_writer import reject_revision as _reject
+
         with self.storage.session() as session:
             reject_rev_id = _reject(session, revision_id, author, reason=reason)
             session.commit()
@@ -696,7 +719,8 @@ class LocalClient:
         if resolved is None:
             raise LocalClientError(f"Task not found: {task_id}")
 
-        from sqlalchemy import select, text
+        from sqlalchemy import select
+
         from hopper.models import Revision
 
         with self.storage.session() as session:
@@ -765,7 +789,9 @@ class LocalClient:
             "parent_id": task.parent_id,
             "assigned_to": task.assigned_to,
             "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,
-            "expected_heartbeat": task.expected_heartbeat.isoformat() if task.expected_heartbeat else None,
+            "expected_heartbeat": (
+                task.expected_heartbeat.isoformat() if task.expected_heartbeat else None
+            ),
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
         }

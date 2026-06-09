@@ -5,10 +5,10 @@ Defines the wire format for sync requests and responses.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SyncTask(BaseModel):
@@ -47,8 +47,7 @@ class SyncTask(BaseModel):
     scope: str | None = None
     provenance: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_local_task(cls, task: Any) -> SyncTask:
@@ -144,4 +143,4 @@ def ms_to_datetime(ms: int) -> datetime | None:
     """Convert milliseconds since epoch to UTC-aware datetime."""
     if ms == 0:
         return None
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)

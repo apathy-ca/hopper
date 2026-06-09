@@ -3,10 +3,10 @@
 Provides lightweight sync between Hopper instances via HTTP with DID authentication.
 """
 
+from .client import AuthenticationError, UpstreamClient, UpstreamError
 from .did import DIDKey, generate_did_key, load_did_key, sign_request, verify_signature
-from .client import UpstreamClient, UpstreamError, AuthenticationError
 from .protocol import SyncRequest, SyncResponse, SyncTask
-from .sync import sync_with_upstream, SyncResult
+from .sync import SyncResult, sync_with_upstream
 
 __all__ = [
     # DID

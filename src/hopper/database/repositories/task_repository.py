@@ -2,7 +2,6 @@
 Task repository with task-specific queries and operations.
 """
 
-
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -138,9 +137,7 @@ class TaskRepository(BaseRepository[Task]):
         """
         return self.filter(filters={"requester": requester}, skip=skip, limit=limit)
 
-    def get_tasks_by_owner(
-        self, owner: str, skip: int = 0, limit: int | None = None
-    ) -> list[Task]:
+    def get_tasks_by_owner(self, owner: str, skip: int = 0, limit: int | None = None) -> list[Task]:
         """
         Get all tasks assigned to a specific owner.
 

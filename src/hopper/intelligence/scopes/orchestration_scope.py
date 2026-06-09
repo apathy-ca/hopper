@@ -61,9 +61,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
                 reason=f"Instance at capacity ({current_active}/{max_concurrent} tasks)"
             )
 
-        return TaskAction.queue(
-            reason="Task added to orchestration queue for execution"
-        )
+        return TaskAction.queue(reason="Task added to orchestration queue for execution")
 
     async def should_delegate(
         self,
@@ -91,9 +89,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
         Updates metrics and notifies parent project.
         """
-        logger.info(
-            f"Task {task.id} completed at orchestration instance {instance.id}"
-        )
+        logger.info(f"Task {task.id} completed at orchestration instance {instance.id}")
 
         # Update metrics
         metadata = instance.runtime_metadata or {}
@@ -124,9 +120,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
             select(Task)
             .where(Task.instance_id == instance.id)
             .where(
-                Task.status.in_(
-                    [TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS]
-                )
+                Task.status.in_([TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS])
             )
         )
         result = self.session.execute(query)
@@ -147,11 +141,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
         query = (
             select(Task)
             .where(Task.instance_id == instance.id)
-            .where(
-                Task.status.in_(
-                    [TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS]
-                )
-            )
+            .where(Task.status.in_([TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS]))
         )
         result = self.session.execute(query)
         return len(list(result.scalars().all()))

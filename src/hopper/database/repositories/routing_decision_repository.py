@@ -2,12 +2,13 @@
 Routing Decision repository for tracking routing outcomes.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.routing_decision import RoutingDecision
+from hopper.timeutils import utc_now_naive
 
 from .base import BaseRepository
 
@@ -79,7 +80,7 @@ class RoutingDecisionRepository(BaseRepository[RoutingDecision]):
         query = select(RoutingDecision).order_by(RoutingDecision.decided_at.desc())
 
         if hours:
-            cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+            cutoff_time = utc_now_naive() - timedelta(hours=hours)
             query = query.where(RoutingDecision.decided_at >= cutoff_time)
 
         query = query.limit(limit)

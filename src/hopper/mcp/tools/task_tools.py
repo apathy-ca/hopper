@@ -57,13 +57,13 @@ def get_task_tools() -> list[Tool]:
                         "type": "string",
                         "enum": ["task", "idea", "note", "memory", "inbox", "log", "reference"],
                         "description": "Record kind (default: task). For memory, prefer setting "
-                                       "subject/scope so it is captured as structured knowledge.",
+                        "subject/scope so it is captured as structured knowledge.",
                         "default": "task",
                     },
                     "subject": {
                         "type": "string",
                         "description": "For kind='memory': what the memory is about "
-                                       "(e.g. 'user:preferences', 'project:<slug>', 'agent:<name>', 'self').",
+                        "(e.g. 'user:preferences', 'project:<slug>', 'agent:<name>', 'self').",
                     },
                     "scope": {
                         "type": "string",
@@ -73,12 +73,12 @@ def get_task_tools() -> list[Tool]:
                     "provenance": {
                         "type": "string",
                         "description": "For kind='memory': how it was learned "
-                                       "(e.g. 'conversation 2026-04-22', 'observation').",
+                        "(e.g. 'conversation 2026-04-22', 'observation').",
                     },
                     "location": {
                         "type": "string",
                         "description": "Author location context (e.g. 'phone-claude', 'ember-cli'). "
-                                       "Inferred from HOPPER_LOCATION env var if not supplied.",
+                        "Inferred from HOPPER_LOCATION env var if not supplied.",
                     },
                 },
                 "required": ["title"],
@@ -117,7 +117,16 @@ def get_task_tools() -> list[Tool]:
                     },
                     "kind": {
                         "type": "string",
-                        "enum": ["task", "memory", "idea", "note", "reference", "inbox", "log", "job"],
+                        "enum": [
+                            "task",
+                            "memory",
+                            "idea",
+                            "note",
+                            "reference",
+                            "inbox",
+                            "log",
+                            "job",
+                        ],
                         "description": "Filter by record kind. Defaults to 'task' when omitted.",
                     },
                     "all_kinds": {
@@ -149,7 +158,7 @@ def get_task_tools() -> list[Tool]:
                     "subject": {
                         "type": "string",
                         "description": "Filter on the structured subject field "
-                                       "(e.g. 'user:preferences', 'project:<slug>').",
+                        "(e.g. 'user:preferences', 'project:<slug>').",
                     },
                     "scope": {
                         "type": "string",

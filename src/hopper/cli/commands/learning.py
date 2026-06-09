@@ -17,7 +17,6 @@ from hopper.cli.output import (
     print_success,
 )
 
-
 # Combined error types for handling both client types
 ClientError = (APIError, LocalClientError)
 
@@ -136,7 +135,7 @@ def submit_feedback(
 
     except ClientError as e:
         print_error(f"Failed to submit feedback: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @feedback.command(name="get")
@@ -159,7 +158,7 @@ def get_feedback(ctx: Context, task_id: str) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get feedback: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @feedback.command(name="list")
@@ -200,11 +199,13 @@ def list_feedback(
                 return
 
             _print_feedback_table(items)
-            print_info(f"Showing {len(items)} of {result.get('total', len(items))} feedback records")
+            print_info(
+                f"Showing {len(items)} of {result.get('total', len(items))} feedback records"
+            )
 
     except ClientError as e:
         print_error(f"Failed to list feedback: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @feedback.command(name="accuracy")
@@ -228,7 +229,7 @@ def routing_accuracy(ctx: Context, days: int) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get accuracy stats: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 # ============================================================================
@@ -249,7 +250,12 @@ def pattern() -> None:
 @pattern.command(name="create")
 @click.option("--name", "-n", required=True, help="Pattern name")
 @click.option("--target", "-t", required=True, help="Target instance ID")
-@click.option("--type", "pattern_type", type=click.Choice(["tag", "text", "combined", "priority"]), default="tag")
+@click.option(
+    "--type",
+    "pattern_type",
+    type=click.Choice(["tag", "text", "combined", "priority"]),
+    default="tag",
+)
 @click.option("--description", "-d", help="Pattern description")
 @click.option("--required-tag", multiple=True, help="Required tags (can specify multiple)")
 @click.option("--optional-tag", multiple=True, help="Optional tags (can specify multiple)")
@@ -309,7 +315,7 @@ def create_pattern(
 
     except ClientError as e:
         print_error(f"Failed to create pattern: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @pattern.command(name="list")
@@ -353,7 +359,7 @@ def list_patterns(
 
     except ClientError as e:
         print_error(f"Failed to list patterns: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @pattern.command(name="get")
@@ -376,7 +382,7 @@ def get_pattern(ctx: Context, pattern_id: str) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get pattern: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @pattern.command(name="update")
@@ -427,7 +433,7 @@ def update_pattern(
 
     except ClientError as e:
         print_error(f"Failed to update pattern: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @pattern.command(name="delete")
@@ -454,7 +460,7 @@ def delete_pattern(ctx: Context, pattern_id: str, force: bool) -> None:
 
     except ClientError as e:
         print_error(f"Failed to delete pattern: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 # ============================================================================
@@ -484,7 +490,7 @@ def learning_stats(ctx: Context) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get statistics: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @learning.command(name="consolidate")
@@ -521,7 +527,7 @@ def consolidate(ctx: Context, days: int, force: bool) -> None:
 
     except ClientError as e:
         print_error(f"Failed to run consolidation: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 # ============================================================================
@@ -685,7 +691,7 @@ def _print_pattern_detail(pattern: dict) -> None:
     console.print(f"  [bold]Active:[/bold] {active}")
 
     if pattern.get("tag_criteria"):
-        console.print(f"\n  [bold]Tag Criteria:[/bold]")
+        console.print("\n  [bold]Tag Criteria:[/bold]")
         tc = pattern["tag_criteria"]
         if tc.get("required"):
             console.print(f"    Required: {', '.join(tc['required'])}")
@@ -693,7 +699,7 @@ def _print_pattern_detail(pattern: dict) -> None:
             console.print(f"    Optional: {', '.join(tc['optional'])}")
 
     if pattern.get("text_criteria"):
-        console.print(f"\n  [bold]Text Criteria:[/bold]")
+        console.print("\n  [bold]Text Criteria:[/bold]")
         tc = pattern["text_criteria"]
         if tc.get("keywords"):
             console.print(f"    Keywords: {', '.join(tc['keywords'])}")

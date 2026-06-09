@@ -22,6 +22,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
+from hopper.timeutils import utc_now_naive
+
 from .base import Base
 
 SCHEMA_VERSION = 1
@@ -33,9 +35,7 @@ class Revision(Base):
     # ULID — 26 char Crockford base32, sorts by creation time
     id: Mapped[str] = mapped_column(String(26), primary_key=True)
 
-    record_id: Mapped[str] = mapped_column(
-        String(50), ForeignKey("records.id"), nullable=False
-    )
+    record_id: Mapped[str] = mapped_column(String(50), ForeignKey("records.id"), nullable=False)
     parent_revision_id: Mapped[str | None] = mapped_column(
         String(26), ForeignKey("revisions.id"), nullable=True
     )
@@ -51,13 +51,9 @@ class Revision(Base):
     payload: Mapped[dict | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
-    schema_version: Mapped[int] = mapped_column(
-        Integer, default=SCHEMA_VERSION, nullable=False
-    )
+    schema_version: Mapped[int] = mapped_column(Integer, default=SCHEMA_VERSION, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
 
     __table_args__ = (
         Index("idx_revisions_record_created", "record_id", "created_at"),
@@ -66,7 +62,4 @@ class Revision(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<Revision(id={self.id}, record_id={self.record_id}, "
-            f"action={self.action})>"
-        )
+        return f"<Revision(id={self.id}, record_id={self.record_id}, " f"action={self.action})>"

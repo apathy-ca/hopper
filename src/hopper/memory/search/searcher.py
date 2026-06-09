@@ -3,7 +3,7 @@ Task searcher for finding similar tasks in the database.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -11,8 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models import Task, TaskStatus
+from hopper.timeutils import utc_now_naive
 
-from .similarity import TaskSimilarity, SimilarityResult
+from .similarity import TaskSimilarity
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class TaskSearcher:
 
         # Apply age filter
         if self.corpus_max_age_days > 0:
-            cutoff = datetime.utcnow() - timedelta(days=self.corpus_max_age_days)
+            cutoff = utc_now_naive() - timedelta(days=self.corpus_max_age_days)
             query = query.where(Task.created_at >= cutoff)
 
         # Limit size

@@ -2,12 +2,14 @@
 Tests for Episodic Store implementation.
 """
 
-import pytest
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
-from hopper.memory.episodic import EpisodicStore, RoutingEpisode
-from hopper.models import Task, TaskStatus, RoutingDecision
+import pytest
+
+from hopper.memory.episodic import EpisodicStore
+from hopper.models import RoutingDecision, Task, TaskStatus
+from hopper.timeutils import utc_now_naive
 
 
 @pytest.fixture
@@ -27,7 +29,7 @@ def task_for_episode(db_session) -> Task:
         status=TaskStatus.PENDING,
         priority="medium",
         tags={"python": True, "api": True},
-        created_at=datetime.utcnow(),
+        created_at=utc_now_naive(),
     )
     db_session.add(task)
     db_session.flush()
@@ -41,7 +43,7 @@ def routing_decision_for_episode(db_session, task_for_episode) -> RoutingDecisio
         task_id=task_for_episode.id,
         project=None,  # No FK constraint issues
         confidence=0.85,
-        decided_at=datetime.utcnow(),
+        decided_at=utc_now_naive(),
         decided_by="rules",
         reasoning="Matched by tags",
     )
@@ -129,9 +131,7 @@ class TestRoutingEpisode:
 class TestEpisodicStore:
     """Tests for EpisodicStore."""
 
-    def test_record_episode(
-        self, episodic_store, task_for_episode, routing_decision_for_episode
-    ):
+    def test_record_episode(self, episodic_store, task_for_episode, routing_decision_for_episode):
         """Test recording a new episode."""
         episode = episodic_store.record_episode(
             task=task_for_episode,
@@ -231,7 +231,7 @@ class TestEpisodicStore:
     def test_get_latest_episode_for_task(self, db_session, episodic_store, task_for_episode):
         """Test getting most recent episode for a task."""
         # Create first episode
-        first = episodic_store.record_episode(
+        episodic_store.record_episode(
             task=task_for_episode,
             chosen_instance="first-project",
         )
@@ -382,7 +382,7 @@ class TestEpisodicStore:
             project="test",
             status=TaskStatus.PENDING,
             tags={"python": True, "api": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task1)
         db_session.flush()
@@ -400,7 +400,7 @@ class TestEpisodicStore:
             project="test",
             status=TaskStatus.PENDING,
             tags={"react": True, "frontend": True},
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(task2)
         db_session.flush()
@@ -429,7 +429,7 @@ class TestEpisodicStoreCleanup:
             title="Old task",
             project="test",
             status=TaskStatus.DONE,
-            created_at=datetime.utcnow() - timedelta(days=100),
+            created_at=utc_now_naive() - timedelta(days=100),
         )
         db_session.add(old_task)
         db_session.flush()
@@ -440,7 +440,7 @@ class TestEpisodicStoreCleanup:
             chosen_instance="old-project",
         )
         # Manually set old date
-        old_episode.routed_at = datetime.utcnow() - timedelta(days=100)
+        old_episode.routed_at = utc_now_naive() - timedelta(days=100)
         db_session.flush()
 
         # Create recent task
@@ -449,7 +449,7 @@ class TestEpisodicStoreCleanup:
             title="New task",
             project="test",
             status=TaskStatus.PENDING,
-            created_at=datetime.utcnow(),
+            created_at=utc_now_naive(),
         )
         db_session.add(new_task)
         db_session.flush()

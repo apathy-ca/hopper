@@ -18,8 +18,6 @@ front; these are now promoted to real frontmatter fields on the record
 
 from __future__ import annotations
 
-from typing import Any
-
 import click
 
 from hopper.cli.commands.task import add_task, list_tasks
@@ -130,7 +128,7 @@ def _make_memory_group() -> click.Group:
     base = _make_group("memory")
 
     # Replace the generic 'add' with a memory-aware one
-    for name, cmd in list(base.commands.items()):
+    for name, _cmd in list(base.commands.items()):
         if name == "add":
             base.commands.pop(name)
 

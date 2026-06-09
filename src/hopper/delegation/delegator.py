@@ -3,7 +3,6 @@ Main delegation logic for task routing between instances.
 """
 
 import logging
-from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -16,6 +15,7 @@ from hopper.models import (
     Task,
     TaskDelegation,
 )
+from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class Delegator:
             target_instance_id=target_instance.id,
             delegation_type=delegation_type,
             status=DelegationStatus.PENDING,
-            delegated_at=datetime.utcnow(),
+            delegated_at=utc_now_naive(),
             delegated_by=delegated_by,
             notes=notes,
         )
@@ -94,7 +94,7 @@ class Delegator:
 
         # Update task's instance assignment
         task.instance_id = target_instance.id
-        task.updated_at = datetime.utcnow()
+        task.updated_at = utc_now_naive()
 
         self.session.flush()
 
@@ -125,8 +125,7 @@ class Delegator:
         """
         if delegation.status != DelegationStatus.PENDING:
             raise DelegationError(
-                f"Cannot accept delegation {delegation.id} "
-                f"with status {delegation.status}"
+                f"Cannot accept delegation {delegation.id} " f"with status {delegation.status}"
             )
 
         delegation.accept()
@@ -159,8 +158,7 @@ class Delegator:
         """
         if delegation.status != DelegationStatus.PENDING:
             raise DelegationError(
-                f"Cannot reject delegation {delegation.id} "
-                f"with status {delegation.status}"
+                f"Cannot reject delegation {delegation.id} " f"with status {delegation.status}"
             )
 
         delegation.reject(reason)
@@ -172,7 +170,7 @@ class Delegator:
         task = delegation.task
         if delegation.source_instance_id:
             task.instance_id = delegation.source_instance_id
-            task.updated_at = datetime.utcnow()
+            task.updated_at = utc_now_naive()
             self.session.flush()
 
         return delegation
@@ -197,8 +195,7 @@ class Delegator:
         """
         if delegation.status not in (DelegationStatus.PENDING, DelegationStatus.ACCEPTED):
             raise DelegationError(
-                f"Cannot complete delegation {delegation.id} "
-                f"with status {delegation.status}"
+                f"Cannot complete delegation {delegation.id} " f"with status {delegation.status}"
             )
 
         delegation.complete(result)
@@ -236,7 +233,7 @@ class Delegator:
         task = delegation.task
         if delegation.source_instance_id:
             task.instance_id = delegation.source_instance_id
-            task.updated_at = datetime.utcnow()
+            task.updated_at = utc_now_naive()
             self.session.flush()
 
         return delegation

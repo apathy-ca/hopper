@@ -5,12 +5,13 @@ Provides immediate context storage for routing decisions.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from hopper.models import HopperInstance, InstanceStatus, RoutingDecision, Task
+from hopper.timeutils import utc_now_naive
 
 from .backends import LocalBackend
 from .backends.base import BaseBackend
@@ -192,8 +193,8 @@ class WorkingMemory:
             available_instances=available_instances,
             recent_decisions=recent_decisions,
             session_id=session_id,
-            created_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(seconds=self._default_ttl),
+            created_at=utc_now_naive(),
+            expires_at=utc_now_naive() + timedelta(seconds=self._default_ttl),
         )
 
         # Store the context
@@ -218,12 +219,10 @@ class WorkingMemory:
                 scope=inst.scope.value if hasattr(inst.scope, "value") else str(inst.scope),
                 status=inst.status.value if hasattr(inst.status, "value") else str(inst.status),
                 capabilities=inst.config.get("capabilities", []) if inst.config else [],
-                current_load=inst.runtime_metadata.get("active_tasks", 0)
-                if inst.runtime_metadata
-                else 0,
-                max_capacity=inst.config.get("max_concurrent_tasks", 10)
-                if inst.config
-                else 10,
+                current_load=(
+                    inst.runtime_metadata.get("active_tasks", 0) if inst.runtime_metadata else 0
+                ),
+                max_capacity=inst.config.get("max_concurrent_tasks", 10) if inst.config else 10,
             )
             for inst in instances
         ]

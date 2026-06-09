@@ -26,7 +26,12 @@ from hopper.api.exceptions import (
     hopper_exception_handler,
     validation_exception_handler,
 )
-from hopper.api.mcp_sse import create_sse_server, create_streamable_http_server, get_streamable_session_manager, get_stateless_session_manager
+from hopper.api.mcp_sse import (
+    create_sse_server,
+    create_streamable_http_server,
+    get_stateless_session_manager,
+    get_streamable_session_manager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,7 @@ def _get_upstream_storage_path() -> Path:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Initialize upstream sync storage
     from hopper.upstream.server import configure_storage
+
     upstream_path = _get_upstream_storage_path()
     upstream_path.mkdir(parents=True, exist_ok=True)
     shadow_sqlite_url = os.getenv("HOPPER_SHADOW_SQLITE_URL") or None
@@ -156,6 +162,7 @@ def create_app() -> FastAPI:
     # Serve static assets (favicon, logo)
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
+
         @app.get("/favicon.ico", include_in_schema=False)
         async def favicon():
             return FileResponse(static_dir / "favicon.ico")
@@ -182,6 +189,7 @@ def create_app() -> FastAPI:
     # Include upstream sync routes at root so DID-signed paths (/sync, /admin/*)
     # match the client's signature expectations without a mount prefix.
     from hopper.upstream.server import router as upstream_router
+
     app.include_router(upstream_router, tags=["Upstream"])
 
     return app

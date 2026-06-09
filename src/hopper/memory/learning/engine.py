@@ -4,21 +4,22 @@ Learning engine that integrates all memory components.
 
 import logging
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from hopper.models import Task
+from hopper.timeutils import utc_now_naive
 
-from ..working import WorkingMemory, RoutingContext
-from ..working.context import SimilarTask, InstanceInfo
+from ..consolidated import ConsolidatedStore, PatternExtractor
 from ..episodic import EpisodicStore, RoutingEpisode
-from ..search import TaskSearcher
-from ..consolidated import ConsolidatedStore, PatternExtractor, RoutingPattern
 from ..feedback import FeedbackStore
-from .suggestion import RoutingSuggestion, SuggestionSource
+from ..search import TaskSearcher
+from ..working import RoutingContext, WorkingMemory
+from ..working.context import InstanceInfo, SimilarTask
+from .suggestion import RoutingSuggestion
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +81,7 @@ class LearningEngine:
         self.episodic_store = episodic_store or EpisodicStore(session)
         self.consolidated_store = consolidated_store or ConsolidatedStore(session)
         self.task_searcher = task_searcher or TaskSearcher(session)
-        self.feedback_store = feedback_store or FeedbackStore(
-            session, self.episodic_store
-        )
+        self.feedback_store = feedback_store or FeedbackStore(session, self.episodic_store)
 
         # Pattern extractor for consolidation
         self._pattern_extractor = PatternExtractor(
@@ -360,9 +359,7 @@ class LearningEngine:
             if episode.decision_factors:
                 pattern_id = episode.decision_factors.get("pattern_id")
                 if pattern_id:
-                    self.consolidated_store.update_pattern_confidence(
-                        pattern_id, success
-                    )
+                    self.consolidated_store.update_pattern_confidence(pattern_id, success)
                     result.patterns_updated = 1
 
         return result
@@ -435,7 +432,7 @@ class LearningEngine:
             LearningResult summarizing consolidation
         """
         if since is None:
-            since = datetime.utcnow() - timedelta(days=7)
+            since = utc_now_naive() - timedelta(days=7)
 
         consolidation = self._pattern_extractor.run_consolidation(
             since=since,

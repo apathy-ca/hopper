@@ -9,18 +9,18 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from .base import StorageBackend, StorageConfig
+
 
 def _utc_now() -> datetime:
     """Get current UTC time (timezone-aware)."""
-    return datetime.now(timezone.utc)
-
-from .base import StorageBackend, StorageConfig
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -160,20 +160,26 @@ class MarkdownStorage(StorageBackend):
             "name": self.config.instance_name,
             "scope": existing.get("instance", {}).get("scope", "personal"),
         }
-        existing.setdefault("storage", {
-            "type": "markdown",
-            "path": str(self.base_path),
-        })
+        existing.setdefault(
+            "storage",
+            {
+                "type": "markdown",
+                "path": str(self.base_path),
+            },
+        )
         # NOTE: we intentionally do NOT write a `sync:` block here. The legacy
         # `sync:` stanza (enabled/server_url/sync_patterns/sync_episodes)
         # configured the old learning-engine sync and never drove server sync —
         # it made config.yaml claim sync was off while the `upstream` subsystem
         # synced anyway. Server sync is owned entirely by the `upstream:` config
         # + `.sync_state_<instance_id>`; query it with `hopper sync status`.
-        existing.setdefault("defaults", {
-            "priority": "medium",
-            "status": "pending",
-        })
+        existing.setdefault(
+            "defaults",
+            {
+                "priority": "medium",
+                "status": "pending",
+            },
+        )
 
         config_file.write_text(yaml.dump(existing, default_flow_style=False, sort_keys=False))
 
@@ -367,9 +373,7 @@ class MarkdownStorage(StorageBackend):
         # Remove from tag index
         for tag in task_data.get("tags", []):
             if tag in self._index["by_tag"]:
-                self._index["by_tag"][tag] = [
-                    t for t in self._index["by_tag"][tag] if t != task_id
-                ]
+                self._index["by_tag"][tag] = [t for t in self._index["by_tag"][tag] if t != task_id]
 
         # Remove from project index
         project = task_data.get("project")

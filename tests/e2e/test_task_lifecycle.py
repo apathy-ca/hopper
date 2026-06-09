@@ -13,13 +13,13 @@ Tests the complete journey of a task through the system:
 """
 
 import pytest
-pytestmark = pytest.mark.skip(reason="E2E test: Requires running API server, MCP, and CLI integration")
-
-
-import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+pytestmark = pytest.mark.skip(
+    reason="E2E test: Requires running API server, MCP, and CLI integration"
+)
 
 
 @pytest.mark.e2e
@@ -35,7 +35,7 @@ class TestTaskLifecycle:
         # Step 1: Create task via MCP
         from tests.utils import build_mcp_tool_call
 
-        mcp_create = build_mcp_tool_call(
+        build_mcp_tool_call(
             "hopper_create_task",
             {
                 "title": "E2E Lifecycle Test Task",
@@ -76,7 +76,7 @@ class TestTaskLifecycle:
         assert api_task["priority"] == "urgent"
 
         # Step 6: Verify update appears in MCP
-        mcp_get = build_mcp_tool_call("hopper_get_task", {"task_id": task_id})
+        build_mcp_tool_call("hopper_get_task", {"task_id": task_id})
         # MCP should return updated task
 
         # Step 7: Complete task via API

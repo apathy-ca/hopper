@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from hopper.cli.config import Config, ProfileConfig
-from hopper.cli.main import cli, Context
+from hopper.cli.main import Context, cli
 
 
 @pytest.fixture
@@ -91,51 +91,37 @@ class TestConfigSet:
         assert reloaded.current_profile.upstream.server == "https://upstream.example.com"
 
     def test_set_upstream_enabled(self, runner: CliRunner, ctx: Context) -> None:
-        result = runner.invoke(
-            cli, ["config", "set", "upstream.enabled", "true"], obj=ctx
-        )
+        result = runner.invoke(cli, ["config", "set", "upstream.enabled", "true"], obj=ctx)
         assert result.exit_code == 0
         reloaded = Config.load_from_file(ctx.config.config_path)
         assert reloaded.current_profile.upstream.enabled is True
 
     def test_set_github_token(self, runner: CliRunner, ctx: Context) -> None:
-        result = runner.invoke(
-            cli, ["config", "set", "github.token", "ghp_test123"], obj=ctx
-        )
+        result = runner.invoke(cli, ["config", "set", "github.token", "ghp_test123"], obj=ctx)
         assert result.exit_code == 0
         reloaded = Config.load_from_file(ctx.config.config_path)
         assert reloaded.current_profile.github.token == "ghp_test123"
 
     def test_set_api_timeout(self, runner: CliRunner, ctx: Context) -> None:
-        result = runner.invoke(
-            cli, ["config", "set", "api.timeout", "60"], obj=ctx
-        )
+        result = runner.invoke(cli, ["config", "set", "api.timeout", "60"], obj=ctx)
         assert result.exit_code == 0
         reloaded = Config.load_from_file(ctx.config.config_path)
         assert reloaded.current_profile.api.timeout == 60
 
     def test_set_knowledge_enabled(self, runner: CliRunner, ctx: Context) -> None:
-        result = runner.invoke(
-            cli, ["config", "set", "knowledge.enabled", "false"], obj=ctx
-        )
+        result = runner.invoke(cli, ["config", "set", "knowledge.enabled", "false"], obj=ctx)
         assert result.exit_code == 0
         reloaded = Config.load_from_file(ctx.config.config_path)
         assert reloaded.current_profile.knowledge.enabled is False
 
     def test_set_unknown_key(self, runner: CliRunner, ctx: Context) -> None:
-        result = runner.invoke(
-            cli, ["config", "set", "nonexistent.key", "value"], obj=ctx
-        )
+        result = runner.invoke(cli, ["config", "set", "nonexistent.key", "value"], obj=ctx)
         assert result.exit_code != 0
 
     def test_set_null_value(self, runner: CliRunner, ctx: Context) -> None:
         # First set a value, then null it out
-        runner.invoke(
-            cli, ["config", "set", "upstream.server", "https://example.com"], obj=ctx
-        )
-        result = runner.invoke(
-            cli, ["config", "set", "upstream.server", "null"], obj=ctx
-        )
+        runner.invoke(cli, ["config", "set", "upstream.server", "https://example.com"], obj=ctx)
+        result = runner.invoke(cli, ["config", "set", "upstream.server", "null"], obj=ctx)
         assert result.exit_code == 0
         reloaded = Config.load_from_file(ctx.config.config_path)
         assert reloaded.current_profile.upstream.server is None

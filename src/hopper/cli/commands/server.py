@@ -79,13 +79,13 @@ def start_server(
         subprocess.run(cmd)
     except KeyboardInterrupt:
         print_info("\nServer stopped")
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         print_error("uvicorn not found. Is Hopper installed?")
         print_info("Try: pip install hopper[dev]")
-        raise click.Abort()
+        raise click.Abort() from e
     except Exception as e:
         print_error(f"Failed to start server: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @server.command(name="stop")
@@ -118,7 +118,7 @@ def stop_server(ctx: Context, force: bool) -> None:
 
     except Exception as e:
         print_error(f"Failed to stop server: {e}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @server.command(name="status")

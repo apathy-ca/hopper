@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from hopper.timeutils import utc_now_naive
+
 
 @dataclass
 class SimilarTask:
@@ -73,7 +75,7 @@ class RoutingContext:
     user_id: str | None = None
 
     # Metadata
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utc_now_naive)
     expires_at: datetime | None = None
 
     # Additional context
@@ -177,9 +179,7 @@ class RoutingContext:
             user_id=data.get("user_id"),
             created_at=datetime.fromisoformat(data["created_at"]),
             expires_at=(
-                datetime.fromisoformat(data["expires_at"])
-                if data.get("expires_at")
-                else None
+                datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None
             ),
             metadata=data.get("metadata", {}),
         )

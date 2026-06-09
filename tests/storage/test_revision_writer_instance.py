@@ -14,7 +14,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, Record, Revision
+from hopper.models import HopperInstance, Record
 from hopper.storage.revision_writer import AuthorContext, write_revision
 
 
@@ -26,9 +26,12 @@ def test_write_revision_on_fresh_db_creates_readable_instance(db_session: Sessio
     """First records write on a fresh DB must succeed AND leave an ORM-readable instance row."""
     instance_id = "BrandNewInstance"
     # No hopper_instances row exists yet — this is the path that used to crash.
-    assert db_session.execute(
-        select(HopperInstance).where(HopperInstance.id == instance_id)
-    ).scalar_one_or_none() is None
+    assert (
+        db_session.execute(
+            select(HopperInstance).where(HopperInstance.id == instance_id)
+        ).scalar_one_or_none()
+        is None
+    )
 
     write_revision(
         db_session,
@@ -68,7 +71,9 @@ def test_ensure_instance_is_idempotent(db_session: Session) -> None:
     )
     db_session.flush()
 
-    rows = db_session.execute(
-        select(HopperInstance).where(HopperInstance.id == instance_id)
-    ).scalars().all()
+    rows = (
+        db_session.execute(select(HopperInstance).where(HopperInstance.id == instance_id))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1

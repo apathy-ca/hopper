@@ -4,14 +4,15 @@ Feedback analytics for routing accuracy analysis.
 
 import logging
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from hopper.models import Task, TaskFeedback
+from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,9 @@ class FeedbackAnalytics:
         avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
 
         # Complexity
-        complexities = [f.complexity_rating for f in feedback_list if f.complexity_rating is not None]
+        complexities = [
+            f.complexity_rating for f in feedback_list if f.complexity_rating is not None
+        ]
         avg_complexity = sum(complexities) / len(complexities) if complexities else 0.0
 
         # Rework
@@ -239,13 +242,15 @@ class FeedbackAnalytics:
 
         # Blockers
         tasks_with_blockers = sum(
-            1 for f in feedback_list
+            1
+            for f in feedback_list
             if f.unexpected_blockers and f.unexpected_blockers.get("blockers")
         )
 
         # Missing skills
         missing_skills = sum(
-            1 for f in feedback_list
+            1
+            for f in feedback_list
             if f.required_skills_not_tagged and f.required_skills_not_tagged.get("skills")
         )
 
@@ -336,12 +341,14 @@ class FeedbackAnalytics:
             if key not in patterns:
                 patterns[key] = []
 
-            patterns[key].append({
-                "task_id": feedback.task_id,
-                "task_title": task.title,
-                "tags": task.tags,
-                "feedback": feedback.routing_feedback,
-            })
+            patterns[key].append(
+                {
+                    "task_id": feedback.task_id,
+                    "task_title": task.title,
+                    "tags": task.tags,
+                    "feedback": feedback.routing_feedback,
+                }
+            )
 
         # Convert to list and sort by frequency
         result_list = []
@@ -354,13 +361,15 @@ class FeedbackAnalytics:
                 if ex["tags"]:
                     all_tags.update(ex["tags"].keys())
 
-            result_list.append({
-                "routed_to": actual,
-                "should_have_been": suggested,
-                "count": len(examples),
-                "common_tags": all_tags.most_common(5),
-                "examples": examples[:3],  # Limit examples
-            })
+            result_list.append(
+                {
+                    "routed_to": actual,
+                    "should_have_been": suggested,
+                    "count": len(examples),
+                    "common_tags": all_tags.most_common(5),
+                    "examples": examples[:3],  # Limit examples
+                }
+            )
 
         return result_list
 
@@ -377,7 +386,7 @@ class FeedbackAnalytics:
         Returns:
             Summary dictionary
         """
-        since = datetime.utcnow() - timedelta(days=days)
+        since = utc_now_naive() - timedelta(days=days)
 
         accuracy = self.get_routing_accuracy(since=since)
         quality = self.get_quality_report(since=since)
@@ -386,5 +395,5 @@ class FeedbackAnalytics:
             "period_days": days,
             "routing_accuracy": accuracy.to_dict(),
             "quality_metrics": quality.to_dict(),
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": utc_now_naive().isoformat(),
         }

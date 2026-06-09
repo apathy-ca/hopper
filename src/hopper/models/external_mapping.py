@@ -2,11 +2,15 @@
 External Mapping model for Hopper.
 """
 
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+
+if TYPE_CHECKING:
+    from .task import Task
 
 
 class ExternalMapping(Base):

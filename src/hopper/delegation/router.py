@@ -221,8 +221,7 @@ class InstanceRouter:
         # Find any running child instance
         children = source_instance.children
         running_children = [
-            c for c in children
-            if c.status in (InstanceStatus.RUNNING, InstanceStatus.CREATED)
+            c for c in children if c.status in (InstanceStatus.RUNNING, InstanceStatus.CREATED)
         ]
 
         if running_children:
@@ -237,11 +236,7 @@ class InstanceRouter:
             select(HopperInstance)
             .where(HopperInstance.scope == HopperScope.PROJECT)
             .where(HopperInstance.name == project_name)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         return result.scalar_one_or_none()
@@ -257,11 +252,7 @@ class InstanceRouter:
             select(HopperInstance)
             .where(HopperInstance.parent_id == parent_id)
             .where(HopperInstance.scope == HopperScope.PROJECT)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         projects = result.scalars().all()
@@ -288,11 +279,7 @@ class InstanceRouter:
             select(HopperInstance)
             .where(HopperInstance.parent_id == parent.id)
             .where(HopperInstance.scope == scope)
-            .where(
-                HopperInstance.status.in_(
-                    [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-                )
-            )
+            .where(HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED]))
         )
         result = self.session.execute(query)
         children = result.scalars().all()
@@ -434,9 +421,7 @@ class InstanceRouter:
             List of available instances
         """
         query = select(HopperInstance).where(
-            HopperInstance.status.in_(
-                [InstanceStatus.RUNNING, InstanceStatus.CREATED]
-            )
+            HopperInstance.status.in_([InstanceStatus.RUNNING, InstanceStatus.CREATED])
         )
 
         if scope:

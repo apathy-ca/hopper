@@ -12,12 +12,11 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .client import UpstreamClient, UpstreamError
-from .did import DIDKey
 from .protocol import SyncTask
 
 if TYPE_CHECKING:
@@ -89,11 +88,11 @@ def _datetime_to_ms(dt: datetime | None) -> int:
     if dt is None:
         return 0
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return int(dt.timestamp() * 1000)
 
 
-def _local_task_to_sync_task(task: "LocalTask") -> SyncTask:
+def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
     """Convert a LocalTask to SyncTask for the wire."""
     return SyncTask(
         id=task.id,
@@ -128,7 +127,7 @@ def _local_task_to_sync_task(task: "LocalTask") -> SyncTask:
 
 def _apply_sync_task_to_local(
     sync_task: SyncTask,
-    task_store: "TaskMarkdownStore",
+    task_store: TaskMarkdownStore,
 ) -> str | None:
     """Apply a SyncTask to local storage.
 
@@ -220,7 +219,7 @@ def _apply_sync_task_to_local(
 
 
 def sync_with_upstream(
-    task_store: "TaskMarkdownStore",
+    task_store: TaskMarkdownStore,
     client: UpstreamClient,
     state_path: Path,
     instance: str = "local",

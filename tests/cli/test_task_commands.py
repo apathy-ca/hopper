@@ -1,15 +1,14 @@
 """Tests for task management commands."""
 
-import pytest
 from unittest.mock import Mock
 
+import pytest
 from click.testing import CliRunner
 
 from hopper.cli.main import cli
 
 # Mark tests requiring API integration
 pytestmark = pytest.mark.skip(reason="CLI integration: Requires running API or complex mocking")
-
 
 
 def test_task_add_with_title(runner: CliRunner, mock_client: Mock, mock_context) -> None:
@@ -36,7 +35,7 @@ def test_task_add_with_options(runner: CliRunner, mock_client: Mock, mock_contex
             "urgent",
             "--json",
         ],
-        obj=mock_config,
+        obj=mock_context,
     )
 
     assert result.exit_code == 0
@@ -57,7 +56,7 @@ def test_task_list(runner: CliRunner, mock_client: Mock, mock_context) -> None:
 def test_task_list_with_filters(runner: CliRunner, mock_client: Mock, mock_context) -> None:
     """Test listing tasks with filters."""
     result = runner.invoke(
-        cli, ["task", "list", "--status", "open", "--priority", "high", "--json"], obj=mock_config
+        cli, ["task", "list", "--status", "open", "--priority", "high", "--json"], obj=mock_context
     )
 
     assert result.exit_code == 0
@@ -79,7 +78,7 @@ def test_task_update(runner: CliRunner, mock_client: Mock, mock_context) -> None
     mock_client.update_task.return_value = {"id": "task-123", "title": "Updated"}
 
     result = runner.invoke(
-        cli, ["task", "update", "task-123", "--title", "Updated title", "--json"], obj=mock_config
+        cli, ["task", "update", "task-123", "--title", "Updated title", "--json"], obj=mock_context
     )
 
     assert result.exit_code == 0
@@ -91,7 +90,7 @@ def test_task_status(runner: CliRunner, mock_client: Mock, mock_context) -> None
     mock_client.update_task.return_value = {"id": "task-123", "status": "completed"}
 
     result = runner.invoke(
-        cli, ["task", "status", "task-123", "completed", "--force", "--json"], obj=mock_config
+        cli, ["task", "status", "task-123", "completed", "--force", "--json"], obj=mock_context
     )
 
     assert result.exit_code == 0

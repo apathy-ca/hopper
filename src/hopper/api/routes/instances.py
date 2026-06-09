@@ -4,13 +4,11 @@ Instance management API endpoints.
 Provides CRUD operations, hierarchy management, and lifecycle control for Hopper instances.
 """
 
-from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from hopper.api.dependencies import PaginationParams, get_db
 from hopper.api.exceptions import (
@@ -32,6 +30,7 @@ from hopper.models import HopperInstance, Task
 from hopper.models import HopperScope as HopperScopeEnum
 from hopper.models import InstanceStatus as InstanceStatusEnum
 from hopper.models import InstanceType as InstanceTypeEnum
+from hopper.timeutils import utc_now_naive
 
 router = APIRouter()
 
@@ -40,7 +39,11 @@ router = APIRouter()
 VALID_TRANSITIONS = {
     InstanceStatusEnum.CREATED: [InstanceStatusEnum.STARTING, InstanceStatusEnum.TERMINATED],
     InstanceStatusEnum.STARTING: [InstanceStatusEnum.RUNNING, InstanceStatusEnum.ERROR],
-    InstanceStatusEnum.RUNNING: [InstanceStatusEnum.STOPPING, InstanceStatusEnum.PAUSED, InstanceStatusEnum.ERROR],
+    InstanceStatusEnum.RUNNING: [
+        InstanceStatusEnum.STOPPING,
+        InstanceStatusEnum.PAUSED,
+        InstanceStatusEnum.ERROR,
+    ],
     InstanceStatusEnum.STOPPING: [InstanceStatusEnum.STOPPED, InstanceStatusEnum.ERROR],
     InstanceStatusEnum.STOPPED: [InstanceStatusEnum.STARTING, InstanceStatusEnum.TERMINATED],
     InstanceStatusEnum.PAUSED: [InstanceStatusEnum.RUNNING, InstanceStatusEnum.STOPPING],
@@ -54,9 +57,19 @@ def _instance_to_response(instance: HopperInstance) -> InstanceResponse:
     return InstanceResponse(
         id=instance.id,
         name=instance.name,
-        scope=instance.scope.value if isinstance(instance.scope, HopperScopeEnum) else instance.scope,
-        status=instance.status.value if isinstance(instance.status, InstanceStatusEnum) else instance.status,
-        instance_type=instance.instance_type.value if isinstance(instance.instance_type, InstanceTypeEnum) else instance.instance_type,
+        scope=(
+            instance.scope.value if isinstance(instance.scope, HopperScopeEnum) else instance.scope
+        ),
+        status=(
+            instance.status.value
+            if isinstance(instance.status, InstanceStatusEnum)
+            else instance.status
+        ),
+        instance_type=(
+            instance.instance_type.value
+            if isinstance(instance.instance_type, InstanceTypeEnum)
+            else instance.instance_type
+        ),
         parent_id=instance.parent_id,
         config=instance.config,
         runtime_metadata=instance.runtime_metadata,
@@ -260,7 +273,7 @@ async def update_instance(
         else:
             setattr(instance, field, value)
 
-    instance.updated_at = datetime.utcnow()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(instance)
@@ -302,8 +315,8 @@ async def delete_instance(
 
     # Soft delete
     instance.status = InstanceStatusEnum.TERMINATED
-    instance.stopped_at = datetime.utcnow()
-    instance.updated_at = datetime.utcnow()
+    instance.stopped_at = utc_now_naive()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
 
@@ -473,6 +486,7 @@ async def get_instance_tasks(
 
 # Lifecycle endpoints
 
+
 @router.post("/instances/{instance_id}/start", response_model=InstanceResponse)
 async def start_instance(
     instance_id: str,
@@ -504,9 +518,9 @@ async def start_instance(
         raise InvalidStateTransitionException(instance.status.value, "starting")
 
     instance.status = InstanceStatusEnum.RUNNING
-    instance.started_at = datetime.utcnow()
+    instance.started_at = utc_now_naive()
     instance.stopped_at = None
-    instance.updated_at = datetime.utcnow()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(instance)
@@ -545,8 +559,8 @@ async def stop_instance(
         raise InvalidStateTransitionException(instance.status.value, "stopping")
 
     instance.status = InstanceStatusEnum.STOPPED
-    instance.stopped_at = datetime.utcnow()
-    instance.updated_at = datetime.utcnow()
+    instance.stopped_at = utc_now_naive()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(instance)
@@ -581,9 +595,9 @@ async def restart_instance(
 
     # Set to running (restart)
     instance.status = InstanceStatusEnum.RUNNING
-    instance.started_at = datetime.utcnow()
+    instance.started_at = utc_now_naive()
     instance.stopped_at = None
-    instance.updated_at = datetime.utcnow()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(instance)
@@ -622,7 +636,7 @@ async def pause_instance(
         raise InvalidStateTransitionException(instance.status.value, "paused")
 
     instance.status = InstanceStatusEnum.PAUSED
-    instance.updated_at = datetime.utcnow()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(instance)
@@ -661,7 +675,7 @@ async def resume_instance(
         raise InvalidStateTransitionException(instance.status.value, "running")
 
     instance.status = InstanceStatusEnum.RUNNING
-    instance.updated_at = datetime.utcnow()
+    instance.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(instance)

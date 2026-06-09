@@ -18,6 +18,8 @@ from unittest.mock import Mock
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
+from hopper.timeutils import utc_now_naive
+
 # ============================================================================
 # Assertion Helpers
 # ============================================================================
@@ -98,7 +100,7 @@ def assert_timestamp_recent(timestamp: datetime, seconds: int = 5):
         timestamp: Datetime to check
         seconds: Number of seconds to consider "recent" (default: 5)
     """
-    now = datetime.utcnow()
+    now = utc_now_naive()
     delta = now - timestamp
     assert (
         delta.total_seconds() <= seconds
@@ -343,8 +345,8 @@ def build_task_response(task_data: dict[str, Any]) -> dict[str, Any]:
         "project": task_data.get("project"),
         "status": task_data["status"],
         "priority": task_data["priority"],
-        "created_at": task_data.get("created_at", datetime.utcnow().isoformat()),
-        "updated_at": task_data.get("updated_at", datetime.utcnow().isoformat()),
+        "created_at": task_data.get("created_at", utc_now_naive().isoformat()),
+        "updated_at": task_data.get("updated_at", utc_now_naive().isoformat()),
     }
 
 
@@ -388,7 +390,7 @@ def days_ago(days: int) -> datetime:
     Returns:
         Datetime object
     """
-    return datetime.utcnow() - timedelta(days=days)
+    return utc_now_naive() - timedelta(days=days)
 
 
 def days_from_now(days: int) -> datetime:
@@ -401,7 +403,7 @@ def days_from_now(days: int) -> datetime:
     Returns:
         Datetime object
     """
-    return datetime.utcnow() + timedelta(days=days)
+    return utc_now_naive() + timedelta(days=days)
 
 
 def hours_ago(hours: int) -> datetime:
@@ -414,7 +416,7 @@ def hours_ago(hours: int) -> datetime:
     Returns:
         Datetime object
     """
-    return datetime.utcnow() - timedelta(hours=hours)
+    return utc_now_naive() - timedelta(hours=hours)
 
 
 # ============================================================================
@@ -486,7 +488,7 @@ def parse_cli_table_output(output: str) -> list[dict[str, str]]:
         if line.strip() and not line.strip().startswith("-"):
             values = [v.strip() for v in line.split("|") if v.strip()]
             if len(values) == len(headers):
-                rows.append(dict(zip(headers, values)))
+                rows.append(dict(zip(headers, values, strict=True)))
 
     return rows
 

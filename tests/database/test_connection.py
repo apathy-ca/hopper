@@ -6,6 +6,7 @@ import os
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import DatabaseError
 
 from hopper.database.connection import (
     create_sync_engine,
@@ -89,7 +90,7 @@ def test_sync_session_rollback_on_error():
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(DatabaseError):
             with get_sync_session() as session:
                 # This will raise an error
                 session.execute(text("SELECT * FROM nonexistent_table"))

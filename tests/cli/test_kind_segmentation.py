@@ -34,10 +34,16 @@ class TestMemoryAdd:
         result = runner.invoke(
             cli,
             [
-                "--json", "memory", "add", "User prefers terse responses",
-                "--subject", "user:preferences",
-                "--scope", "shared-across-agents",
-                "--provenance", "conversation 2026-05-30",
+                "--json",
+                "memory",
+                "add",
+                "User prefers terse responses",
+                "--subject",
+                "user:preferences",
+                "--scope",
+                "shared-across-agents",
+                "--provenance",
+                "conversation 2026-05-30",
                 "--non-interactive",
             ],
         )
@@ -77,8 +83,13 @@ class TestContextSegmentation:
 
         runner.invoke(
             cli,
-            ["--json", "memory", "add", "Remember the API key rotates monthly",
-             "--non-interactive"],
+            [
+                "--json",
+                "memory",
+                "add",
+                "Remember the API key rotates monthly",
+                "--non-interactive",
+            ],
         )
         runner.invoke(cli, ["--json", "task", "add", "Ship the release", "--tag", "rel"])
 

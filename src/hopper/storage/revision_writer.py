@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -76,7 +76,7 @@ def write_revision(
     # Ensure hopper_instances row exists (raw SQL, same approach as shadow writer)
     RevisionShadowWriter._ensure_instance(session, instance_id)
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
 
     existing = session.get(Record, task_id)
     revision_id = new_ulid()
@@ -150,7 +150,7 @@ def propose_revision(
 
     RevisionShadowWriter._ensure_instance(session, instance_id)
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
 
     existing = session.get(Record, task_id)
     if existing is None:
@@ -196,7 +196,7 @@ def apply_revision(
     if record is None:
         raise ValueError(f"Record {proposal.record_id!r} not found")
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     apply_rev_id = new_ulid()
 
     apply_rev = Revision(
@@ -237,7 +237,7 @@ def reject_revision(
     if proposal.action != RevisionAction.PROPOSE.value:
         raise ValueError(f"Revision {revision_id!r} has action={proposal.action!r}, not 'propose'")
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     reject_rev_id = new_ulid()
     payload = dict(proposal.payload or {})
     if reason:
@@ -271,7 +271,7 @@ def tombstone_revision(
 
     Used by mark_deleted / delete to record soft-delete in revision history.
     """
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(UTC).replace(tzinfo=None)
     existing = session.get(Record, task_id)
 
     revision_id = new_ulid()

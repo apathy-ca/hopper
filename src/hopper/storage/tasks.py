@@ -5,15 +5,17 @@ Task storage implementations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .markdown import MarkdownDocument, MarkdownStorage
+
 
 def _utc_now() -> datetime:
     """Get current UTC time (timezone-aware)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime | None:
@@ -26,15 +28,12 @@ def _parse_datetime(value: str | datetime | None) -> datetime | None:
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.replace(tzinfo=UTC)
         return value
     dt = datetime.fromisoformat(value)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
-
-from .base import TaskStore
-from .markdown import MarkdownDocument, MarkdownStorage
 
 
 @dataclass
@@ -105,7 +104,7 @@ class LocalTask:
         scope: str | None = None,
         provenance: str | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
-    ) -> "LocalTask":
+    ) -> LocalTask:
         """Create a new task with generated ID."""
         now = _utc_now()
         return cls(
@@ -186,7 +185,7 @@ class LocalTask:
         return data
 
     @classmethod
-    def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> "LocalTask":
+    def from_frontmatter(cls, fm: dict[str, Any], content: str = "") -> LocalTask:
         """Create from frontmatter dict."""
         created = fm.get("created_at")
         updated = fm.get("updated_at")
@@ -250,9 +249,7 @@ class TaskMarkdownStore:
 
         # Also check filesystem for tasks not yet indexed
         if not matches:
-            matches = [
-                f.stem for f in self.storage.tasks_path.glob(f"{task_id}*.md")
-            ]
+            matches = [f.stem for f in self.storage.tasks_path.glob(f"{task_id}*.md")]
 
         if len(matches) == 1:
             return matches[0]
@@ -377,8 +374,7 @@ class TaskMarkdownStore:
             else:
                 tasks_meta = index.get("tasks", {})
                 task_ids = {
-                    tid for tid in task_ids
-                    if tasks_meta.get(tid, {}).get("kind", "task") == wanted
+                    tid for tid in task_ids if tasks_meta.get(tid, {}).get("kind", "task") == wanted
                 }
 
         include_deleted = filters.pop("include_deleted", False)

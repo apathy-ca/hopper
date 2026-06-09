@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from .did import verify_signature
 from .protocol import SyncConflict, SyncRequest, SyncResponse
-from .storage import DIDStatus, GLOBAL_NS, Invite, UpstreamStorage
+from .storage import GLOBAL_NS, DIDRecord, DIDStatus, Invite, UpstreamStorage
 
 
 class NamespaceApprovalInfo(BaseModel):
@@ -44,6 +44,7 @@ class DIDListResponse(BaseModel):
 
     admin_did: str | None
     dids: list[DIDInfo]
+
 
 router = APIRouter()
 
@@ -121,7 +122,7 @@ async def sync(
     try:
         sync_req = SyncRequest.model_validate_json(body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request body: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request body: {e}") from e
 
     namespace = sync_req.instance
 
@@ -178,8 +179,7 @@ async def sync(
     )
 
 
-def _did_info(record: "DIDRecord") -> DIDInfo:
-    from .storage import DIDStatus
+def _did_info(record: DIDRecord) -> DIDInfo:
     return DIDInfo(
         did=record.did,
         created_at=record.created_at,
@@ -249,12 +249,12 @@ async def approve_did(
     try:
         req = ApproveRequest.model_validate_json(body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
     try:
         role = DIDStatus(req.role)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}") from e
 
     success, message = storage.did_registry.approve(
         req.did, namespace=req.namespace, by_did=did, role=role
@@ -275,7 +275,7 @@ async def revoke_did(
     try:
         req = ApproveRequest.model_validate_json(body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
     success, message = storage.did_registry.revoke(req.did, namespace=req.namespace, by_did=did)
     if not success:
@@ -349,12 +349,12 @@ async def invite_create(
     try:
         req = InviteCreateRequest.model_validate_json(body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
     try:
         role = DIDStatus(req.role)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}") from e
     if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
         raise HTTPException(status_code=400, detail="role must be approved or approver")
 
@@ -399,7 +399,7 @@ async def invite_redeem(
     try:
         req = InviteRedeemRequest.model_validate_json(body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
     reg = storage.did_registry
 
@@ -452,7 +452,8 @@ async def invite_list(
     else:
         # Approver only sees invites for namespaces they can approve.
         visible = [
-            inv for inv in all_invites
+            inv
+            for inv in all_invites
             if reg.is_approver(did, inv.namespace) or inv.issued_by == did
         ]
     return InviteListResponse(invites=[_invite_info(i) for i in visible])
@@ -469,12 +470,13 @@ async def invite_revoke(
     try:
         req = InviteRevokeRequest.model_validate_json(body)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
     # Look up first so we can authority-check before revoking.
     reg = storage.did_registry
     matches = [
-        p for p in storage.invites.invites_dir.glob("*.json")
+        p
+        for p in storage.invites.invites_dir.glob("*.json")
         if p.stem.startswith(req.token_hash_prefix)
     ]
     if not matches:
@@ -549,7 +551,8 @@ def _init_admin_did(storage_path: Path) -> tuple[str, bool]:
 
 def run_server(
     storage_path: Path,
-    host: str = "0.0.0.0",
+    # The upstream server is meant to be network-reachable by default.
+    host: str = "0.0.0.0",  # nosec B104
     port: int = 8080,
 ) -> None:
     """Run the upstream server."""
@@ -581,6 +584,7 @@ def run_server(
     # Pre-register admin DID
     if _storage:
         from hopper.upstream.storage import GLOBAL_NS
+
         _storage.did_registry.register_or_get(admin_did, GLOBAL_NS)
 
     uvicorn.run(app, host=host, port=port)

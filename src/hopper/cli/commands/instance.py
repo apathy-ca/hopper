@@ -1,6 +1,5 @@
 """Instance management commands."""
 
-
 import click
 from rich.prompt import Confirm, Prompt
 
@@ -76,7 +75,7 @@ def create_instance(
             instance_data["config"] = json.loads(config)
         except json.JSONDecodeError as e:
             print_error(f"Invalid JSON config: {e}")
-            raise click.Abort()
+            raise click.Abort() from e
 
     # Create instance
     try:
@@ -91,7 +90,7 @@ def create_instance(
 
     except APIError as e:
         print_error(f"Failed to create instance: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @instance.command(name="list")
@@ -165,7 +164,7 @@ def list_instances(
 
     except APIError as e:
         print_error(f"Failed to list instances: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @instance.command(name="get")
@@ -215,12 +214,14 @@ def get_instance(ctx: Context, instance_id: str) -> None:
 
     except APIError as e:
         print_error(f"Failed to get instance: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @instance.command(name="tree")
 @click.option("--root", help="Root instance ID (default: show all)")
-@click.option("--scope", type=click.Choice(["global", "project", "orchestration"]), help="Filter by scope")
+@click.option(
+    "--scope", type=click.Choice(["global", "project", "orchestration"]), help="Filter by scope"
+)
 @click.option("--no-tasks", is_flag=True, help="Hide task counts")
 @click.pass_obj
 def show_tree(ctx: Context, root: str | None, scope: str | None, no_tasks: bool) -> None:
@@ -249,7 +250,7 @@ def show_tree(ctx: Context, root: str | None, scope: str | None, no_tasks: bool)
 
     except APIError as e:
         print_error(f"Failed to get instance tree: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @instance.command(name="start")
@@ -272,7 +273,7 @@ def start_instance(ctx: Context, instance_id: str) -> None:
 
     except APIError as e:
         print_error(f"Failed to start instance: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @instance.command(name="stop")
@@ -302,7 +303,7 @@ def stop_instance(ctx: Context, instance_id: str, force: bool) -> None:
 
     except APIError as e:
         print_error(f"Failed to stop instance: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @instance.command(name="status")
@@ -346,4 +347,4 @@ def get_status(ctx: Context, instance_id: str) -> None:
 
     except APIError as e:
         print_error(f"Failed to get instance status: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e

@@ -105,12 +105,8 @@ class DelegationChainResponse(BaseModel):
 
     task_id: str
     delegations: list[DelegationResponse]
-    current_instance_id: str | None = Field(
-        None, description="Current instance where task resides"
-    )
-    origin_instance_id: str | None = Field(
-        None, description="Instance where task originated"
-    )
+    current_instance_id: str | None = Field(None, description="Current instance where task resides")
+    origin_instance_id: str | None = Field(None, description="Instance where task originated")
     total_delegations: int
 
     model_config = ConfigDict(from_attributes=True)

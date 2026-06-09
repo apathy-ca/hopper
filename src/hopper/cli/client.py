@@ -237,7 +237,9 @@ class HopperClient:
         """Get delegation chain for a task."""
         return self.get(f"/api/v1/tasks/{task_id}/delegations")
 
-    def accept_delegation(self, delegation_id: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+    def accept_delegation(
+        self, delegation_id: str, data: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Accept a delegation."""
         return self.post(f"/api/v1/delegations/{delegation_id}/accept", json=data or {})
 
@@ -245,7 +247,9 @@ class HopperClient:
         """Reject a delegation."""
         return self.post(f"/api/v1/delegations/{delegation_id}/reject", json={"reason": reason})
 
-    def complete_delegation(self, delegation_id: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
+    def complete_delegation(
+        self, delegation_id: str, result: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Complete a delegation."""
         return self.post(f"/api/v1/delegations/{delegation_id}/complete", json={"result": result})
 

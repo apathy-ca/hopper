@@ -15,11 +15,11 @@ from hopper.models import HopperInstance, Task
 class TaskActionType(str, Enum):
     """Types of actions a scope behavior can take on a task."""
 
-    DELEGATE = "delegate"      # Delegate to child instance
-    HANDLE = "handle"          # Handle directly at this instance
-    QUEUE = "queue"            # Add to execution queue
-    ESCALATE = "escalate"      # Escalate to parent instance
-    REJECT = "reject"          # Reject the task
+    DELEGATE = "delegate"  # Delegate to child instance
+    HANDLE = "handle"  # Handle directly at this instance
+    QUEUE = "queue"  # Add to execution queue
+    ESCALATE = "escalate"  # Escalate to parent instance
+    REJECT = "reject"  # Reject the task
 
 
 @dataclass

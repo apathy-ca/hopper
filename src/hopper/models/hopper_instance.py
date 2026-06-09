@@ -3,15 +3,19 @@ Hopper Instance model for multi-instance support.
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.types import JSON
 
 from .base import Base, TimestampMixin
 from .enums import HopperScope, InstanceStatus, InstanceType
+
+if TYPE_CHECKING:
+    from .task import Task
 
 
 class HopperInstance(Base, TimestampMixin):
@@ -25,22 +29,19 @@ class HopperInstance(Base, TimestampMixin):
     # Instance details
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     scope: Mapped[HopperScope] = mapped_column(
-        SQLEnum(HopperScope, name="hopper_scope", native_enum=False),
-        nullable=False
+        SQLEnum(HopperScope, name="hopper_scope", native_enum=False), nullable=False
     )
 
     # Instance type
     instance_type: Mapped[InstanceType] = mapped_column(
         SQLEnum(InstanceType, name="instance_type", native_enum=False),
         default=InstanceType.PERSISTENT,
-        nullable=False
+        nullable=False,
     )
 
     # Hierarchy
     parent_id: Mapped[str | None] = mapped_column(
-        String(100),
-        ForeignKey("hopper_instances.id", ondelete="CASCADE"),
-        nullable=True
+        String(100), ForeignKey("hopper_instances.id", ondelete="CASCADE"), nullable=True
     )
 
     # Configuration
@@ -58,7 +59,7 @@ class HopperInstance(Base, TimestampMixin):
     status: Mapped[InstanceStatus] = mapped_column(
         SQLEnum(InstanceStatus, name="instance_status", native_enum=False),
         default=InstanceStatus.CREATED,
-        nullable=False
+        nullable=False,
     )
 
     # Lifecycle timestamps

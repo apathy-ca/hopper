@@ -4,7 +4,6 @@ Task management API endpoints.
 Provides CRUD operations, filtering, search, and status updates for tasks.
 """
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
@@ -33,6 +32,7 @@ from hopper.api.schemas.task import (
 )
 from hopper.models import Task, TaskFeedback
 from hopper.models import TaskStatus as StatusEnum
+from hopper.timeutils import utc_now_naive
 
 router = APIRouter()
 
@@ -319,6 +319,7 @@ async def search_tasks(
         Matching tasks
     """
     if records_backend_enabled():
+
         def _search(sync_session) -> tuple[list[dict[str, Any]], int]:
             return _repo(sync_session).search(
                 q,
@@ -470,7 +471,7 @@ async def update_task(
     for field, value in update_data.items():
         setattr(task, field, value)
 
-    task.updated_at = datetime.utcnow()
+    task.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(task)
@@ -494,6 +495,7 @@ async def delete_task(
         NotFoundException: If task not found
     """
     if records_backend_enabled():
+
         def _delete(sync_session) -> bool:
             return _repo(sync_session).soft_delete(
                 task_id,
@@ -515,7 +517,7 @@ async def delete_task(
 
     # Soft delete by setting status to CANCELLED
     task.status = StatusEnum.CANCELLED
-    task.updated_at = datetime.utcnow()
+    task.updated_at = utc_now_naive()
 
     await db.flush()
 
@@ -584,7 +586,7 @@ async def update_task_status(
     task.status = new_status
     if status_update.owner is not None:
         task.owner = status_update.owner
-    task.updated_at = datetime.utcnow()
+    task.updated_at = utc_now_naive()
 
     await db.flush()
     await db.refresh(task)

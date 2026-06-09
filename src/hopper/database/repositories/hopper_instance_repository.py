@@ -2,11 +2,11 @@
 Hopper Instance repository for multi-instance management.
 """
 
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.hopper_instance import HopperInstance
+from hopper.timeutils import utc_now_naive
 
 from .base import BaseRepository
 
@@ -118,9 +118,8 @@ class HopperInstanceRepository(BaseRepository[HopperInstance]):
         Returns:
             Terminated instance or None if not found
         """
-        from datetime import datetime
 
-        return self.update(instance_id, status="terminated", terminated_at=datetime.utcnow())
+        return self.update(instance_id, status="terminated", terminated_at=utc_now_naive())
 
     def pause_instance(self, instance_id: str) -> HopperInstance | None:
         """

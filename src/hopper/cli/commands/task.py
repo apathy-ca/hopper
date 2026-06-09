@@ -16,7 +16,6 @@ from hopper.cli.output import (
     print_task_table,
 )
 
-
 # Combined error types for handling both client types
 ClientError = (APIError, LocalClientError)
 
@@ -63,8 +62,18 @@ def task() -> None:
     "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:acm-rewrite', 'human:james')"
 )
 @click.option("--parent", help="Parent task ID (creates a child task)")
-@click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author (agents must supply this)")
-@click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context for this write")
+@click.option(
+    "--author-did",
+    envvar="HOPPER_DID",
+    hidden=True,
+    help="DID of the author (agents must supply this)",
+)
+@click.option(
+    "--author-location",
+    envvar="HOPPER_LOCATION",
+    hidden=True,
+    help="Location context for this write",
+)
 @click.option("--kind", hidden=True, default="task", help="Record kind (task/idea/note/memory/…)")
 @click.option("--subject", hidden=True, help="Memory subject (memory records only)")
 @click.option("--scope", hidden=True, help="Memory scope (memory records only)")
@@ -102,7 +111,6 @@ def add_task(
         hopper task add "[backend] Build API" --brief-file .czarina/workers/backend.md -t czarina
         hopper task add --project my-project
     """
-    import sys
 
     # Interactive mode if no title provided
     if not title:
@@ -179,7 +187,7 @@ def add_task(
 
     except ClientError as e:
         print_error(f"Failed to create task: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="list")
@@ -273,7 +281,7 @@ def list_tasks(
 
     except ClientError as e:
         print_error(f"Failed to list tasks: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="get")
@@ -312,7 +320,7 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
 
     except ClientError as e:
         print_error(f"Failed to get task: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="update")
@@ -375,7 +383,7 @@ def update_task(
 
         except ClientError as e:
             print_error(f"Failed to get task: {e.message}")
-            raise click.Abort()
+            raise click.Abort() from e
 
     # Build update data
     update_data = {}
@@ -426,7 +434,7 @@ def update_task(
 
     except ClientError as e:
         print_error(f"Failed to update task: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="status")
@@ -484,7 +492,7 @@ def change_status(
 
     except ClientError as e:
         print_error(f"Failed to change status: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="delete")
@@ -506,7 +514,9 @@ def delete_task(ctx: Context, task_id: str, force: bool, author_did: str | None)
                 task = client.get_task(task_id)
             console.print(f"\n[bold]Task to delete:[/bold] {task.get('title', '')}\n")
         except ClientError:
-            console.print(f"\n[bold yellow]![/bold yellow] Could not fetch task details for {task_id}\n")
+            console.print(
+                f"\n[bold yellow]![/bold yellow] Could not fetch task details for {task_id}\n"
+            )
 
         if not Confirm.ask("[bold red]Delete this task?[/bold red]", default=False):
             print_info("Cancelled")
@@ -520,7 +530,7 @@ def delete_task(ctx: Context, task_id: str, force: bool, author_did: str | None)
         print_success(f"Deleted task {task_id}")
     except ClientError as e:
         print_error(f"Failed to delete task: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="search")
@@ -570,7 +580,7 @@ def search_tasks(
 
     except ClientError as e:
         print_error(f"Search failed: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="delegate")
@@ -620,7 +630,7 @@ def delegate_task(
 
     except ClientError as e:
         print_error(f"Failed to delegate task: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="delegations")
@@ -701,7 +711,7 @@ def show_delegations(ctx: Context, task_id: str) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get delegations: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 def _parse_duration(value: str) -> int:
@@ -711,6 +721,7 @@ def _parse_duration(value: str) -> int:
     Plain numbers are treated as minutes.
     """
     import re
+
     value = value.strip().lower()
 
     # Plain number = minutes
@@ -756,7 +767,9 @@ def task_children(ctx: Context, task_id: str, compact: bool) -> None:
             print_json({"parent": parent, "children": children})
         else:
             rollup = parent.get("children")
-            console.print(f"\n[bold cyan]Children of {parent['id'][:8]}[/bold cyan]: {parent.get('title', '')}")
+            console.print(
+                f"\n[bold cyan]Children of {parent['id'][:8]}[/bold cyan]: {parent.get('title', '')}"
+            )
             if rollup:
                 total = rollup["total"]
                 done = rollup["done"]
@@ -772,15 +785,16 @@ def task_children(ctx: Context, task_id: str, compact: bool) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get children: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="heartbeat")
 @click.argument("task_id")
 @click.option(
-    "--expect", "-e",
+    "--expect",
+    "-e",
     help="When to expect the next heartbeat (e.g. '30m', '2h', '1h30m'). "
-    "Use when starting a long-running process so stale detection won't fire early."
+    "Use when starting a long-running process so stale detection won't fire early.",
 )
 @click.pass_obj
 def task_heartbeat(ctx: Context, task_id: str, expect: str | None) -> None:
@@ -817,13 +831,16 @@ def task_heartbeat(ctx: Context, task_id: str, expect: str | None) -> None:
 
     except ClientError as e:
         print_error(f"Failed to update heartbeat: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="stale")
 @click.option(
-    "--minutes", "-m", type=int, default=30,
-    help="Minutes without heartbeat to consider stale (default: 30)"
+    "--minutes",
+    "-m",
+    type=int,
+    default=30,
+    help="Minutes without heartbeat to consider stale (default: 30)",
 )
 @click.option("--compact", is_flag=True, help="Compact layout")
 @click.pass_obj
@@ -851,15 +868,14 @@ def stale_tasks(ctx: Context, minutes: int, compact: bool) -> None:
             if tasks:
                 print_task_table(tasks, compact=compact)
                 print_info(
-                    f"Found {len(tasks)} stale task(s) "
-                    f"(no heartbeat in {minutes}+ minutes)"
+                    f"Found {len(tasks)} stale task(s) " f"(no heartbeat in {minutes}+ minutes)"
                 )
             else:
                 print_info(f"No stale tasks (threshold: {minutes} minutes)")
 
     except ClientError as e:
         print_error(f"Failed to check stale tasks: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @task.command(name="history")
@@ -888,7 +904,9 @@ def task_history(ctx: Context, task_id: str, limit: int) -> None:
             return
 
         if not revisions:
-            print_info(f"No revision history for {task_id} (SQLite backend required, or no writes yet)")
+            print_info(
+                f"No revision history for {task_id} (SQLite backend required, or no writes yet)"
+            )
             return
 
         from rich import box
@@ -933,7 +951,7 @@ def task_history(ctx: Context, task_id: str, limit: int) -> None:
 
     except ClientError as e:
         print_error(f"Failed to get history: {e.message}")
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 # Shortcuts

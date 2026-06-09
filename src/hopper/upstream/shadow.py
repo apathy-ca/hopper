@@ -19,7 +19,7 @@ writing is off and zero code runs in the hot path.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import create_engine, text
@@ -34,6 +34,7 @@ from hopper.models import (
     new_ulid,
 )
 from hopper.models.revision import SCHEMA_VERSION
+from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class RevisionShadowWriter:
         from_did = from_did or "unknown"
         instance_id = task_payload.get("instance") or "local"
         author_location = task_payload.get("source") or "unknown"
-        received_at = datetime.fromtimestamp(received_at_ms / 1000, tz=timezone.utc)
+        received_at = datetime.fromtimestamp(received_at_ms / 1000, tz=UTC)
         received_at_naive = received_at.replace(tzinfo=None)
 
         with Session(self._engine) as session:
@@ -143,7 +144,7 @@ class RevisionShadowWriter:
         ).first()
         if found is not None:
             return
-        now = datetime.utcnow()
+        now = utc_now_naive()
         # These columns are SQLEnum(..., native_enum=False), which SQLAlchemy
         # stores and reads back by enum NAME (e.g. "RUNNING", "PERSISTENT"), not
         # value. instance_type is NOT NULL with only a Python-side default, so a

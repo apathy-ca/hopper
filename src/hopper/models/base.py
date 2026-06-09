@@ -4,9 +4,10 @@ Base SQLAlchemy models and utilities.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime
-from sqlalchemy import MetaData
+from sqlalchemy import DateTime, MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from hopper.timeutils import utc_now_naive
 
 # Explicit naming convention so Alembic batch-mode on SQLite can drop/recreate
 # named constraints. Without this, anonymous FKs cannot be renamed in SQLite's
@@ -29,7 +30,7 @@ class Base(DeclarativeBase):
 class TimestampMixin:
     """Mixin for created_at and updated_at timestamps."""
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utc_now_naive, onupdate=utc_now_naive, nullable=False
     )

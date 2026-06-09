@@ -131,9 +131,22 @@ def test_get_response_shape_contains_full_task_response(records_client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     expected_keys = {
-        "id", "title", "description", "project", "tags", "priority",
-        "velocity_requirement", "requester", "created_at", "updated_at",
-        "status", "owner", "source", "depends_on", "blocks", "kind",
+        "id",
+        "title",
+        "description",
+        "project",
+        "tags",
+        "priority",
+        "velocity_requirement",
+        "requester",
+        "created_at",
+        "updated_at",
+        "status",
+        "owner",
+        "source",
+        "depends_on",
+        "blocks",
+        "kind",
     }
     assert expected_keys.issubset(body.keys())
     assert body["priority"] == "high"
@@ -179,9 +192,7 @@ def test_status_endpoint_transition(records_client):
 
 def test_status_endpoint_invalid_transition(records_client):
     created = _create_task(records_client)  # pending
-    resp = records_client.post(
-        f"/api/v1/tasks/{created['id']}/status", json={"status": "done"}
-    )
+    resp = records_client.post(f"/api/v1/tasks/{created['id']}/status", json={"status": "done"})
     assert resp.status_code == 400
 
 
