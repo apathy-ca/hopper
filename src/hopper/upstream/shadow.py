@@ -81,6 +81,10 @@ class RevisionShadowWriter:
         from_did = from_did or "unknown"
         instance_id = task_payload.get("instance") or "local"
         author_location = task_payload.get("source") or "unknown"
+        try:
+            record_type = RecordType(task_payload.get("kind", "task")).value
+        except ValueError:
+            record_type = RecordType.TASK.value
         received_at = datetime.fromtimestamp(received_at_ms / 1000, tz=UTC)
         received_at_naive = received_at.replace(tzinfo=None)
 
@@ -93,7 +97,7 @@ class RevisionShadowWriter:
             if existing is None:
                 record = Record(
                     id=task_id,
-                    type=RecordType.TASK.value,
+                    type=record_type,
                     instance_id=instance_id,
                     current_revision_id=None,
                     created_at=received_at_naive,
@@ -107,6 +111,7 @@ class RevisionShadowWriter:
                 action = RevisionAction.UPDATE.value
                 parent_revision_id = existing.current_revision_id
                 existing.updated_at = received_at_naive
+                existing.type = record_type
 
             revision = Revision(
                 id=revision_id,

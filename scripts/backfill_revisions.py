@@ -2,7 +2,10 @@
 
 Reads ``<root>/tasks/<instance>/*.json`` produced by the Hopper server and
 populates the new records + revisions tables. One ``create`` revision per
-task. Idempotent: skips records that already exist.
+task. Idempotent: records that already exist are left alone, except that
+their ``type`` column is corrected if it doesn't match the JSON payload's
+``kind`` (fixes records written by the old shadow writer, which hardcoded
+``type="task"`` for everything).
 
 Usage::
 
@@ -26,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 # Allow running as a script without packaging install
@@ -42,6 +45,19 @@ from hopper.models import (  # noqa: E402
     new_ulid,
 )
 from hopper.models.revision import SCHEMA_VERSION  # noqa: E402
+from hopper.upstream.shadow import RevisionShadowWriter  # noqa: E402
+
+
+def _record_type(task: dict[str, Any]) -> str:
+    """Derive a Record.type value from a task payload's `kind` field.
+
+    Mirrors `storage.revision_writer.write_revision` and the
+    `RevisionShadowWriter` fix: unknown/missing kind falls back to TASK.
+    """
+    try:
+        return RecordType(task.get("kind", "task")).value
+    except ValueError:
+        return RecordType.TASK.value
 
 
 def parse_iso(value: str | None) -> datetime | None:
@@ -58,52 +74,36 @@ def parse_iso(value: str | None) -> datetime | None:
     return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 
-def ensure_instance(session: Session, instance_id: str) -> None:
-    """Create a placeholder hopper_instances row if one doesn't exist.
-
-    Uses raw SQL rather than the HopperInstance ORM model because the model
-    has columns (instance_type, runtime_metadata, started_at, stopped_at)
-    that the initial schema migration did not create. Reconciling that drift
-    is out of scope for Phase 4a. We touch only the columns the DB actually
-    has.
-    """
-    found = session.execute(
-        text("SELECT 1 FROM hopper_instances WHERE id = :id"),
-        {"id": instance_id},
-    ).first()
-    if found is not None:
-        return
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    session.execute(
-        text(
-            "INSERT INTO hopper_instances "
-            "(id, name, scope, status, created_at, updated_at) "
-            "VALUES (:id, :name, :scope, :status, :now, :now)"
-        ),
-        {
-            "id": instance_id,
-            "name": instance_id,
-            "scope": "PERSONAL",
-            "status": "running",
-            "now": now,
-        },
-    )
-
-
 def backfill_one(
     session: Session,
     task_json: dict[str, Any],
     instance_id: str,
     dry_run: bool,
 ) -> str:
-    """Backfill a single task JSON file. Returns one of: created, skipped, error."""
+    """Backfill a single task JSON file.
+
+    Returns one of: created, retyped, skipped, error.
+    - created: no Record existed; one was created (with type from `kind`).
+    - retyped: a Record existed but `type` didn't match the JSON's `kind`
+      (the long-standing shadow-writer bug that hardcoded type="task");
+      the Record's type column was corrected in place.
+    - skipped: a Record existed and its type already matched.
+    """
     task = task_json.get("task") or {}
     task_id = task.get("id")
     if not task_id:
         return "error"
 
-    if session.get(Record, task_id) is not None:
-        return "skipped"
+    record_type = _record_type(task)
+    existing = session.get(Record, task_id)
+
+    if existing is not None:
+        if existing.type == record_type:
+            return "skipped"
+        if not dry_run:
+            existing.type = record_type
+            session.flush()
+        return "retyped"
 
     created_at = parse_iso(task.get("created_at")) or datetime.now(timezone.utc).replace(tzinfo=None)
     updated_at = parse_iso(task.get("updated_at")) or created_at
@@ -128,7 +128,7 @@ def backfill_one(
     )
     record = Record(
         id=task_id,
-        type=RecordType.TASK.value,
+        type=record_type,
         instance_id=instance_id,
         current_revision_id=None,  # filled after flush
         tombstoned_at=None,
@@ -150,7 +150,7 @@ def run_backfill(root: Path, database_url: str, dry_run: bool) -> dict[str, int]
         raise SystemExit(f"No tasks directory at {tasks_root}")
 
     engine = create_engine(database_url)
-    counts = {"created": 0, "skipped": 0, "error": 0}
+    counts = {"created": 0, "retyped": 0, "skipped": 0, "error": 0}
 
     # Process named project instances before 'local'. 'local' is the
     # personal aggregator that mirrors tasks from named projects; if it
@@ -165,7 +165,7 @@ def run_backfill(root: Path, database_url: str, dry_run: bool) -> dict[str, int]
         ):
             instance_id = instance_dir.name
             if not dry_run:
-                ensure_instance(session, instance_id)
+                RevisionShadowWriter._ensure_instance(session, instance_id)
                 session.flush()
 
             for task_file in sorted(instance_dir.glob("*.json")):
@@ -213,7 +213,8 @@ def main() -> None:
     counts = run_backfill(args.root, args.database_url, args.dry_run)
     print()
     print(f"Records created: {counts['created']}")
-    print(f"Records skipped: {counts['skipped']} (already present)")
+    print(f"Records retyped: {counts['retyped']} (type corrected from kind)")
+    print(f"Records skipped: {counts['skipped']} (already present, type matches)")
     print(f"Errors:          {counts['error']}")
 
 
