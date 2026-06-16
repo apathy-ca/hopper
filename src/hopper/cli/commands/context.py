@@ -47,12 +47,16 @@ def context(ctx: click.Context) -> None:
 @click.option("--tasks", "-t", is_flag=True, help="Show only open tasks")
 @click.option("--limit", "-n", type=int, default=10, help="Max items per section")
 @click.option(
-    "--summary", "-s", is_flag=True,
+    "--summary",
+    "-s",
+    is_flag=True,
     help="LLM-generated narrative summary instead of raw record list (requires ANTHROPIC_API_KEY)",
 )
 @click.option("--subject", help="Filter summary to this subject (only with --summary)")
 @click.pass_obj
-def show(ctx: Context, memory: bool, tasks: bool, limit: int, summary: bool, subject: str | None) -> None:
+def show(
+    ctx: Context, memory: bool, tasks: bool, limit: int, summary: bool, subject: str | None
+) -> None:
     """Show session context.
 
     Displays relevant memory (agent knowledge), open tasks, and other

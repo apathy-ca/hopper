@@ -9,7 +9,6 @@ import pytest
 
 from hopper.memory.session_summary import run_session_summary
 
-
 # ---------------------------------------------------------------------------
 # Fake client (mirrors test_consolidation_engine.py)
 # ---------------------------------------------------------------------------
@@ -56,44 +55,54 @@ def client():
     recent = (now - timedelta(days=2)).isoformat()
     old = (now - timedelta(days=30)).isoformat()
 
-    c.create_task({
-        "id": "mem-001",
-        "title": "User prefers terse responses",
-        "description": "Keep it short.",
-        "kind": "memory",
-        "subject": "user:james",
-        "memory_class": "durable_fact",
-        "updated_at": recent,
-    })
-    c.create_task({
-        "id": "mem-002",
-        "title": "Auth refactor is in progress",
-        "description": "Switching from JWT to DID.",
-        "kind": "memory",
-        "subject": "project:waypoint",
-        "updated_at": recent,
-    })
-    c.create_task({
-        "id": "mem-noise",
-        "title": "Stale noise",
-        "kind": "memory",
-        "memory_class": "noise",
-        "updated_at": old,
-    })
-    c.create_task({
-        "id": "task-001",
-        "title": "Implement genmem endpoint",
-        "kind": "task",
-        "status": "open",
-        "priority": "high",
-    })
-    c.create_task({
-        "id": "task-002",
-        "title": "Write Tier 3 tests",
-        "kind": "task",
-        "status": "completed",
-        "updated_at": recent,
-    })
+    c.create_task(
+        {
+            "id": "mem-001",
+            "title": "User prefers terse responses",
+            "description": "Keep it short.",
+            "kind": "memory",
+            "subject": "user:james",
+            "memory_class": "durable_fact",
+            "updated_at": recent,
+        }
+    )
+    c.create_task(
+        {
+            "id": "mem-002",
+            "title": "Auth refactor is in progress",
+            "description": "Switching from JWT to DID.",
+            "kind": "memory",
+            "subject": "project:waypoint",
+            "updated_at": recent,
+        }
+    )
+    c.create_task(
+        {
+            "id": "mem-noise",
+            "title": "Stale noise",
+            "kind": "memory",
+            "memory_class": "noise",
+            "updated_at": old,
+        }
+    )
+    c.create_task(
+        {
+            "id": "task-001",
+            "title": "Implement genmem endpoint",
+            "kind": "task",
+            "status": "open",
+            "priority": "high",
+        }
+    )
+    c.create_task(
+        {
+            "id": "task-002",
+            "title": "Write Tier 3 tests",
+            "kind": "task",
+            "status": "completed",
+            "updated_at": recent,
+        }
+    )
     return c
 
 
@@ -226,14 +235,16 @@ def test_save_creates_record(client):
 def test_save_replaces_previous(client):
     """--save supersedes any existing session_summary for the same subject."""
     # Create an existing session summary
-    client.create_task({
-        "id": "old-summary",
-        "title": "Session summary: user:james",
-        "description": "Old summary text.",
-        "kind": "memory",
-        "subject": "user:james",
-        "memory_class": "session_summary",
-    })
+    client.create_task(
+        {
+            "id": "old-summary",
+            "title": "Session summary: user:james",
+            "description": "Old summary text.",
+            "kind": "memory",
+            "subject": "user:james",
+            "memory_class": "session_summary",
+        }
+    )
 
     mock_msg = MagicMock()
     mock_msg.content = [MagicMock(text=_SUMMARY_TEXT)]

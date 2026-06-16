@@ -810,7 +810,9 @@ class LocalClient:
             "source_record_ids": task.source_record_ids,
             "consolidation_run_id": task.consolidation_run_id,
             "consolidated_at": task.consolidated_at.isoformat() if task.consolidated_at else None,
-            "drift_checked_at": task.drift_checked_at.isoformat() if task.drift_checked_at else None,
+            "drift_checked_at": (
+                task.drift_checked_at.isoformat() if task.drift_checked_at else None
+            ),
             "drift_score": task.drift_score,
             "project_id": task.project,
             "instance": task.instance,

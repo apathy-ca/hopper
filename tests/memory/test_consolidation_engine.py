@@ -14,7 +14,6 @@ import pytest
 
 from hopper.memory.consolidation import _call_llm, run_consolidation, run_drift_check
 
-
 # ---------------------------------------------------------------------------
 # Fake client
 # ---------------------------------------------------------------------------
@@ -63,20 +62,24 @@ def fake_client():
     client = _FakeClient()
     # Seed some episodic memory records
     for i in range(1, 4):
-        client.create_task({
-            "id": f"ep-{i:03d}",
-            "title": f"Episodic memory {i}",
-            "description": f"Agent noted behaviour pattern {i} during session.",
-            "kind": "memory",
-            "subject": "project:waypoint",
-        })
+        client.create_task(
+            {
+                "id": f"ep-{i:03d}",
+                "title": f"Episodic memory {i}",
+                "description": f"Agent noted behaviour pattern {i} during session.",
+                "kind": "memory",
+                "subject": "project:waypoint",
+            }
+        )
     # One record with no subject (should be included in unfiltered run)
-    client.create_task({
-        "id": "ep-004",
-        "title": "Another observation",
-        "description": "Something noted elsewhere.",
-        "kind": "memory",
-    })
+    client.create_task(
+        {
+            "id": "ep-004",
+            "title": "Another observation",
+            "description": "Something noted elsewhere.",
+            "kind": "memory",
+        }
+    )
     return client
 
 
@@ -204,9 +207,7 @@ def test_run_consolidation_subject_filter(fake_client):
 
     with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
         with patch("anthropic.Anthropic", return_value=mock_client):
-            result = run_consolidation(
-                fake_client, subject="project:waypoint", dry_run=True
-            )
+            result = run_consolidation(fake_client, subject="project:waypoint", dry_run=True)
 
     # ep-004 has no subject so should be excluded
     assert result["eligible"] == 3
@@ -231,9 +232,7 @@ def test_run_consolidation_writes_consolidated_record(fake_client):
 
     # The new consolidated record should exist
     consolidated_ids = [
-        t["id"]
-        for t in fake_client._tasks.values()
-        if t.get("memory_class") == "consolidated"
+        t["id"] for t in fake_client._tasks.values() if t.get("memory_class") == "consolidated"
     ]
     assert len(consolidated_ids) == 1
 
@@ -254,14 +253,20 @@ def test_run_consolidation_skips_already_superseded(fake_client):
     fake_client._tasks["ep-001"]["superseded_by"] = "some-prior-consolidated"
 
     mock_message = MagicMock()
-    mock_message.content = [MagicMock(text=json.dumps({
-        "classifications": [
-            {"id": "ep-002", "memory_class": "episodic"},
-            {"id": "ep-003", "memory_class": "durable_fact"},
-            {"id": "ep-004", "memory_class": "noise"},
-        ],
-        "clusters": [],
-    }))]
+    mock_message.content = [
+        MagicMock(
+            text=json.dumps(
+                {
+                    "classifications": [
+                        {"id": "ep-002", "memory_class": "episodic"},
+                        {"id": "ep-003", "memory_class": "durable_fact"},
+                        {"id": "ep-004", "memory_class": "noise"},
+                    ],
+                    "clusters": [],
+                }
+            )
+        )
+    ]
     mock_client = MagicMock()
     mock_client.messages.create.return_value = mock_message
 
@@ -298,14 +303,16 @@ def test_run_drift_check_scores_and_updates(fake_client):
     import json
 
     # Create a consolidated record with sources
-    fake_client.create_task({
-        "id": "con-001",
-        "title": "Consolidated",
-        "description": "Summary of observations.",
-        "kind": "memory",
-        "memory_class": "consolidated",
-        "source_record_ids": ["ep-001", "ep-002"],
-    })
+    fake_client.create_task(
+        {
+            "id": "con-001",
+            "title": "Consolidated",
+            "description": "Summary of observations.",
+            "kind": "memory",
+            "memory_class": "consolidated",
+            "source_record_ids": ["ep-001", "ep-002"],
+        }
+    )
 
     drift_response = {"drift_score": 0.15, "explanation": "Minor gaps in coverage."}
     mock_message = MagicMock()
@@ -332,22 +339,26 @@ def test_run_drift_check_record_id_filter(fake_client):
     """record_id filter checks only that specific record."""
     import json
 
-    fake_client.create_task({
-        "id": "con-001",
-        "title": "Consolidated 1",
-        "description": "Summary 1",
-        "kind": "memory",
-        "memory_class": "consolidated",
-        "source_record_ids": ["ep-001"],
-    })
-    fake_client.create_task({
-        "id": "con-002",
-        "title": "Consolidated 2",
-        "description": "Summary 2",
-        "kind": "memory",
-        "memory_class": "consolidated",
-        "source_record_ids": ["ep-002"],
-    })
+    fake_client.create_task(
+        {
+            "id": "con-001",
+            "title": "Consolidated 1",
+            "description": "Summary 1",
+            "kind": "memory",
+            "memory_class": "consolidated",
+            "source_record_ids": ["ep-001"],
+        }
+    )
+    fake_client.create_task(
+        {
+            "id": "con-002",
+            "title": "Consolidated 2",
+            "description": "Summary 2",
+            "kind": "memory",
+            "memory_class": "consolidated",
+            "source_record_ids": ["ep-002"],
+        }
+    )
 
     mock_message = MagicMock()
     mock_message.content = [MagicMock(text='{"drift_score": 0.02, "explanation": "Fine."}')]

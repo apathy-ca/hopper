@@ -90,8 +90,13 @@ def test_ordinary_task_stays_clean(task_store):
     assert task_file is not None, "task file not found"
     content = task_file.read_text()
     for field in (
-        "memory_class", "superseded_by", "source_record_ids",
-        "consolidation_run_id", "consolidated_at", "drift_checked_at", "drift_score",
+        "memory_class",
+        "superseded_by",
+        "source_record_ids",
+        "consolidation_run_id",
+        "consolidated_at",
+        "drift_checked_at",
+        "drift_score",
     ):
         assert field not in content, f"field {field!r} leaked into ordinary task frontmatter"
 

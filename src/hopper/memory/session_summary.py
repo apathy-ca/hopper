@@ -115,7 +115,8 @@ def run_session_summary(
     # 1. Memory records — exclude noise and already-superseded
     all_memories = client.list_tasks(kind="memory")
     memories = [
-        m for m in all_memories
+        m
+        for m in all_memories
         if m.get("memory_class") != "noise"
         and not m.get("superseded_by")
         and m.get("memory_class") != "session_summary"
@@ -125,7 +126,8 @@ def run_session_summary(
     if since:
         since_aware = since if since.tzinfo else since.replace(tzinfo=UTC)
         memories = [
-            m for m in memories
+            m
+            for m in memories
             if (_parse_dt(m.get("updated_at")) or datetime.min.replace(tzinfo=UTC)) >= since_aware
         ]
 
@@ -137,8 +139,10 @@ def run_session_summary(
     completed_raw = client.list_tasks(kind="task", status="completed")
     done_raw = client.list_tasks(kind="task", status="done")
     recent_done = [
-        t for t in completed_raw + done_raw
-        if (_parse_dt(t.get("updated_at")) or datetime.min.replace(tzinfo=UTC)).timestamp() >= cutoff
+        t
+        for t in completed_raw + done_raw
+        if (_parse_dt(t.get("updated_at")) or datetime.min.replace(tzinfo=UTC)).timestamp()
+        >= cutoff
     ]
 
     if not memories and not open_tasks and not recent_done:
@@ -146,7 +150,9 @@ def run_session_summary(
 
     logger.info(
         "Generating session summary: %d memories, %d open tasks, %d recent done",
-        len(memories), len(open_tasks), len(recent_done),
+        len(memories),
+        len(open_tasks),
+        len(recent_done),
     )
 
     try:
@@ -160,9 +166,9 @@ def run_session_summary(
     if save:
         # Replace existing session_summary for this subject
         existing = [
-            m for m in all_memories
-            if m.get("memory_class") == "session_summary"
-            and m.get("subject") == subject
+            m
+            for m in all_memories
+            if m.get("memory_class") == "session_summary" and m.get("subject") == subject
         ]
         for old in existing:
             try:
@@ -172,15 +178,17 @@ def run_session_summary(
 
         title = f"Session summary{f': {subject}' if subject else ''}"
         try:
-            saved = client.create_task({
-                "title": title,
-                "description": summary_text,
-                "kind": "memory",
-                "subject": subject,
-                "memory_class": "session_summary",
-                "provenance": f"session-summary:{now.date().isoformat()}",
-                "tags": ["memory", "session_summary"],
-            })
+            saved = client.create_task(
+                {
+                    "title": title,
+                    "description": summary_text,
+                    "kind": "memory",
+                    "subject": subject,
+                    "memory_class": "session_summary",
+                    "provenance": f"session-summary:{now.date().isoformat()}",
+                    "tags": ["memory", "session_summary"],
+                }
+            )
             result["saved_id"] = saved["id"]
         except Exception as exc:
             result["save_error"] = str(exc)

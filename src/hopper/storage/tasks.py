@@ -429,7 +429,8 @@ class TaskMarkdownStore:
             else:
                 tasks_meta = index.get("tasks", {})
                 task_ids = {
-                    tid for tid in task_ids
+                    tid
+                    for tid in task_ids
                     if tasks_meta.get(tid, {}).get("memory_class") == wanted_mc
                 }
 

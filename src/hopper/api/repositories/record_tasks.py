@@ -38,9 +38,16 @@ from hopper.storage.revision_writer import (
 
 # Fields hydrated onto every task-shaped dict, mirroring LocalTask.to_frontmatter.
 _PASSTHROUGH_OPTIONAL = (
-    "subject", "scope", "provenance",
-    "memory_class", "superseded_by", "source_record_ids",
-    "consolidation_run_id", "consolidated_at", "drift_checked_at", "drift_score",
+    "subject",
+    "scope",
+    "provenance",
+    "memory_class",
+    "superseded_by",
+    "source_record_ids",
+    "consolidation_run_id",
+    "consolidated_at",
+    "drift_checked_at",
+    "drift_score",
 )
 
 

@@ -36,9 +36,7 @@ def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[s
             title=r.get("title", "(untitled)"),
             subject=f"\nSubject: {r['subject']}" if r.get("subject") else "",
             content=(
-                f"\nContent: {r.get('description', '')[:400]}"
-                if r.get("description")
-                else ""
+                f"\nContent: {r.get('description', '')[:400]}" if r.get("description") else ""
             ),
         )
         for r in records
@@ -128,9 +126,9 @@ def run_consolidation(
     # 1. Select eligible records: kind=memory, not already consolidated or superseded
     all_memories = client.list_tasks(kind="memory")
     eligible = [
-        t for t in all_memories
-        if not t.get("superseded_by")
-        and t.get("memory_class") != "consolidated"
+        t
+        for t in all_memories
+        if not t.get("superseded_by") and t.get("memory_class") != "consolidated"
     ]
 
     if subject:
@@ -195,23 +193,27 @@ def run_consolidation(
 
         # Infer subject/scope from the first source record
         source_tasks = [t for t in eligible if t["id"] in source_ids]
-        inferred_subject = next((t.get("subject") for t in source_tasks if t.get("subject")), subject)
+        inferred_subject = next(
+            (t.get("subject") for t in source_tasks if t.get("subject")), subject
+        )
         inferred_scope = next((t.get("scope") for t in source_tasks if t.get("scope")), scope)
 
         try:
-            result = client.create_task({
-                "title": title,
-                "description": summary,
-                "kind": "memory",
-                "subject": inferred_subject,
-                "scope": inferred_scope,
-                "provenance": f"consolidation-run:{run_id}",
-                "memory_class": "consolidated",
-                "source_record_ids": source_ids,
-                "consolidation_run_id": run_id,
-                "consolidated_at": now.isoformat(),
-                "tags": ["memory", "consolidated"],
-            })
+            result = client.create_task(
+                {
+                    "title": title,
+                    "description": summary,
+                    "kind": "memory",
+                    "subject": inferred_subject,
+                    "scope": inferred_scope,
+                    "provenance": f"consolidation-run:{run_id}",
+                    "memory_class": "consolidated",
+                    "source_record_ids": source_ids,
+                    "consolidation_run_id": run_id,
+                    "consolidated_at": now.isoformat(),
+                    "tags": ["memory", "consolidated"],
+                }
+            )
             new_id = result["id"]
             for src_id in source_ids:
                 cluster_id_map[src_id] = new_id
@@ -252,9 +254,7 @@ def run_consolidation(
         "source_records_superseded": len(updated_source),
         "records_classified_only": len(classified_only),
         "errors": errors,
-        "durable_facts_flagged": sum(
-            1 for mc in classifications.values() if mc == "durable_fact"
-        ),
+        "durable_facts_flagged": sum(1 for mc in classifications.values() if mc == "durable_fact"),
     }
 
 
@@ -368,21 +368,26 @@ def run_drift_check(
 
         # Update drift fields
         try:
-            client.update_task(cid, {
-                "drift_score": drift_score,
-                "drift_checked_at": now.isoformat(),
-            })
+            client.update_task(
+                cid,
+                {
+                    "drift_score": drift_score,
+                    "drift_checked_at": now.isoformat(),
+                },
+            )
         except Exception as exc:
             errors.append(f"Failed to update drift fields for {cid}: {exc}")
 
         checked += 1
         if drift_score > 0.1:
-            high_drift.append({
-                "id": cid,
-                "title": consolidated_task.get("title"),
-                "drift_score": drift_score,
-                "explanation": result.get("explanation", ""),
-            })
+            high_drift.append(
+                {
+                    "id": cid,
+                    "title": consolidated_task.get("title"),
+                    "drift_score": drift_score,
+                    "explanation": result.get("explanation", ""),
+                }
+            )
 
     return {
         "checked": checked,
