@@ -1,7 +1,9 @@
 # Memory Consolidation — Design Sketch
 
 Status: **IMPLEMENTED** — Phase 1 (single-instance) complete 2026-06-16.
-Phase 2 (cross-instance) remains future work.
+Phase 2 (cross-instance) deferred indefinitely: the write-destination
+problem is unresolved (which instance owns the consolidated record?). Do
+not implement until instance hierarchy conventions are clearer.
 Date: 2026-06-15, updated 2026-06-16
 
 ---
