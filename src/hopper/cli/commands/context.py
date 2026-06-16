@@ -46,19 +46,51 @@ def context(ctx: click.Context) -> None:
 @click.option("--memory", "-m", is_flag=True, help="Show only memory")
 @click.option("--tasks", "-t", is_flag=True, help="Show only open tasks")
 @click.option("--limit", "-n", type=int, default=10, help="Max items per section")
+@click.option(
+    "--summary", "-s", is_flag=True,
+    help="LLM-generated narrative summary instead of raw record list (requires ANTHROPIC_API_KEY)",
+)
+@click.option("--subject", help="Filter summary to this subject (only with --summary)")
 @click.pass_obj
-def show(ctx: Context, memory: bool, tasks: bool, limit: int) -> None:
+def show(ctx: Context, memory: bool, tasks: bool, limit: int, summary: bool, subject: str | None) -> None:
     """Show session context.
 
     Displays relevant memory (agent knowledge), open tasks, and other
     context for starting or resuming a work session. Memory is the
     headline; tasks are secondary.
 
+    Use --summary for an LLM-generated narrative instead of a raw list.
+
     Examples:
         hopper context show
         hopper context show --memory
         hopper context show --tasks --limit 5
+        hopper context show --summary
+        hopper context show --summary --subject project:waypoint
     """
+    if summary:
+        from rich.markdown import Markdown
+
+        from hopper.memory.session_summary import run_session_summary
+
+        try:
+            with ctx.get_client() as client:
+                result = run_session_summary(client, subject=subject)
+        except ClientError as e:
+            print_error(f"Failed to get context: {e.message}")
+            raise click.Abort() from e
+
+        if "error" in result:
+            print_error(result["error"])
+            raise click.Abort()
+        if result.get("skipped"):
+            print_info(result.get("reason", "Nothing to summarise"))
+            return
+        console.print()
+        console.print(Markdown(result["summary"]))
+        console.print()
+        return
+
     # If neither flag set, show both
     show_memory = memory or not tasks
     show_tasks = tasks or not memory

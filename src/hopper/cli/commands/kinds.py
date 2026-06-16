@@ -201,6 +201,81 @@ def _make_memory_group() -> click.Group:
             provenance=provenance,
         )
 
+    @base.command(name="session-summary")
+    @click.option("--subject", help="Limit to memory records for this subject")
+    @click.option(
+        "--since",
+        help="Only include records updated after this date (ISO format, e.g. 2026-06-01)",
+    )
+    @click.option("--save", is_flag=True, help="Save summary as a memory record (syncs upstream)")
+    @click.option("--model", envvar="HOPPER_CONSOLIDATION_MODEL", hidden=True)
+    @click.pass_obj
+    def memory_session_summary(
+        ctx: click.Context,
+        subject: str | None,
+        since: str | None,
+        save: bool,
+        model: str | None,
+    ) -> None:
+        """Generate a session summary for the current instance.
+
+        Produces a concise LLM narrative covering what this instance knows
+        (memory records), what is currently in flight (open tasks), and what
+        was recently completed. Useful for context-loading at the start of a
+        session or after a gap.
+
+        Use --save to write the summary as a memory record so it syncs
+        upstream and is visible to other agents entering this instance.
+
+        Requires ANTHROPIC_API_KEY to be set.
+
+        Examples:
+            hopper memory session-summary
+            hopper memory session-summary --subject project:waypoint
+            hopper memory session-summary --save
+            hopper memory session-summary --since 2026-06-01
+        """
+        from datetime import datetime
+
+        from rich.console import Console
+        from rich.markdown import Markdown
+
+        from hopper.memory.session_summary import run_session_summary
+
+        console = Console()
+
+        since_dt = None
+        if since:
+            try:
+                since_dt = datetime.fromisoformat(since)
+            except ValueError:
+                console.print(f"[red]Invalid --since date:[/red] {since!r} (use ISO format)")
+                raise SystemExit(1)
+
+        with ctx.get_client() as client:
+            result = run_session_summary(
+                client,
+                subject=subject,
+                since=since_dt,
+                save=save,
+                model=model,
+            )
+
+        if "error" in result:
+            console.print(f"[red]Error:[/red] {result['error']}")
+            raise SystemExit(1)
+
+        if result.get("skipped"):
+            console.print(f"[yellow]Skipped:[/yellow] {result.get('reason')}")
+            return
+
+        console.print(Markdown(result["summary"]))
+
+        if result.get("saved_id"):
+            console.print(f"\n[dim]Saved as {result['saved_id']}[/dim]")
+        if result.get("save_error"):
+            console.print(f"\n[yellow]Warning:[/yellow] could not save — {result['save_error']}")
+
     @base.command(name="consolidate")
     @click.option("--subject", help="Only consolidate records for this subject")
     @click.option("--scope", help="Only consolidate records for this scope")

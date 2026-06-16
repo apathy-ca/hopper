@@ -1,6 +1,6 @@
 # Tier 3 & Tier 5 Memory — Session Summaries and genmem
 
-Status: **SKETCH** — not yet implemented.
+Status: **TIER 3 IMPLEMENTED** 2026-06-16. Tier 5 (genmem) pending server endpoint.
 Date: 2026-06-16
 
 References the 8-tier Sage Memory Architecture

@@ -400,6 +400,35 @@ hopper memory list
 hopper memory list --status open
 ```
 
+### Session Summary
+
+Generates an LLM narrative over the current instance's memory records, open
+tasks, and recent completions. Useful for context-loading at the start of a
+session or after a gap.
+
+Requires `ANTHROPIC_API_KEY`. Uses `claude-sonnet-4-6` by default.
+
+```bash
+# Generate and print a session summary
+hopper memory session-summary
+
+# Scope to a specific subject
+hopper memory session-summary --subject project:waypoint
+
+# Only include records updated since a date
+hopper memory session-summary --since 2026-06-01
+
+# Save the summary as a memory record (syncs upstream, visible to other agents)
+hopper memory session-summary --save
+```
+
+The same summary is available directly from `hopper context`:
+
+```bash
+hopper context show --summary
+hopper context show --summary --subject project:waypoint
+```
+
 ### Consolidating Memory
 
 Reads all eligible memory records (not yet superseded, not already consolidated),
