@@ -63,7 +63,7 @@ def test_instances(db_session):
 
 
 @pytest.fixture
-def sample_task(db_session, test_instances) -> Task:
+def sample_task(db_session, test_instances, make_record) -> Task:
     """Create a sample task."""
     task = Task(
         id=f"task-{uuid4().hex[:8]}",
@@ -77,11 +77,12 @@ def sample_task(db_session, test_instances) -> Task:
     )
     db_session.add(task)
     db_session.flush()
+    make_record(task.id)
     return task
 
 
 @pytest.fixture
-def multiple_tasks(db_session, test_instances) -> list[Task]:
+def multiple_tasks(db_session, test_instances, make_record) -> list[Task]:
     """Create multiple tasks for testing."""
     tasks = []
     for i in range(5):
@@ -98,6 +99,8 @@ def multiple_tasks(db_session, test_instances) -> list[Task]:
         db_session.add(task)
         tasks.append(task)
     db_session.flush()
+    for task in tasks:
+        make_record(task.id)
     return tasks
 
 

@@ -58,7 +58,11 @@ class CompletionBubbler:
         completed_delegations = []
 
         # Get all delegations for this task
-        delegations = sorted(task.delegations, key=lambda d: d.delegated_at, reverse=True)
+        delegations = sorted(
+            self.session.query(TaskDelegation).filter_by(task_id=task.id).all(),
+            key=lambda d: d.delegated_at,
+            reverse=True,
+        )
 
         for delegation in delegations:
             if delegation.is_active:
@@ -88,7 +92,11 @@ class CompletionBubbler:
             new_status: New status value
         """
         # Get the active delegation chain
-        delegations = [d for d in task.delegations if d.is_active]
+        delegations = [
+            d
+            for d in self.session.query(TaskDelegation).filter_by(task_id=task.id).all()
+            if d.is_active
+        ]
 
         if not delegations:
             return
@@ -147,7 +155,11 @@ class CompletionBubbler:
             event_data: Additional event data
         """
         # Get the delegation that brought this task here
-        delegations = sorted(task.delegations, key=lambda d: d.delegated_at, reverse=True)
+        delegations = sorted(
+            self.session.query(TaskDelegation).filter_by(task_id=task.id).all(),
+            key=lambda d: d.delegated_at,
+            reverse=True,
+        )
 
         if not delegations:
             return
@@ -188,7 +200,7 @@ class CompletionBubbler:
         Returns:
             Dict with completion status details
         """
-        delegations = task.delegations
+        delegations = self.session.query(TaskDelegation).filter_by(task_id=task.id).all()
 
         total = len(delegations)
         completed = sum(1 for d in delegations if d.status == DelegationStatus.COMPLETED)

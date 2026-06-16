@@ -3,19 +3,16 @@ Routing Decision model for Hopper.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from hopper.timeutils import utc_now_naive
 
 from .base import Base
-
-if TYPE_CHECKING:
-    from .task import Task
 
 
 class RoutingDecision(Base):
@@ -23,8 +20,8 @@ class RoutingDecision(Base):
 
     __tablename__ = "routing_decisions"
 
-    # Primary key (also foreign key to tasks)
-    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("tasks.id"), primary_key=True)
+    # Primary key (FK to records — the canonical server-side store)
+    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("records.id"), primary_key=True)
 
     # Decision details
     project: Mapped[str | None] = mapped_column(
@@ -50,7 +47,6 @@ class RoutingDecision(Base):
     )
 
     # Relationships
-    task: Mapped["Task"] = relationship("Task", back_populates="routing_decision")
 
     def __repr__(self) -> str:
         return f"<RoutingDecision(task_id={self.task_id}, project={self.project})>"

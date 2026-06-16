@@ -3,19 +3,16 @@ Task Feedback model for Hopper.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from hopper.timeutils import utc_now_naive
 
 from .base import Base
-
-if TYPE_CHECKING:
-    from .task import Task
 
 
 class TaskFeedback(Base):
@@ -23,8 +20,8 @@ class TaskFeedback(Base):
 
     __tablename__ = "task_feedback"
 
-    # Primary key (also foreign key to tasks)
-    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("tasks.id"), primary_key=True)
+    # Primary key (FK to records — the canonical server-side store)
+    task_id: Mapped[str] = mapped_column(String(50), ForeignKey("records.id"), primary_key=True)
 
     # Duration estimates
     estimated_duration: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -54,7 +51,6 @@ class TaskFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
 
     # Relationships
-    task: Mapped["Task"] = relationship("Task", back_populates="feedback")
 
     def __repr__(self) -> str:
         return f"<TaskFeedback(task_id={self.task_id}, was_good_match={self.was_good_match})>"

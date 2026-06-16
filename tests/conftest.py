@@ -443,6 +443,38 @@ routing:
 
 
 # ============================================================================
+# Record helpers (Phase 4: TaskFeedback/RoutingDecision/etc. FK to records.id)
+# ============================================================================
+
+
+@pytest.fixture
+def make_record(db_session: Session):
+    """Return a factory that inserts a minimal Record row.
+
+    Tests for TaskFeedback, RoutingDecision, TaskDelegation, and
+    ExternalMapping need a matching records.id row before they can insert
+    into those tables (FK now points to records, not tasks).
+    """
+    from hopper.models import Record, RecordType
+    from hopper.timeutils import utc_now_naive
+
+    def _make(record_id: str, instance_id: str | None = None) -> Record:
+        record = Record(
+            id=record_id,
+            type=RecordType.TASK.value,
+            instance_id=instance_id,
+            current_revision_id=None,
+            created_at=utc_now_naive(),
+            updated_at=utc_now_naive(),
+        )
+        db_session.add(record)
+        db_session.flush()
+        return record
+
+    return _make
+
+
+# ============================================================================
 # Cleanup Fixtures
 # ============================================================================
 

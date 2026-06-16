@@ -101,17 +101,9 @@ def test_task_relationships(clean_db: Session) -> None:
     assert {t.id for t in retrieved_instance.tasks} == {"HOP-001", "HOP-002"}
 
 
-def test_task_feedback_creation(clean_db: Session) -> None:
-    """Test creating task feedback."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
-    clean_db.add(instance)
-
-    task = Task(id="HOP-001", instance_id="test-instance", title="Task with feedback")
-    clean_db.add(task)
-    clean_db.commit()
+def test_task_feedback_creation(clean_db: Session, make_record) -> None:
+    """Test creating task feedback linked to a record (canonical FK target)."""
+    make_record("HOP-001")
 
     feedback = TaskFeedback(
         task_id="HOP-001",
@@ -131,38 +123,15 @@ def test_task_feedback_creation(clean_db: Session) -> None:
     assert retrieved_feedback.notes == "Well executed"
 
 
-def test_task_feedback_relationship(clean_db: Session) -> None:
-    """Test task-feedback relationship."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
-    clean_db.add(instance)
+def test_task_feedback_fk_integrity(clean_db: Session) -> None:
+    """Inserting feedback without a matching record row must fail."""
+    import pytest as _pytest
+    from sqlalchemy.exc import IntegrityError
 
-    task = Task(id="HOP-001", instance_id="test-instance", title="Task")
-    clean_db.add(task)
-    clean_db.commit()
-
-    feedback = TaskFeedback(
-        task_id="HOP-001",
-        was_good_match=False,
-        should_have_routed_to="other-project",
-    )
+    feedback = TaskFeedback(task_id="nonexistent", was_good_match=True)
     clean_db.add(feedback)
-    clean_db.commit()
-
-    # Access feedback through task
-    retrieved_task = clean_db.query(Task).filter_by(id="HOP-001").first()
-    assert retrieved_task is not None
-    assert retrieved_task.feedback is not None
-    assert retrieved_task.feedback.was_good_match is False
-    assert retrieved_task.feedback.should_have_routed_to == "other-project"
-
-    # Access task through feedback
-    retrieved_feedback = clean_db.query(TaskFeedback).filter_by(task_id="HOP-001").first()
-    assert retrieved_feedback is not None
-    assert retrieved_feedback.task.id == "HOP-001"
-    assert retrieved_feedback.task.title == "Task"
+    with _pytest.raises(IntegrityError):
+        clean_db.flush()
 
 
 def test_task_external_integration(clean_db: Session) -> None:

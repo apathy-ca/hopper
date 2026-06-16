@@ -18,7 +18,6 @@ from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from .hopper_instance import HopperInstance
-    from .task import Task
 
 
 class DelegationType(str):
@@ -56,7 +55,7 @@ class TaskDelegation(Base, TimestampMixin):
     # Task being delegated
     task_id: Mapped[str] = mapped_column(
         String(50),
-        ForeignKey("tasks.id", ondelete="CASCADE"),
+        ForeignKey("records.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -112,11 +111,6 @@ class TaskDelegation(Base, TimestampMixin):
     __table_args__ = (Index("idx_delegations_target_status", "target_instance_id", "status"),)
 
     # Relationships
-    task: Mapped["Task"] = relationship(
-        "Task",
-        back_populates="delegations",
-        foreign_keys=[task_id],
-    )
     source_instance: Mapped["HopperInstance"] = relationship(
         "HopperInstance",
         foreign_keys=[source_instance_id],

@@ -55,7 +55,7 @@ def learning_engine(db_session) -> LearningEngine:
 
 
 @pytest.fixture
-def sample_task(db_session) -> Task:
+def sample_task(db_session, make_record) -> Task:
     """Create a sample task."""
     task = Task(
         id=f"task-{uuid4().hex[:8]}",
@@ -69,6 +69,7 @@ def sample_task(db_session) -> Task:
     )
     db_session.add(task)
     db_session.flush()
+    make_record(task.id)
     return task
 
 

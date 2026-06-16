@@ -198,9 +198,8 @@ class TestStatisticsSchemas:
 class TestFeedbackModel:
     """Test TaskFeedback model operations."""
 
-    def test_create_feedback(self, clean_db: Session):
+    def test_create_feedback(self, clean_db: Session, make_record):
         """Test creating feedback."""
-        # Create a task first
         task = Task(
             id=f"task-{uuid4().hex[:8]}",
             title="Test task",
@@ -209,6 +208,7 @@ class TestFeedbackModel:
         )
         clean_db.add(task)
         clean_db.flush()
+        make_record(task.id)
 
         feedback = TaskFeedback(
             task_id=task.id,
@@ -225,7 +225,7 @@ class TestFeedbackModel:
         assert retrieved.was_good_match is True
         assert retrieved.quality_score == 4.0
 
-    def test_feedback_with_all_fields(self, clean_db: Session):
+    def test_feedback_with_all_fields(self, clean_db: Session, make_record):
         """Test feedback with all optional fields."""
         task = Task(
             id=f"task-{uuid4().hex[:8]}",
@@ -235,6 +235,7 @@ class TestFeedbackModel:
         )
         clean_db.add(task)
         clean_db.flush()
+        make_record(task.id)
 
         feedback = TaskFeedback(
             task_id=task.id,
@@ -343,11 +344,10 @@ class TestPatternModel:
 class TestFeedbackIntegration:
     """Integration tests for feedback functionality."""
 
-    def test_feedback_with_learning_engine(self, db_session: Session):
+    def test_feedback_with_learning_engine(self, db_session: Session, make_record):
         """Test feedback processed by learning engine."""
         from hopper.memory import EpisodicStore, FeedbackStore
 
-        # Create test instance first (foreign key requirement)
         instance = HopperInstance(
             id="api-instance",
             name="API Instance",
@@ -359,7 +359,6 @@ class TestFeedbackIntegration:
         db_session.add(instance)
         db_session.flush()
 
-        # Create test task
         task = Task(
             id=f"task-{uuid4().hex[:8]}",
             title="API endpoint task",
@@ -371,6 +370,7 @@ class TestFeedbackIntegration:
         )
         db_session.add(task)
         db_session.flush()
+        make_record(task.id)
 
         # Setup learning components
         episodic_store = EpisodicStore(db_session)
@@ -394,7 +394,7 @@ class TestFeedbackIntegration:
         assert feedback is not None
         assert feedback.was_good_match is True
 
-    def test_multiple_feedback_records(self, db_session: Session):
+    def test_multiple_feedback_records(self, db_session: Session, make_record):
         """Test tracking multiple feedback records."""
         tasks = []
         for i in range(5):
@@ -407,6 +407,8 @@ class TestFeedbackIntegration:
             db_session.add(task)
             tasks.append(task)
         db_session.flush()
+        for task in tasks:
+            make_record(task.id)
 
         # Create feedback for each
         for i, task in enumerate(tasks):
@@ -599,7 +601,7 @@ class TestEdgeCases:
             db_session.flush()
         db_session.rollback()
 
-    def test_duplicate_feedback(self, db_session: Session):
+    def test_duplicate_feedback(self, db_session: Session, make_record):
         """Test handling duplicate feedback for same task."""
         task = Task(
             id=f"dup-task-{uuid4().hex[:8]}",
@@ -609,6 +611,7 @@ class TestEdgeCases:
         )
         db_session.add(task)
         db_session.flush()
+        make_record(task.id)
 
         # First feedback
         feedback1 = TaskFeedback(
@@ -650,7 +653,7 @@ class TestEdgeCases:
         assert retrieved is not None
         assert retrieved.tag_criteria == {}
 
-    def test_very_long_feedback_text(self, db_session: Session):
+    def test_very_long_feedback_text(self, db_session: Session, make_record):
         """Test feedback with very long text."""
         task = Task(
             id=f"long-task-{uuid4().hex[:8]}",
@@ -660,6 +663,7 @@ class TestEdgeCases:
         )
         db_session.add(task)
         db_session.flush()
+        make_record(task.id)
 
         long_text = "A" * 10000  # Very long feedback
 

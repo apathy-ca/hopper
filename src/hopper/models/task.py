@@ -12,11 +12,7 @@ from sqlalchemy.types import JSON
 from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from .external_mapping import ExternalMapping
     from .hopper_instance import HopperInstance
-    from .routing_decision import RoutingDecision
-    from .task_delegation import TaskDelegation
-    from .task_feedback import TaskFeedback
 
 
 class Task(Base, TimestampMixin):
@@ -85,18 +81,6 @@ class Task(Base, TimestampMixin):
     # Relationships
     instance: Mapped[Optional["HopperInstance"]] = relationship(
         "HopperInstance", back_populates="tasks"
-    )
-    routing_decision: Mapped[Optional["RoutingDecision"]] = relationship(
-        "RoutingDecision", back_populates="task", uselist=False
-    )
-    feedback: Mapped[Optional["TaskFeedback"]] = relationship(
-        "TaskFeedback", back_populates="task", uselist=False
-    )
-    external_mappings: Mapped[list["ExternalMapping"]] = relationship(
-        "ExternalMapping", back_populates="task"
-    )
-    delegations: Mapped[list["TaskDelegation"]] = relationship(
-        "TaskDelegation", back_populates="task", foreign_keys="TaskDelegation.task_id"
     )
 
     # Indexes

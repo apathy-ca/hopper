@@ -19,7 +19,7 @@ def episodic_store(db_session) -> EpisodicStore:
 
 
 @pytest.fixture
-def task_for_episode(db_session) -> Task:
+def task_for_episode(db_session, make_record) -> Task:
     """Create a task for episode testing."""
     task = Task(
         id=f"task-{uuid4().hex[:8]}",
@@ -33,6 +33,7 @@ def task_for_episode(db_session) -> Task:
     )
     db_session.add(task)
     db_session.flush()
+    make_record(task.id)
     return task
 
 

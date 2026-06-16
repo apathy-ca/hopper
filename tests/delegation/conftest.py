@@ -19,11 +19,28 @@ from hopper.models import (
     HopperScope,
     InstanceStatus,
     InstanceType,
+    Record,
+    RecordType,
     Task,
     TaskDelegation,
     TaskStatus,
 )
 from hopper.timeutils import utc_now_naive
+
+
+def _ensure_record(session: Session, task_id: str, instance_id: str | None = None) -> None:
+    """Create a matching Record row so task_id satisfies the FK to records.id."""
+    now = utc_now_naive()
+    record = Record(
+        id=task_id,
+        type=RecordType.TASK.value,
+        instance_id=instance_id,
+        current_revision_id=None,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(record)
+    session.flush()
 
 
 @pytest.fixture
@@ -119,6 +136,7 @@ def sample_task(db_session: Session, global_instance: HopperInstance) -> Task:
     )
     db_session.add(task)
     db_session.flush()
+    _ensure_record(db_session, task.id)
     return task
 
 
@@ -138,6 +156,7 @@ def high_priority_task(db_session: Session, global_instance: HopperInstance) -> 
     )
     db_session.add(task)
     db_session.flush()
+    _ensure_record(db_session, task.id)
     return task
 
 
@@ -182,6 +201,8 @@ def multiple_tasks(db_session: Session, global_instance: HopperInstance) -> list
         db_session.add(task)
         tasks.append(task)
     db_session.flush()
+    for task in tasks:
+        _ensure_record(db_session, task.id)
     return tasks
 
 

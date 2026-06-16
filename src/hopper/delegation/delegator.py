@@ -167,8 +167,8 @@ class Delegator:
         logger.info(f"Rejected delegation {delegation.id}: {reason}")
 
         # Return task to source instance
-        task = delegation.task
-        if delegation.source_instance_id:
+        task = self.session.get(Task, delegation.task_id)
+        if task and delegation.source_instance_id:
             task.instance_id = delegation.source_instance_id
             task.updated_at = utc_now_naive()
             self.session.flush()
@@ -230,8 +230,8 @@ class Delegator:
         logger.info(f"Cancelled delegation {delegation.id}")
 
         # Return task to source instance
-        task = delegation.task
-        if delegation.source_instance_id:
+        task = self.session.get(Task, delegation.task_id)
+        if task and delegation.source_instance_id:
             task.instance_id = delegation.source_instance_id
             task.updated_at = utc_now_naive()
             self.session.flush()
@@ -248,7 +248,10 @@ class Delegator:
         Returns:
             List of delegations in order from origin to current
         """
-        delegations = sorted(task.delegations, key=lambda d: d.delegated_at)
+        delegations = sorted(
+            self.session.query(TaskDelegation).filter_by(task_id=task.id).all(),
+            key=lambda d: d.delegated_at,
+        )
         return delegations
 
     def get_active_delegation(self, task: Task) -> TaskDelegation | None:
@@ -261,7 +264,7 @@ class Delegator:
         Returns:
             Active delegation or None
         """
-        for delegation in task.delegations:
+        for delegation in self.session.query(TaskDelegation).filter_by(task_id=task.id).all():
             if delegation.is_active:
                 return delegation
         return None

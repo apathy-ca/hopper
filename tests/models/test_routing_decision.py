@@ -8,19 +8,12 @@ from sqlalchemy.orm import Session
 from hopper.models import HopperInstance, HopperScope, Project, RoutingDecision, Task
 
 
-def test_routing_decision_creation(clean_db: Session) -> None:
+def test_routing_decision_creation(clean_db: Session, make_record) -> None:
     """Test creating a routing decision."""
-    # Create prerequisites
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
     project = Project(name="czarina", slug="czarina")
-    task = Task(id="TASK-001", instance_id="test-instance", title="Test task")
-    clean_db.add_all([instance, project, task])
-    clean_db.commit()
+    clean_db.add(project)
+    make_record("TASK-001")
 
-    # Create routing decision
     decision = RoutingDecision(
         task_id="TASK-001",
         project="czarina",
@@ -41,16 +34,11 @@ def test_routing_decision_creation(clean_db: Session) -> None:
     assert retrieved.decision_time_ms == 150.5
 
 
-def test_routing_decision_with_alternatives(clean_db: Session) -> None:
+def test_routing_decision_with_alternatives(clean_db: Session, make_record) -> None:
     """Test routing decision with alternative projects considered."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
     project = Project(name="czarina", slug="czarina")
-    task = Task(id="TASK-001", instance_id="test-instance", title="Test task")
-    clean_db.add_all([instance, project, task])
-    clean_db.commit()
+    clean_db.add(project)
+    make_record("TASK-001")
 
     alternatives = [
         {"project": "sark", "confidence": 0.65, "reason": "Could handle it"},
@@ -73,16 +61,11 @@ def test_routing_decision_with_alternatives(clean_db: Session) -> None:
     assert retrieved.alternatives[0]["confidence"] == 0.65
 
 
-def test_routing_decision_with_context(clean_db: Session) -> None:
+def test_routing_decision_with_context(clean_db: Session, make_record) -> None:
     """Test routing decision with workload and context snapshots."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
     project = Project(name="czarina", slug="czarina")
-    task = Task(id="TASK-001", instance_id="test-instance", title="Test task")
-    clean_db.add_all([instance, project, task])
-    clean_db.commit()
+    clean_db.add(project)
+    make_record("TASK-001")
 
     workload_snapshot = {
         "czarina": {"pending": 5, "in_progress": 2},
@@ -113,40 +96,22 @@ def test_routing_decision_with_context(clean_db: Session) -> None:
     assert retrieved.context["priority"] == "high"
 
 
-def test_routing_decision_task_relationship(clean_db: Session) -> None:
-    """Test relationship between routing decision and task."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
-    project = Project(name="czarina", slug="czarina")
-    task = Task(id="TASK-001", instance_id="test-instance", title="Test task")
-    clean_db.add_all([instance, project, task])
-    clean_db.commit()
+def test_routing_decision_fk_to_record(clean_db: Session, make_record) -> None:
+    """RoutingDecision.task_id FKs to records.id, not tasks.id."""
+    from hopper.models import Project
 
-    decision = RoutingDecision(
-        task_id="TASK-001",
-        project="czarina",
-        confidence=0.80,
-    )
+    clean_db.add(Project(name="czarina", slug="czarina"))
+    make_record("TASK-001")
+
+    decision = RoutingDecision(task_id="TASK-001", project="czarina", confidence=0.80)
     clean_db.add(decision)
     clean_db.commit()
 
-    # Access decision from task
-    retrieved_task = clean_db.query(Task).filter_by(id="TASK-001").first()
-    assert retrieved_task is not None
-    assert retrieved_task.routing_decision is not None
-    assert retrieved_task.routing_decision.project == "czarina"
-    assert retrieved_task.routing_decision.confidence == 0.80
-
-    # Access task from decision
-    retrieved_decision = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
-    assert retrieved_decision is not None
-    assert retrieved_decision.task.id == "TASK-001"
-    assert retrieved_decision.task.title == "Test task"
+    retrieved = clean_db.query(RoutingDecision).filter_by(task_id="TASK-001").first()
+    assert retrieved is not None
+    assert retrieved.task_id == "TASK-001"
 
 
-@pytest.mark.skip(reason="Phase 2: project_obj relationship not implemented")
 @pytest.mark.skip(reason="Phase 2: project_obj relationship not implemented")
 def test_routing_decision_project_relationship(clean_db: Session) -> None:
     """Test relationship between routing decision and project."""
@@ -180,15 +145,9 @@ def test_routing_decision_project_relationship(clean_db: Session) -> None:
     assert retrieved_project.routing_decisions[0].task_id == "TASK-001"
 
 
-def test_routing_decision_without_project(clean_db: Session) -> None:
+def test_routing_decision_without_project(clean_db: Session, make_record) -> None:
     """Test routing decision when no project is selected."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.GLOBAL.value,
-    )
-    task = Task(id="TASK-001", instance_id="test-instance", title="Unroutable task")
-    clean_db.add_all([instance, task])
-    clean_db.commit()
+    make_record("TASK-001")
 
     decision = RoutingDecision(
         task_id="TASK-001",

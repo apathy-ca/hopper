@@ -632,7 +632,8 @@ async def create_task_feedback(
         raise ValidationException("Feedback can only be added to completed tasks", "task_id")
 
     # Check if feedback already exists
-    if task.feedback:
+    existing_fb = await db.execute(select(TaskFeedback).where(TaskFeedback.task_id == task_id))
+    if existing_fb.scalar_one_or_none():
         raise ValidationException("Task already has feedback", "task_id")
 
     # Create feedback
