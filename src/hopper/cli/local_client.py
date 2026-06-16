@@ -17,7 +17,6 @@ from hopper.storage import (
     SQLiteStorage,
     StorageConfig,
     TaskMarkdownStore,
-    TaskSQLiteStore,
 )
 from hopper.storage.memory import LocalFeedback, LocalPattern
 from hopper.storage.revision_writer import AuthorContext
@@ -71,15 +70,14 @@ class LocalClient:
         storage_type = _read_storage_type(storage_path)
 
         if storage_type == "sqlite":
-            # SQLite backend — task store is SQL; episode/pattern delegate to
-            # markdown files until their SQL tables are built (Phase 4c+).
+            # SQLite backend — tasks table was dropped (Phase 5 migration). Fall
+            # through to markdown for task storage; episode/pattern use SQLite.
             sqlite_storage = SQLiteStorage(self.config)
             sqlite_storage.initialize()
             self.storage = sqlite_storage  # type: ignore[assignment]
-            self.task_store = TaskSQLiteStore(sqlite_storage)
-            # Episode and pattern stores still need a MarkdownStorage for now
             _md_storage = MarkdownStorage(self.config)
             _md_storage.initialize()
+            self.task_store = TaskMarkdownStore(_md_storage)
             self.episode_store = EpisodeSQLiteStore(_md_storage)
             self.pattern_store = PatternSQLiteStore(_md_storage)
             self.feedback_store = FeedbackSQLiteStore(sqlite_storage)

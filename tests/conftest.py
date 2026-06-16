@@ -29,7 +29,6 @@ try:
     from hopper.models.hopper_instance import HopperInstance  # noqa: F401
     from hopper.models.project import Project  # noqa: F401
     from hopper.models.routing_decision import RoutingDecision  # noqa: F401
-    from hopper.models.task import Task  # noqa: F401
     from hopper.models.task_feedback import TaskFeedback  # noqa: F401
 except ImportError:
     # Models not yet integrated, create mock Base

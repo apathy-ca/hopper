@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from hopper.models import HopperInstance, Task
+from hopper.models import HopperInstance
 
 
 class TaskActionType(str, Enum):
@@ -86,7 +86,7 @@ class BaseScopeBehavior(ABC):
     @abstractmethod
     async def handle_incoming_task(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> TaskAction:
         """
@@ -107,7 +107,7 @@ class BaseScopeBehavior(ABC):
     @abstractmethod
     async def should_delegate(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> bool:
         """
@@ -125,7 +125,7 @@ class BaseScopeBehavior(ABC):
     @abstractmethod
     async def find_delegation_target(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -143,7 +143,7 @@ class BaseScopeBehavior(ABC):
     @abstractmethod
     async def on_task_completed(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> None:
         """
@@ -162,7 +162,7 @@ class BaseScopeBehavior(ABC):
     async def get_task_queue(
         self,
         instance: HopperInstance,
-    ) -> list[Task]:
+    ) -> list[Any]:
         """
         Get the current task queue for this instance.
 
@@ -194,7 +194,7 @@ class BaseScopeBehavior(ABC):
         config = instance.config or {}
         return config.get(key, default)
 
-    def estimate_task_complexity(self, task: Task) -> int:
+    def estimate_task_complexity(self, task: Any) -> int:
         """
         Estimate task complexity for routing decisions.
 

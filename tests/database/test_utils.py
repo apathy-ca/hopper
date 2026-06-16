@@ -64,49 +64,32 @@ def test_dump_schema(test_engine):
     assert "tables" in schema
     assert "database_url" in schema
 
-    # Check for expected tables
-    expected_tables = ["tasks", "projects", "hopper_instances", "routing_decisions"]
+    # Check for expected tables (tasks table was dropped in Phase 5)
+    expected_tables = ["records", "projects", "hopper_instances", "routing_decisions"]
     for table in expected_tables:
         assert table in schema["tables"]
 
-    # Check task table structure
-    tasks_table = schema["tables"]["tasks"]
-    assert "columns" in tasks_table
-    assert "indexes" in tasks_table
-    assert "foreign_keys" in tasks_table
-
-    # Verify some columns exist
-    column_names = [col["name"] for col in tasks_table["columns"]]
-    assert "id" in column_names
-    assert "title" in column_names
-    assert "status" in column_names
+    assert "tasks" not in schema["tables"]
 
 
 def test_get_table_row_counts(test_engine):
     """Test getting row counts for all tables."""
     from sqlalchemy.orm import sessionmaker
 
-    from hopper.database.repositories import ProjectRepository, TaskRepository
+    from hopper.database.repositories import ProjectRepository
 
     SessionLocal = sessionmaker(bind=test_engine)
     session = SessionLocal()
 
     try:
-        # Add some data
-        task_repo = TaskRepository(session)
         project_repo = ProjectRepository(session)
-
         project_repo.create(name="test-project", slug="test-proj")
-        task_repo.create(id="task-1", title="Task 1", status="pending", priority="medium")
-        task_repo.create(id="task-2", title="Task 2", status="pending", priority="medium")
-
         session.commit()
 
-        # Get counts
         counts = get_table_row_counts(test_engine)
 
-        assert counts["tasks"] == 2
         assert counts["projects"] == 1
+        assert "tasks" not in counts  # tasks table was dropped in Phase 5
 
     finally:
         session.close()
@@ -131,27 +114,23 @@ def test_reset_database_dev_only(test_engine):
     """Test resetting database in development mode."""
     from sqlalchemy.orm import sessionmaker
 
-    from hopper.database.repositories import TaskRepository
+    from hopper.database.repositories import ProjectRepository
 
     SessionLocal = sessionmaker(bind=test_engine)
     session = SessionLocal()
 
     try:
-        # Add some data
-        task_repo = TaskRepository(session)
-        task_repo.create(id="task-1", title="Task 1", status="pending", priority="medium")
+        project_repo = ProjectRepository(session)
+        project_repo.create(name="pre-reset-project", slug="pre-reset")
         session.commit()
 
-        # Verify data exists
         counts_before = get_table_row_counts(test_engine)
-        assert counts_before["tasks"] == 1
+        assert counts_before["projects"] == 1
 
-        # Reset database
         reset_database_dev_only(test_engine)
 
-        # Verify tables exist but are empty
         counts_after = get_table_row_counts(test_engine)
-        assert counts_after["tasks"] == 0
+        assert counts_after["projects"] == 0
 
     finally:
         session.close()

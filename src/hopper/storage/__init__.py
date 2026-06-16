@@ -23,7 +23,6 @@ from .memory import (
 )
 from .sqlite import SQLiteStorage
 from .sqlite_memory import EpisodeSQLiteStore, FeedbackSQLiteStore, PatternSQLiteStore
-from .sqlite_tasks import TaskSQLiteStore
 from .tasks import TaskMarkdownStore, TaskStore
 
 __all__ = [
@@ -44,7 +43,6 @@ __all__ = [
     "FeedbackMarkdownStore",
     # SQLite
     "SQLiteStorage",
-    "TaskSQLiteStore",
     "EpisodeSQLiteStore",
     "PatternSQLiteStore",
     "FeedbackSQLiteStore",

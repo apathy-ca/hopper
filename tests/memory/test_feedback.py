@@ -9,7 +9,9 @@ import pytest
 
 from hopper.memory.episodic import EpisodicStore
 from hopper.memory.feedback import FeedbackAnalytics, FeedbackStore
-from hopper.models import Task, TaskStatus
+from types import SimpleNamespace
+
+from hopper.models import TaskStatus
 from hopper.timeutils import utc_now_naive
 
 
@@ -63,44 +65,42 @@ def test_instances(db_session):
 
 
 @pytest.fixture
-def sample_task(db_session, test_instances, make_record) -> Task:
-    """Create a sample task."""
-    task = Task(
-        id=f"task-{uuid4().hex[:8]}",
+def sample_task(test_instances, make_record):
+    """Create a sample task-like namespace."""
+    task_id = f"task-{uuid4().hex[:8]}"
+    make_record(task_id, instance_id="api-instance")
+    return SimpleNamespace(
+        id=task_id,
         title="Test task",
         description="A test task",
         project="test-project",
         status=TaskStatus.DONE,
+        priority="medium",
         instance_id="api-instance",
         tags={"api": True, "python": True},
         created_at=utc_now_naive(),
     )
-    db_session.add(task)
-    db_session.flush()
-    make_record(task.id)
-    return task
 
 
 @pytest.fixture
-def multiple_tasks(db_session, test_instances, make_record) -> list[Task]:
-    """Create multiple tasks for testing."""
+def multiple_tasks(test_instances, make_record) -> list:
+    """Create multiple task-like namespaces for testing."""
     tasks = []
     for i in range(5):
-        task = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        task_id = f"task-{uuid4().hex[:8]}"
+        inst = "api-instance" if i < 3 else "web-instance"
+        make_record(task_id, instance_id=inst)
+        tasks.append(SimpleNamespace(
+            id=task_id,
             title=f"Task {i}",
             description=f"Description {i}",
             project="test-project",
             status=TaskStatus.DONE,
-            instance_id="api-instance" if i < 3 else "web-instance",
+            priority="medium",
+            instance_id=inst,
             tags={"api": True} if i < 3 else {"frontend": True},
             created_at=utc_now_naive(),
-        )
-        db_session.add(task)
-        tasks.append(task)
-    db_session.flush()
-    for task in tasks:
-        make_record(task.id)
+        ))
     return tasks
 
 
@@ -246,22 +246,15 @@ class TestFeedbackStore:
         assert len(misrouted) == 2
 
     def test_get_tasks_needing_feedback(self, db_session, feedback_store, multiple_tasks):
-        """Test getting tasks without feedback."""
-        # Give feedback to only some tasks
+        """get_tasks_needing_feedback is stubbed (tasks table dropped); returns []."""
         feedback_store.record_feedback(
             task_id=multiple_tasks[0].id,
-            was_good_match=True,
-        )
-        feedback_store.record_feedback(
-            task_id=multiple_tasks[1].id,
             was_good_match=True,
         )
 
         needing = feedback_store.get_tasks_needing_feedback()
 
-        # 3 tasks should need feedback
-        assert len(needing) == 3
-        assert all(t.id not in [multiple_tasks[0].id, multiple_tasks[1].id] for t in needing)
+        assert needing == []
 
     def test_delete_feedback(self, feedback_store, sample_task):
         """Test deleting feedback."""

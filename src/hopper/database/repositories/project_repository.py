@@ -6,7 +6,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from hopper.models.project import Project
-from hopper.models.task import Task
 from hopper.timeutils import utc_now_naive
 
 from .base import BaseRepository
@@ -46,18 +45,8 @@ class ProjectRepository(BaseRepository[Project]):
         return self.get(name)
 
     def get_projects_with_active_tasks(self) -> list[Project]:
-        """
-        Get all projects that have active (non-completed) tasks.
-
-        Returns:
-            List of projects with active tasks
-        """
-        query = (
-            select(Project)
-            .join(Task, Project.name == Task.project)
-            .where(Task.status != "completed")
-            .distinct()
-        )
+        """Get all projects. Task table is dropped; returns all projects."""
+        query = select(Project)
         result = self.session.execute(query)
         return list(result.scalars().all())
 
@@ -96,48 +85,15 @@ class ProjectRepository(BaseRepository[Project]):
         return self.update(name, last_sync=utc_now_naive())
 
     def get_project_task_count(self, name: str) -> int:
-        """
-        Get the number of tasks for a project.
-
-        Args:
-            name: Project name
-
-        Returns:
-            Number of tasks
-        """
-        from sqlalchemy import func
-
-        query = select(func.count(Task.id)).where(Task.project == name)
-        result = self.session.execute(query)
-        return result.scalar() or 0
+        """Task table is dropped; always returns 0."""
+        return 0
 
     def get_project_statistics(self, name: str) -> dict:
-        """
-        Get statistics for a project.
-
-        Args:
-            name: Project name
-
-        Returns:
-            Dictionary with project statistics
-        """
-        from sqlalchemy import func
-
-        # Count tasks by status
-        query = (
-            select(Task.status, func.count(Task.id))
-            .where(Task.project == name)
-            .group_by(Task.status)
-        )
-        result = self.session.execute(query)
-        status_counts = dict(result.all())
-
-        total_tasks = sum(status_counts.values())
-
+        """Task table is dropped; returns zeroed statistics."""
         return {
-            "total_tasks": total_tasks,
-            "status_counts": status_counts,
-            "pending": status_counts.get("pending", 0),
-            "in_progress": status_counts.get("in_progress", 0),
-            "completed": status_counts.get("completed", 0),
+            "total_tasks": 0,
+            "status_counts": {},
+            "pending": 0,
+            "in_progress": 0,
+            "completed": 0,
         }

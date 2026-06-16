@@ -27,11 +27,9 @@ try:
     from hopper.models.hopper_instance import HopperInstance
     from hopper.models.project import Project
     from hopper.models.routing_decision import RoutingDecision
-    from hopper.models.task import Task
     from hopper.models.task_feedback import TaskFeedback
 except ImportError:
     # Models not yet integrated, define mock classes
-    Task = None
     Project = None
     HopperInstance = None
     RoutingDecision = None
@@ -132,62 +130,6 @@ class BaseFactory:
         """Get default attributes for the model. Override in subclasses."""
         return {}
 
-
-class TaskFactory(BaseFactory):
-    """
-    Factory for creating Task instances.
-    """
-
-    model = Task
-
-    @classmethod
-    def _get_defaults(cls) -> dict[str, Any]:
-        seq = cls._get_sequence()
-        return {
-            "id": cls._generate_id("task"),
-            "title": f"Test Task {seq}",
-            "description": f"This is a test task created by TaskFactory (sequence {seq})",
-            "project": "test-project",
-            "status": "pending",
-            "priority": "medium",
-            "requester": "test-user",
-            "owner": None,
-            "source": "test",
-            "tags": {"test": True, "automated": True},
-            "created_at": utc_now_naive(),
-            "updated_at": utc_now_naive(),
-        }
-
-    @classmethod
-    def create_pending(cls, session: Session | None = None, **kwargs) -> Task:
-        """Create a task with pending status."""
-        return cls.create(session=session, status="pending", **kwargs)
-
-    @classmethod
-    def create_routed(cls, session: Session | None = None, **kwargs) -> Task:
-        """Create a task with routed status."""
-        return cls.create(session=session, status="routed", **kwargs)
-
-    @classmethod
-    def create_in_progress(cls, session: Session | None = None, **kwargs) -> Task:
-        """Create a task with in_progress status."""
-        return cls.create(session=session, status="in_progress", **kwargs)
-
-    @classmethod
-    def create_completed(cls, session: Session | None = None, **kwargs) -> Task:
-        """Create a task with completed status."""
-        return cls.create(session=session, status="completed", **kwargs)
-
-    @classmethod
-    def create_with_high_priority(cls, session: Session | None = None, **kwargs) -> Task:
-        """Create a task with high priority."""
-        return cls.create(session=session, priority="high", **kwargs)
-
-    @classmethod
-    def create_with_dependencies(cls, session: Session | None = None, **kwargs) -> Task:
-        """Create a task with dependencies."""
-        depends_on = kwargs.pop("depends_on", ["task-dep-1", "task-dep-2"])
-        return cls.create(session=session, depends_on={"task_ids": depends_on}, **kwargs)
 
 
 class ProjectFactory(BaseFactory):
@@ -405,94 +347,3 @@ class ExternalMappingFactory(BaseFactory):
 # ============================================================================
 
 
-def create_task_with_routing(
-    session: Session | None = None,
-    task_kwargs: dict[str, Any] | None = None,
-    decision_kwargs: dict[str, Any] | None = None,
-) -> tuple:
-    """
-    Create a task with associated routing decision.
-
-    Args:
-        session: SQLAlchemy session
-        task_kwargs: Keyword arguments for task creation
-        decision_kwargs: Keyword arguments for routing decision creation
-
-    Returns:
-        Tuple of (task, routing_decision)
-    """
-    task_kwargs = task_kwargs or {}
-    decision_kwargs = decision_kwargs or {}
-
-    # Create task
-    task = TaskFactory.create(session=session, **task_kwargs)
-
-    # Create routing decision linked to task
-    decision_kwargs["task_id"] = task.id
-    decision = RoutingDecisionFactory.create(session=session, **decision_kwargs)
-
-    return task, decision
-
-
-def create_task_with_feedback(
-    session: Session | None = None,
-    task_kwargs: dict[str, Any] | None = None,
-    feedback_kwargs: dict[str, Any] | None = None,
-) -> tuple:
-    """
-    Create a task with associated feedback.
-
-    Args:
-        session: SQLAlchemy session
-        task_kwargs: Keyword arguments for task creation
-        feedback_kwargs: Keyword arguments for feedback creation
-
-    Returns:
-        Tuple of (task, feedback)
-    """
-    task_kwargs = task_kwargs or {}
-    feedback_kwargs = feedback_kwargs or {}
-
-    # Create task
-    task = TaskFactory.create(session=session, **task_kwargs)
-
-    # Create feedback linked to task
-    feedback_kwargs["task_id"] = task.id
-    feedback = TaskFeedbackFactory.create(session=session, **feedback_kwargs)
-
-    return task, feedback
-
-
-def create_complete_task_workflow(session: Session | None = None, **kwargs) -> dict[str, Any]:
-    """
-    Create a complete task workflow with all related entities.
-
-    Creates:
-    - Task
-    - Routing Decision
-    - Task Feedback
-    - External Mapping
-
-    Returns:
-        Dictionary with all created entities
-    """
-    # Create task
-    task = TaskFactory.create(session=session, **kwargs)
-
-    # Create routing decision
-    decision = RoutingDecisionFactory.create(
-        session=session, task_id=task.id, destination=kwargs.get("project", "default-project")
-    )
-
-    # Create feedback
-    feedback = TaskFeedbackFactory.create(session=session, task_id=task.id, routing_correct=True)
-
-    # Create external mapping
-    mapping = ExternalMappingFactory.create(session=session, task_id=task.id)
-
-    return {
-        "task": task,
-        "decision": decision,
-        "feedback": feedback,
-        "mapping": mapping,
-    }

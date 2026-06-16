@@ -22,12 +22,13 @@ from hopper.api.schemas.learning import (
     RoutingAccuracyStats,
 )
 from hopper.memory.consolidated import RoutingPattern
+from types import SimpleNamespace
+
 from hopper.models import (
     HopperInstance,
     HopperScope,
     InstanceStatus,
     InstanceType,
-    Task,
     TaskFeedback,
     TaskStatus,
 )
@@ -200,15 +201,9 @@ class TestFeedbackModel:
 
     def test_create_feedback(self, clean_db: Session, make_record):
         """Test creating feedback."""
-        task = Task(
-            id=f"task-{uuid4().hex[:8]}",
-            title="Test task",
-            status=TaskStatus.PENDING,
-            created_at=utc_now_naive(),
-        )
-        clean_db.add(task)
-        clean_db.flush()
-        make_record(task.id)
+        task_id = f"task-{uuid4().hex[:8]}"
+        make_record(task_id)
+        task = SimpleNamespace(id=task_id)
 
         feedback = TaskFeedback(
             task_id=task.id,
@@ -227,15 +222,9 @@ class TestFeedbackModel:
 
     def test_feedback_with_all_fields(self, clean_db: Session, make_record):
         """Test feedback with all optional fields."""
-        task = Task(
-            id=f"task-{uuid4().hex[:8]}",
-            title="Test task",
-            status=TaskStatus.DONE,
-            created_at=utc_now_naive(),
-        )
-        clean_db.add(task)
-        clean_db.flush()
-        make_record(task.id)
+        task_id = f"task-{uuid4().hex[:8]}"
+        make_record(task_id)
+        task = SimpleNamespace(id=task_id)
 
         feedback = TaskFeedback(
             task_id=task.id,
@@ -359,18 +348,19 @@ class TestFeedbackIntegration:
         db_session.add(instance)
         db_session.flush()
 
-        task = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        task_id = f"task-{uuid4().hex[:8]}"
+        make_record(task_id)
+        task = SimpleNamespace(
+            id=task_id,
             title="API endpoint task",
+            description=None,
             project="backend",
             status=TaskStatus.DONE,
+            priority="medium",
             instance_id="api-instance",
             tags={"api": True},
             created_at=utc_now_naive(),
         )
-        db_session.add(task)
-        db_session.flush()
-        make_record(task.id)
 
         # Setup learning components
         episodic_store = EpisodicStore(db_session)
@@ -398,17 +388,9 @@ class TestFeedbackIntegration:
         """Test tracking multiple feedback records."""
         tasks = []
         for i in range(5):
-            task = Task(
-                id=f"multi-task-{uuid4().hex[:8]}",
-                title=f"Task {i}",
-                status=TaskStatus.DONE,
-                created_at=utc_now_naive(),
-            )
-            db_session.add(task)
-            tasks.append(task)
-        db_session.flush()
-        for task in tasks:
-            make_record(task.id)
+            task_id = f"multi-task-{uuid4().hex[:8]}"
+            make_record(task_id)
+            tasks.append(SimpleNamespace(id=task_id))
 
         # Create feedback for each
         for i, task in enumerate(tasks):
@@ -458,7 +440,7 @@ class TestPatternIntegration:
         assert matched_pattern.id == pattern.id
         assert score > 0
 
-    def test_pattern_consolidation(self, db_session: Session):
+    def test_pattern_consolidation(self, db_session: Session, make_record):
         """Test pattern extraction from episodes."""
         from hopper.memory import ConsolidatedStore, EpisodicStore, PatternExtractor
 
@@ -480,16 +462,19 @@ class TestPatternIntegration:
 
         # Create test tasks with consistent routing
         for i in range(10):
-            task = Task(
-                id=f"consol-task-{uuid4().hex[:8]}",
+            task_id = f"consol-task-{uuid4().hex[:8]}"
+            make_record(task_id, instance_id="consol-api-instance")
+            task = SimpleNamespace(
+                id=task_id,
                 title=f"API task {i}",
+                description=None,
+                project=None,
                 status=TaskStatus.DONE,
+                priority="medium",
                 instance_id="consol-api-instance",
                 tags={"api": True, "rest": True},
                 created_at=utc_now_naive(),
             )
-            db_session.add(task)
-            db_session.flush()
 
             episode = episodic_store.record_episode(
                 task=task,
@@ -511,7 +496,7 @@ class TestPatternIntegration:
 class TestLearningStatistics:
     """Test learning statistics aggregation."""
 
-    def test_episodic_statistics(self, db_session: Session):
+    def test_episodic_statistics(self, db_session: Session, make_record):
         """Test episodic memory statistics."""
         from hopper.memory import EpisodicStore
 
@@ -519,14 +504,19 @@ class TestLearningStatistics:
 
         # Create some episodes
         for i in range(10):
-            task = Task(
-                id=f"stat-task-{uuid4().hex[:8]}",
+            task_id = f"stat-task-{uuid4().hex[:8]}"
+            make_record(task_id)
+            task = SimpleNamespace(
+                id=task_id,
                 title=f"Stat task {i}",
+                description=None,
+                project=None,
                 status=TaskStatus.DONE,
+                priority="medium",
+                instance_id=None,
+                tags=None,
                 created_at=utc_now_naive(),
             )
-            db_session.add(task)
-            db_session.flush()
 
             episode = store.record_episode(
                 task=task,
@@ -603,15 +593,9 @@ class TestEdgeCases:
 
     def test_duplicate_feedback(self, db_session: Session, make_record):
         """Test handling duplicate feedback for same task."""
-        task = Task(
-            id=f"dup-task-{uuid4().hex[:8]}",
-            title="Duplicate test",
-            status=TaskStatus.DONE,
-            created_at=utc_now_naive(),
-        )
-        db_session.add(task)
-        db_session.flush()
-        make_record(task.id)
+        task_id = f"dup-task-{uuid4().hex[:8]}"
+        make_record(task_id)
+        task = SimpleNamespace(id=task_id)
 
         # First feedback
         feedback1 = TaskFeedback(
@@ -655,15 +639,9 @@ class TestEdgeCases:
 
     def test_very_long_feedback_text(self, db_session: Session, make_record):
         """Test feedback with very long text."""
-        task = Task(
-            id=f"long-task-{uuid4().hex[:8]}",
-            title="Long text test",
-            status=TaskStatus.DONE,
-            created_at=utc_now_naive(),
-        )
-        db_session.add(task)
-        db_session.flush()
-        make_record(task.id)
+        task_id = f"long-task-{uuid4().hex[:8]}"
+        make_record(task_id)
+        task = SimpleNamespace(id=task_id)
 
         long_text = "A" * 10000  # Very long feedback
 

@@ -8,7 +8,9 @@ from uuid import uuid4
 import pytest
 
 from hopper.memory.episodic import EpisodicStore
-from hopper.models import RoutingDecision, Task, TaskStatus
+from types import SimpleNamespace
+
+from hopper.models import RoutingDecision, TaskStatus
 from hopper.timeutils import utc_now_naive
 
 
@@ -19,22 +21,21 @@ def episodic_store(db_session) -> EpisodicStore:
 
 
 @pytest.fixture
-def task_for_episode(db_session, make_record) -> Task:
-    """Create a task for episode testing."""
-    task = Task(
-        id=f"task-{uuid4().hex[:8]}",
+def task_for_episode(make_record):
+    """Create a task-like namespace for episode testing."""
+    task_id = f"task-{uuid4().hex[:8]}"
+    make_record(task_id)
+    return SimpleNamespace(
+        id=task_id,
         title="Test task for episode",
         description="A test task",
         project="test-project",
         status=TaskStatus.PENDING,
         priority="medium",
         tags={"python": True, "api": True},
+        instance_id=None,
         created_at=utc_now_naive(),
     )
-    db_session.add(task)
-    db_session.flush()
-    make_record(task.id)
-    return task
 
 
 @pytest.fixture
@@ -374,19 +375,20 @@ class TestEpisodicStore:
         # Success rate: 5 / (5+2) = 0.714...
         assert 0.71 < stats["success_rate"] < 0.72
 
-    def test_find_similar_episodes(self, db_session, episodic_store):
+    def test_find_similar_episodes(self, make_record, episodic_store):
         """Test finding episodes with similar tags."""
-        # Create task with python tag
-        task1 = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        id1 = f"task-{uuid4().hex[:8]}"
+        make_record(id1)
+        task1 = SimpleNamespace(
+            id=id1,
             title="Python task",
+            description=None,
             project="test",
             status=TaskStatus.PENDING,
+            priority="medium",
             tags={"python": True, "api": True},
-            created_at=utc_now_naive(),
+            instance_id=None,
         )
-        db_session.add(task1)
-        db_session.flush()
 
         ep1 = episodic_store.record_episode(
             task=task1,
@@ -394,17 +396,18 @@ class TestEpisodicStore:
         )
         ep1.mark_success()
 
-        # Create task with different tags
-        task2 = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        id2 = f"task-{uuid4().hex[:8]}"
+        make_record(id2)
+        task2 = SimpleNamespace(
+            id=id2,
             title="Frontend task",
+            description=None,
             project="test",
             status=TaskStatus.PENDING,
+            priority="medium",
             tags={"react": True, "frontend": True},
-            created_at=utc_now_naive(),
+            instance_id=None,
         )
-        db_session.add(task2)
-        db_session.flush()
 
         ep2 = episodic_store.record_episode(
             task=task2,
@@ -422,40 +425,41 @@ class TestEpisodicStore:
 class TestEpisodicStoreCleanup:
     """Tests for episodic store cleanup."""
 
-    def test_cleanup_old_episodes(self, db_session, episodic_store):
+    def test_cleanup_old_episodes(self, db_session, make_record, episodic_store):
         """Test cleaning up old episodes."""
-        # Create old task
-        old_task = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        old_id = f"task-{uuid4().hex[:8]}"
+        make_record(old_id)
+        old_task = SimpleNamespace(
+            id=old_id,
             title="Old task",
+            description=None,
             project="test",
             status=TaskStatus.DONE,
-            created_at=utc_now_naive() - timedelta(days=100),
+            priority="medium",
+            tags=None,
+            instance_id=None,
         )
-        db_session.add(old_task)
-        db_session.flush()
 
-        # Create old episode
         old_episode = episodic_store.record_episode(
             task=old_task,
             chosen_instance="old-project",
         )
-        # Manually set old date
         old_episode.routed_at = utc_now_naive() - timedelta(days=100)
         db_session.flush()
 
-        # Create recent task
-        new_task = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        new_id = f"task-{uuid4().hex[:8]}"
+        make_record(new_id)
+        new_task = SimpleNamespace(
+            id=new_id,
             title="New task",
+            description=None,
             project="test",
             status=TaskStatus.PENDING,
-            created_at=utc_now_naive(),
+            priority="medium",
+            tags=None,
+            instance_id=None,
         )
-        db_session.add(new_task)
-        db_session.flush()
 
-        # Create recent episode
         episodic_store.record_episode(
             task=new_task,
             chosen_instance="new-project",

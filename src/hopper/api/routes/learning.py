@@ -25,7 +25,7 @@ from hopper.api.schemas.learning import (
     PatternUpdate,
     RoutingAccuracyStats,
 )
-from hopper.models import Task, TaskFeedback
+from hopper.models import Record, TaskFeedback
 from hopper.timeutils import utc_now_naive
 
 router = APIRouter()
@@ -100,11 +100,11 @@ async def submit_feedback(
     Raises:
         NotFoundException: If task not found
     """
-    # Verify task exists
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    # Verify record exists
+    result = await db.execute(select(Record).where(Record.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
-        raise NotFoundException(f"Task {task_id} not found")
+        raise NotFoundException(f"Record {task_id} not found")
 
     # Use sync session for learning operations
     def _create_feedback(session):

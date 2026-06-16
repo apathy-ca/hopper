@@ -1,8 +1,7 @@
 # Hopper Memory & Context — Diagnosis and Plan
 
-Status: **IMPLEMENTED on branch `feat/memory-first-class`.** Client + server.
-Tests: 623 passed / 154 skipped / 4 pre-existing OAuth failures (unchanged
-baseline); +69 new tests. Not committed.
+Status: **COMPLETE.** All Phases shipped and running in production.
+Date: 2026-06-15 (Phases 4–6 + dead-code sweep)
 
 Done:
 - Client: kind/type first-class (markdown+sqlite), memory structured fields,
@@ -12,21 +11,40 @@ Done:
 - Upstream sync protocol: kind/subject/scope/provenance now survive every hop
   (were silently dropped at all of them); backward-compatible.
 - REST API: records/revisions-backed behind `HOPPER_API_RECORDS_BACKEND` (default
-  ON), kind-segmented; legacy `tasks` table NOT retired (gated).
+  ON), kind-segmented; legacy `tasks` table retired (see Phase 4–5 below).
 - **MCP instance-scope bug FIXED** (see §7): `_get_client()` recovers instance
   from durable DID affinity on session-cache miss and refuses silent wrong-scope
   fallback for authenticated multi-instance DIDs.
 - Bug fix: `shadow.py::_ensure_instance` raw INSERT omitted NOT-NULL
   `instance_type` and stored enum values instead of names — every records write on
   a fresh DB would have crashed / been ORM-unreadable. Fixed + regression test.
+- **Phase 4 (2026-06-15):** Re-pointed `task_feedback`, `routing_decisions`,
+  `task_delegations`, `external_mappings` FKs from `tasks.id` → `records.id`
+  (migration `c3d4e5f6a7b8`). Required removing dead ORM relationships between
+  Task and its child models.
+- **Phase 5 (2026-06-15):** Dropped the `tasks` table (migration `d5e6f7a8b9c0`).
+  Table had 0 rows in production; backup taken before drop.
+- **Phase 6 / shadow backfill (2026-06-15):** Ran `scripts/backfill_revisions.py`
+  against production `shadow.db`: 332 records created, 9 retyped, 1559 skipped,
+  0 errors. Shadow DB now at 1902 records / 16700 revisions.
+- **Shadow writer bug fixed (commit 56bb657):** `RevisionShadowWriter` hardcoded
+  `Record.type = "task"` regardless of payload `kind`. Fixed to derive type from
+  `task_payload.get("kind", "task")` via the `RecordType` enum. Regression test
+  added in `tests/storage/test_shadow_writer_kind.py`.
+- **Dead code sweep (2026-06-16):** Removed `Task` ORM model, `TaskRepository`,
+  `sqlite_tasks.py`, and all server-side callers. Intelligence/memory layer type
+  signatures updated to `Any`; Task-table queries stubbed to return empty (no data
+  exists). Production routes (delegations, learning, instances) updated to query
+  `Record` instead of `Task`.
 
-NOT YET (need sign-off / deploy): deploy server changes; REST Phases 4–6 (FK
-re-point, DROP tasks table, local-store migration, live backfill); status-vocab
-reconciliation; tag-sprawl cleanup; run data migration on live instances;
-§5 memory-home relocation; commit the branch. The 4 OAuth failures are
-pre-existing and (per server-side notes) may relate to HOPPER_PUBLIC_URL audience
-validation behind nginx — worth a separate look.
-Date: 2026-05-31
+§5 decision (recorded 2026-06-15): **SQLite = server-side canonical memory home.
+Local/markdown instances remain task-only.** No markdown memory migration required.
+The tasks table is the only table dropped; the records/revisions/shadow pipeline is
+the durable path for cross-agent memory.
+
+The 4 OAuth failures are pre-existing and (per server-side notes) may relate to
+HOPPER_PUBLIC_URL audience validation behind nginx — worth a separate look.
+Date: 2026-05-31 (original diagnosis)
 Triggered by: heavy real-world use in `~/Source/Rosetta_Program` (RP), which holds
 ~1253 records and ~50 "memories", syncs to a server, and where
 `hopper context` reports "No learnings captured yet."

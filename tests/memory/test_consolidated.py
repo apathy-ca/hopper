@@ -13,7 +13,9 @@ from hopper.memory.consolidated import (
 )
 from hopper.memory.consolidated.extractor import PatternCandidate
 from hopper.memory.episodic import EpisodicStore
-from hopper.models import Task, TaskStatus
+from types import SimpleNamespace
+
+from hopper.models import TaskStatus
 from hopper.timeutils import utc_now_naive
 
 
@@ -315,24 +317,25 @@ class TestPatternExtractor:
     """Tests for PatternExtractor."""
 
     @pytest.fixture
-    def tasks_with_episodes(self, db_session, episodic_store):
-        """Create tasks with successful episodes."""
+    def tasks_with_episodes(self, make_record, episodic_store):
+        """Create task-like namespaces with successful episodes."""
         tasks = []
         for i in range(5):
-            task = Task(
-                id=f"task-{uuid4().hex[:8]}",
+            task_id = f"task-{uuid4().hex[:8]}"
+            make_record(task_id)
+            task = SimpleNamespace(
+                id=task_id,
                 title=f"API endpoint task {i}",
                 description=f"Implement API endpoint {i}",
                 project="backend",
                 status=TaskStatus.DONE,
+                priority="medium",
                 tags={"api": True, "python": True, "backend": True},
+                instance_id=None,
                 created_at=utc_now_naive(),
             )
-            db_session.add(task)
-            db_session.flush()
             tasks.append(task)
 
-            # Create successful episode
             episode = episodic_store.record_episode(
                 task=task,
                 chosen_instance="api-instance",

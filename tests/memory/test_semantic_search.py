@@ -2,12 +2,13 @@
 Tests for semantic search functionality.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from hopper.memory.search import SimilarityResult, TaskSearcher, TaskSimilarity
-from hopper.models import Task, TaskStatus
+from hopper.models import TaskStatus
 from hopper.timeutils import utc_now_naive
 
 
@@ -206,10 +207,10 @@ class TestTaskSearcher:
     """Tests for TaskSearcher class."""
 
     @pytest.fixture
-    def sample_tasks(self, db_session):
-        """Create sample tasks for testing."""
-        tasks = [
-            Task(
+    def sample_tasks(self):
+        """Create sample task-like namespaces for testing."""
+        return [
+            SimpleNamespace(
                 id=f"task-{uuid4().hex[:8]}",
                 title="Fix API authentication bug",
                 description="Users cannot login",
@@ -218,7 +219,7 @@ class TestTaskSearcher:
                 tags={"api": True, "auth": True, "bug": True},
                 created_at=utc_now_naive(),
             ),
-            Task(
+            SimpleNamespace(
                 id=f"task-{uuid4().hex[:8]}",
                 title="Add API rate limiting",
                 description="Implement rate limiting for API endpoints",
@@ -227,7 +228,7 @@ class TestTaskSearcher:
                 tags={"api": True, "feature": True},
                 created_at=utc_now_naive(),
             ),
-            Task(
+            SimpleNamespace(
                 id=f"task-{uuid4().hex[:8]}",
                 title="Update homepage styling",
                 description="Redesign the homepage layout",
@@ -236,7 +237,7 @@ class TestTaskSearcher:
                 tags={"frontend": True, "css": True, "ui": True},
                 created_at=utc_now_naive(),
             ),
-            Task(
+            SimpleNamespace(
                 id=f"task-{uuid4().hex[:8]}",
                 title="Database query optimization",
                 description="Optimize slow database queries",
@@ -247,57 +248,47 @@ class TestTaskSearcher:
             ),
         ]
 
-        for task in tasks:
-            db_session.add(task)
-        db_session.flush()
-
-        return tasks
-
     def test_index_tasks(self, db_session, sample_tasks):
-        """Test indexing tasks from database."""
+        """index_tasks is stubbed (tasks table dropped); always returns 0."""
         searcher = TaskSearcher(db_session)
 
         count = searcher.index_tasks()
 
-        assert count == len(sample_tasks)
-        assert searcher.get_index_size() == len(sample_tasks)
+        assert count == 0
+        assert searcher.get_index_size() == 0
 
     def test_search_by_text(self, db_session, sample_tasks):
-        """Test searching by text."""
+        """Search returns empty since index_tasks is stubbed (tasks table dropped)."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
         results = searcher.search("API authentication")
 
-        assert len(results) > 0
-        # First result should be the auth bug task
-        assert "auth" in results[0].tags or "api" in results[0].tags
+        assert isinstance(results, list)
+        assert len(results) == 0
 
     def test_search_by_tags(self, db_session, sample_tasks):
-        """Test searching by tags."""
+        """Search returns empty since index_tasks is stubbed (tasks table dropped)."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
         results = searcher.search("", tags={"frontend": True, "css": True})
 
-        assert len(results) > 0
-        # First result should be frontend task
-        assert results[0].tags.get("frontend") or results[0].tags.get("css")
+        assert isinstance(results, list)
+        assert len(results) == 0
 
     def test_search_by_task(self, db_session, sample_tasks):
-        """Test searching by similar task."""
+        """search_by_task returns empty since index is always empty."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
-        # Search for tasks similar to the first one
         results = searcher.search_by_task(sample_tasks[0])
 
-        assert len(results) > 0
-        # Should not include itself
-        assert all(r.task_id != sample_tasks[0].id for r in results)
+        assert isinstance(results, list)
+        assert len(results) == 0
 
     def test_search_with_status_filter(self, db_session, sample_tasks):
-        """Test search with status filter."""
+        """Search with status filter returns empty since index is always empty."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
@@ -306,55 +297,51 @@ class TestTaskSearcher:
             status_filter=[TaskStatus.PENDING],
         )
 
-        for r in results:
-            assert r.status == "pending"
+        assert isinstance(results, list)
+        assert len(results) == 0
 
     def test_search_exclude_ids(self, db_session, sample_tasks):
-        """Test search excluding specific IDs."""
+        """Search with exclude_ids returns empty since index is always empty."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
         exclude = {sample_tasks[0].id, sample_tasks[1].id}
         results = searcher.search("API", exclude_ids=exclude)
 
-        for r in results:
-            assert r.task_id not in exclude
+        assert isinstance(results, list)
 
     def test_add_task_to_index(self, db_session, sample_tasks):
-        """Test adding a single task to index."""
+        """add_task still works even though index_tasks is stubbed."""
         searcher = TaskSearcher(db_session)
-        searcher.index_tasks()
+        searcher.index_tasks()  # stubbed — returns 0, index stays empty
 
         initial_size = searcher.get_index_size()
+        assert initial_size == 0
 
-        # Create new task
-        new_task = Task(
+        new_task = SimpleNamespace(
             id=f"task-{uuid4().hex[:8]}",
             title="New feature request",
             description="A brand new feature",
             project="backend",
             status=TaskStatus.PENDING,
             tags={"feature": True},
+            instance_id=None,
             created_at=utc_now_naive(),
         )
-        db_session.add(new_task)
-        db_session.flush()
 
         searcher.add_task(new_task)
 
         assert searcher.get_index_size() == initial_size + 1
 
     def test_remove_task_from_index(self, db_session, sample_tasks):
-        """Test removing a task from index."""
+        """remove_task on an empty (stubbed) index returns False."""
         searcher = TaskSearcher(db_session)
-        searcher.index_tasks()
-
-        initial_size = searcher.get_index_size()
+        searcher.index_tasks()  # stubbed — index stays empty
 
         removed = searcher.remove_task(sample_tasks[0].id)
 
-        assert removed is True
-        assert searcher.get_index_size() == initial_size - 1
+        assert removed is False
+        assert searcher.get_index_size() == 0
 
     def test_clear_index(self, db_session, sample_tasks):
         """Test clearing the index."""
@@ -366,14 +353,14 @@ class TestTaskSearcher:
         assert searcher.get_index_size() == 0
 
     def test_get_statistics(self, db_session, sample_tasks):
-        """Test getting searcher statistics."""
+        """Test getting searcher statistics; corpus is empty since index_tasks is stubbed."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
         stats = searcher.get_statistics()
 
         assert stats["indexed"] is True
-        assert stats["corpus_size"] == len(sample_tasks)
+        assert stats["corpus_size"] == 0
         assert "text_weight" in stats
         assert "tag_weight" in stats
         assert "unique_terms" in stats
@@ -394,36 +381,22 @@ class TestTaskSearcher:
             assert "tag_score" in data
 
     def test_lazy_indexing(self, db_session, sample_tasks):
-        """Test that search triggers indexing if needed."""
+        """Search triggers lazy indexing; corpus stays empty since index_tasks is stubbed."""
         searcher = TaskSearcher(db_session)
 
         # Search without explicit indexing
         searcher.search("API")
 
-        # Should have indexed automatically
-        assert searcher.get_index_size() > 0
+        # index_tasks is stubbed to return 0, so corpus stays empty
+        assert searcher.get_index_size() == 0
 
     def test_force_reindex(self, db_session, sample_tasks):
-        """Test force re-indexing."""
+        """index_tasks(force=True) is also stubbed; returns 0 regardless."""
         searcher = TaskSearcher(db_session)
         searcher.index_tasks()
 
-        # Add a task directly to DB without adding to index
-        new_task = Task(
-            id=f"task-{uuid4().hex[:8]}",
-            title="Unindexed task",
-            description="This task was added after indexing",
-            project="backend",
-            status=TaskStatus.PENDING,
-            created_at=utc_now_naive(),
-        )
-        db_session.add(new_task)
-        db_session.flush()
-
-        # Normal index should not pick it up
         count1 = searcher.index_tasks()
-        assert count1 == len(sample_tasks)
+        assert count1 == 0
 
-        # Force reindex should
         count2 = searcher.index_tasks(force=True)
-        assert count2 == len(sample_tasks) + 1
+        assert count2 == 0

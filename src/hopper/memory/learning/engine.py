@@ -10,7 +10,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from hopper.models import Task
 from hopper.timeutils import utc_now_naive
 
 from ..consolidated import ConsolidatedStore, PatternExtractor
@@ -92,7 +91,7 @@ class LearningEngine:
 
     def build_context(
         self,
-        task: Task,
+        task: Any,
         available_instances: list[InstanceInfo] | None = None,
     ) -> RoutingContext:
         """
@@ -130,7 +129,7 @@ class LearningEngine:
 
         return context
 
-    def _find_similar_tasks(self, task: Task, limit: int = 5) -> list[SimilarTask]:
+    def _find_similar_tasks(self, task: Any, limit: int = 5) -> list[SimilarTask]:
         """Find tasks similar to the given task."""
         # Use searcher to find similar tasks
         search_results = self.task_searcher.search_by_task(
@@ -158,7 +157,7 @@ class LearningEngine:
 
     def get_routing_suggestions(
         self,
-        task: Task,
+        task: Any,
         context: RoutingContext | None = None,
         limit: int = 3,
     ) -> list[RoutingSuggestion]:
@@ -269,7 +268,7 @@ class LearningEngine:
 
     def record_routing(
         self,
-        task: Task,
+        task: Any,
         chosen_instance: str,
         confidence: float,
         strategy: str = "learning",

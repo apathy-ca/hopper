@@ -10,7 +10,9 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from hopper.models import RoutingDecision, Task
+from typing import Any
+
+from hopper.models import RoutingDecision
 from hopper.timeutils import utc_now_naive
 
 from .models import RoutingEpisode
@@ -36,7 +38,7 @@ class EpisodicStore:
 
     def record_episode(
         self,
-        task: Task,
+        task: Any,
         decision: RoutingDecision | None = None,
         chosen_instance: str | None = None,
         confidence: float = 0.0,

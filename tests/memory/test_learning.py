@@ -8,12 +8,13 @@ import pytest
 
 from hopper.memory.learning import LearningEngine, RoutingSuggestion, SuggestionSource
 from hopper.memory.working.context import InstanceInfo
+from types import SimpleNamespace
+
 from hopper.models import (
     HopperInstance,
     HopperScope,
     InstanceStatus,
     InstanceType,
-    Task,
     TaskStatus,
 )
 from hopper.timeutils import utc_now_naive
@@ -55,42 +56,41 @@ def learning_engine(db_session) -> LearningEngine:
 
 
 @pytest.fixture
-def sample_task(db_session, make_record) -> Task:
-    """Create a sample task."""
-    task = Task(
-        id=f"task-{uuid4().hex[:8]}",
+def sample_task(make_record):
+    """Create a sample task-like namespace."""
+    task_id = f"task-{uuid4().hex[:8]}"
+    make_record(task_id)
+    return SimpleNamespace(
+        id=task_id,
         title="Implement API endpoint",
         description="Create a new REST API endpoint",
         project="backend",
         status=TaskStatus.PENDING,
         priority="high",
         tags={"api": True, "python": True, "backend": True},
+        instance_id=None,
         created_at=utc_now_naive(),
     )
-    db_session.add(task)
-    db_session.flush()
-    make_record(task.id)
-    return task
 
 
 @pytest.fixture
-def tasks_with_history(db_session, test_instances) -> list[Task]:
-    """Create tasks with routing history."""
+def tasks_with_history(make_record, test_instances) -> list:
+    """Create task-like namespaces with routing history."""
     tasks = []
     for i in range(5):
-        task = Task(
-            id=f"hist-task-{uuid4().hex[:8]}",
+        task_id = f"hist-task-{uuid4().hex[:8]}"
+        make_record(task_id)
+        tasks.append(SimpleNamespace(
+            id=task_id,
             title=f"API task {i}",
             description=f"API endpoint task {i}",
             project="backend",
             status=TaskStatus.DONE,
+            priority="medium",
             instance_id="api-instance",
             tags={"api": True, "python": True},
             created_at=utc_now_naive(),
-        )
-        db_session.add(task)
-        tasks.append(task)
-    db_session.flush()
+        ))
     return tasks
 
 
@@ -392,25 +392,26 @@ class TestLearningIntegration:
 
         assert result.feedback_processed == 1
 
-    def test_learning_improves_with_data(self, db_session, test_instances):
+    def test_learning_improves_with_data(self, db_session, make_record, test_instances):
         """Test that suggestions improve with more historical data."""
         engine = LearningEngine(db_session)
 
-        # Create multiple tasks with consistent routing pattern
+        # Create multiple task-like namespaces with consistent routing pattern
         for i in range(10):
-            task = Task(
-                id=f"learn-task-{uuid4().hex[:8]}",
+            task_id = f"learn-task-{uuid4().hex[:8]}"
+            make_record(task_id)
+            task = SimpleNamespace(
+                id=task_id,
                 title=f"API endpoint {i}",
+                description=None,
                 project="backend",
                 status=TaskStatus.DONE,
+                priority="medium",
                 instance_id="api-instance",
                 tags={"api": True, "python": True},
                 created_at=utc_now_naive(),
             )
-            db_session.add(task)
-            db_session.flush()
 
-            # Record episode with success
             episode = engine.episodic_store.record_episode(
                 task=task,
                 chosen_instance="api-instance",
@@ -420,22 +421,22 @@ class TestLearningIntegration:
 
         db_session.flush()
 
-        # Run consolidation to learn patterns
         engine.run_consolidation()
 
-        # Now create a new similar task
-        new_task = Task(
-            id=f"new-task-{uuid4().hex[:8]}",
+        new_id = f"new-task-{uuid4().hex[:8]}"
+        make_record(new_id)
+        new_task = SimpleNamespace(
+            id=new_id,
             title="New API endpoint",
+            description=None,
             project="backend",
             status=TaskStatus.PENDING,
+            priority="medium",
+            instance_id=None,
             tags={"api": True, "python": True},
             created_at=utc_now_naive(),
         )
-        db_session.add(new_task)
-        db_session.flush()
 
-        # Get suggestions - should suggest api-instance with higher confidence
         suggestions = engine.get_routing_suggestions(new_task)
 
         # We should have suggestions based on learned patterns or similar tasks

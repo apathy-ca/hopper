@@ -7,10 +7,11 @@ They don't delegate further - they're the execution level.
 
 import logging
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, Task, TaskStatus
+from typing import Any
+
+from hopper.models import HopperInstance, TaskStatus
 
 from .base import BaseScopeBehavior, TaskAction
 
@@ -44,7 +45,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
     async def handle_incoming_task(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> TaskAction:
         """
@@ -65,7 +66,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
     async def should_delegate(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> bool:
         """Orchestration never delegates - it executes."""
@@ -73,7 +74,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
     async def find_delegation_target(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> HopperInstance | None:
         """Orchestration doesn't delegate."""
@@ -81,7 +82,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
     async def on_task_completed(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> None:
         """
@@ -102,7 +103,7 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
     async def get_task_queue(
         self,
         instance: HopperInstance,
-    ) -> list[Task]:
+    ) -> list[Any]:
         """
         Get the execution queue for this orchestration instance.
 
@@ -116,40 +117,16 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
             "low": 3,
         }
 
-        query = (
-            select(Task)
-            .where(Task.instance_id == instance.id)
-            .where(
-                Task.status.in_([TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS])
-            )
-        )
-        result = self.session.execute(query)
-        tasks = list(result.scalars().all())
-
-        # Sort by priority then creation time
-        tasks.sort(
-            key=lambda t: (
-                priority_order.get(t.priority, 2),
-                t.created_at,
-            )
-        )
-
-        return tasks
+        return []
 
     async def _count_active_tasks(self, instance: HopperInstance) -> int:
-        """Count currently active tasks."""
-        query = (
-            select(Task)
-            .where(Task.instance_id == instance.id)
-            .where(Task.status.in_([TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS]))
-        )
-        result = self.session.execute(query)
-        return len(list(result.scalars().all()))
+        """Count currently active tasks. Tasks table is dropped; always returns 0."""
+        return 0
 
     async def get_next_task(
         self,
         instance: HopperInstance,
-    ) -> Task | None:
+    ) -> Any | None:
         """
         Get the next task to execute from the queue.
 
@@ -164,9 +141,9 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
     async def claim_task(
         self,
-        task: Task,
+        task: Any,
         worker_id: str,
-    ) -> Task:
+    ) -> Any:
         """
         Claim a task for execution.
 
@@ -192,29 +169,22 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
         Returns:
             Dict with queue statistics
         """
-        tasks = instance.tasks or []
-
-        pending = sum(1 for t in tasks if t.status == TaskStatus.PENDING)
-        claimed = sum(1 for t in tasks if t.status == TaskStatus.CLAIMED)
-        in_progress = sum(1 for t in tasks if t.status == TaskStatus.IN_PROGRESS)
-        done = sum(1 for t in tasks if t.status == TaskStatus.DONE)
-
         max_concurrent = self.get_config_value(instance, "max_concurrent_tasks", 10)
 
         return {
-            "pending": pending,
-            "claimed": claimed,
-            "in_progress": in_progress,
-            "done": done,
-            "total": len(tasks),
-            "active": claimed + in_progress,
+            "pending": 0,
+            "claimed": 0,
+            "in_progress": 0,
+            "done": 0,
+            "total": 0,
+            "active": 0,
             "max_concurrent": max_concurrent,
-            "capacity_used": (claimed + in_progress) / max_concurrent if max_concurrent > 0 else 0,
+            "capacity_used": 0,
         }
 
     async def should_accept_task(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> bool:
         """

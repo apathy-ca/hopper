@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from hopper.models import Task, TaskFeedback
+from hopper.models import Record, TaskFeedback
 from hopper.timeutils import utc_now_naive
 
 logger = logging.getLogger(__name__)
@@ -117,10 +117,10 @@ class FeedbackAnalytics:
         if conditions:
             query = query.where(and_(*conditions))
 
-        # Join with Task if filtering by instance
+        # Join with Record if filtering by instance
         if instance_id:
-            query = query.join(Task, TaskFeedback.task_id == Task.id).where(
-                Task.instance_id == instance_id
+            query = query.join(Record, TaskFeedback.task_id == Record.id).where(
+                Record.instance_id == instance_id
             )
 
         result = self.session.execute(query)
@@ -165,18 +165,18 @@ class FeedbackAnalytics:
         if not task_ids:
             return {}
 
-        task_query = select(Task).where(Task.id.in_(task_ids))
-        result = self.session.execute(task_query)
-        tasks = {t.id: t for t in result.scalars().all()}
+        record_query = select(Record).where(Record.id.in_(task_ids))
+        result = self.session.execute(record_query)
+        records = {r.id: r for r in result.scalars().all()}
 
         # Group feedback by instance
         by_instance: dict[str, list[TaskFeedback]] = {}
         for feedback in feedback_list:
-            task = tasks.get(feedback.task_id)
-            if task and task.instance_id:
-                if task.instance_id not in by_instance:
-                    by_instance[task.instance_id] = []
-                by_instance[task.instance_id].append(feedback)
+            record = records.get(feedback.task_id)
+            if record and record.instance_id:
+                if record.instance_id not in by_instance:
+                    by_instance[record.instance_id] = []
+                by_instance[record.instance_id].append(feedback)
 
         # Calculate per-instance metrics
         result_dict = {}
@@ -325,18 +325,18 @@ class FeedbackAnalytics:
         if not task_ids:
             return []
 
-        task_query = select(Task).where(Task.id.in_(task_ids))
-        tasks = {t.id: t for t in self.session.execute(task_query).scalars().all()}
+        record_query = select(Record).where(Record.id.in_(task_ids))
+        records = {r.id: r for r in self.session.execute(record_query).scalars().all()}
 
         # Analyze patterns: actual -> should_have
         patterns: dict[tuple[str, str], list[dict]] = {}
 
         for feedback in misrouted:
-            task = tasks.get(feedback.task_id)
-            if not task or not task.instance_id:
+            record = records.get(feedback.task_id)
+            if not record or not record.instance_id:
                 continue
 
-            key = (task.instance_id, feedback.should_have_routed_to or "unknown")
+            key = (record.instance_id, feedback.should_have_routed_to or "unknown")
 
             if key not in patterns:
                 patterns[key] = []
@@ -344,8 +344,8 @@ class FeedbackAnalytics:
             patterns[key].append(
                 {
                     "task_id": feedback.task_id,
-                    "task_title": task.title,
-                    "tags": task.tags,
+                    "task_title": None,
+                    "tags": None,
                     "feedback": feedback.routing_feedback,
                 }
             )

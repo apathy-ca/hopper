@@ -5,7 +5,7 @@ Tests for HopperInstance model.
 import pytest
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, InstanceStatus, Task
+from hopper.models import HopperInstance, HopperScope, InstanceStatus
 
 
 def test_hopper_instance_creation(clean_db: Session) -> None:
@@ -95,26 +95,10 @@ def test_hopper_instance_configuration(clean_db: Session) -> None:
     assert retrieved.status == InstanceStatus.RUNNING
 
 
+@pytest.mark.skip(reason="tasks table dropped in Phase 5; instance.tasks relationship removed")
 def test_hopper_instance_tasks_relationship(clean_db: Session) -> None:
     """Test relationship between instance and its tasks."""
-    instance = HopperInstance(
-        instance_id="test-instance",
-        scope=HopperScope.PROJECT.value,
-    )
-    clean_db.add(instance)
-    clean_db.commit()
-
-    # Add tasks to instance
-    task1 = Task(id="TASK-001", instance_id="test-instance", title="Task 1")
-    task2 = Task(id="TASK-002", instance_id="test-instance", title="Task 2")
-    clean_db.add_all([task1, task2])
-    clean_db.commit()
-
-    # Verify instance can access its tasks
-    retrieved = clean_db.query(HopperInstance).filter_by(instance_id="test-instance").first()
-    assert retrieved is not None
-    assert len(retrieved.tasks) == 2
-    assert {t.id for t in retrieved.tasks} == {"TASK-001", "TASK-002"}
+    pass
 
 
 @pytest.mark.skip(reason="TaskDelegation model not implemented in Phase 1")

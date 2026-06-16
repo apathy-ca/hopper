@@ -14,7 +14,7 @@ from unittest.mock import Mock
 import pytest
 from sqlalchemy.orm import Session
 
-from tests.factories import ProjectFactory, TaskFactory
+from tests.factories import ProjectFactory
 from tests.utils import (
     assert_mcp_tool_response_valid,
     build_mcp_tool_call,

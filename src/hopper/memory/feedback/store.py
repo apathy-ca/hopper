@@ -5,10 +5,10 @@ Feedback store for managing task feedback.
 import logging
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import Task, TaskFeedback, TaskStatus
+from hopper.models import Record, TaskFeedback, TaskStatus
 from hopper.timeutils import utc_now_naive
 
 from ..episodic import EpisodicStore
@@ -71,11 +71,11 @@ class FeedbackStore:
         Returns:
             Created TaskFeedback or None if task not found
         """
-        # Verify task exists
-        task = self.session.execute(select(Task).where(Task.id == task_id)).scalar_one_or_none()
+        # Verify record exists
+        task = self.session.execute(select(Record).where(Record.id == task_id)).scalar_one_or_none()
 
         if task is None:
-            logger.warning(f"Task {task_id} not found for feedback")
+            logger.warning(f"Record {task_id} not found for feedback")
             return None
 
         # Check for existing feedback
@@ -210,20 +210,14 @@ class FeedbackStore:
         instance_id: str,
         limit: int = 100,
     ) -> list[TaskFeedback]:
-        """
-        Get feedback for tasks routed to a specific instance.
+        """Get feedback for tasks routed to a specific instance.
 
-        Args:
-            instance_id: Instance ID
-            limit: Maximum results
-
-        Returns:
-            List of TaskFeedback records
+        Tasks table is dropped; filters by Record.instance_id instead.
         """
         query = (
             select(TaskFeedback)
-            .join(Task, TaskFeedback.task_id == Task.id)
-            .where(Task.instance_id == instance_id)
+            .join(Record, TaskFeedback.task_id == Record.id)
+            .where(Record.instance_id == instance_id)
             .order_by(TaskFeedback.created_at.desc())
             .limit(limit)
         )
@@ -255,37 +249,9 @@ class FeedbackStore:
         self,
         limit: int = 50,
         status_filter: list[TaskStatus] | None = None,
-    ) -> list[Task]:
-        """
-        Get completed tasks that don't have feedback yet.
-
-        Args:
-            limit: Maximum results
-            status_filter: Task statuses to include (defaults to DONE)
-
-        Returns:
-            List of Tasks without feedback
-        """
-        if status_filter is None:
-            status_filter = [TaskStatus.DONE]
-
-        # Subquery for tasks with feedback
-        feedback_subquery = select(TaskFeedback.task_id)
-
-        query = (
-            select(Task)
-            .where(
-                and_(
-                    Task.status.in_(status_filter),
-                    Task.id.notin_(feedback_subquery),
-                )
-            )
-            .order_by(Task.updated_at.desc())
-            .limit(limit)
-        )
-
-        result = self.session.execute(query)
-        return list(result.scalars().all())
+    ) -> list:
+        """Tasks table is dropped; always returns empty list."""
+        return []
 
     def delete_feedback(self, task_id: str) -> bool:
         """

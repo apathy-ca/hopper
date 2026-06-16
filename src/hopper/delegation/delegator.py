@@ -7,12 +7,14 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from typing import Any
+
 from hopper.models import (
     DelegationStatus,
     DelegationType,
     HopperInstance,
     InstanceStatus,
-    Task,
+    Record,
     TaskDelegation,
 )
 from hopper.timeutils import utc_now_naive
@@ -45,7 +47,7 @@ class Delegator:
 
     def delegate_task(
         self,
-        task: Task,
+        task: Any,
         target_instance: HopperInstance,
         delegation_type: str = DelegationType.ROUTE,
         delegated_by: str | None = None,
@@ -92,9 +94,14 @@ class Delegator:
 
         self.session.add(delegation)
 
-        # Update task's instance assignment
+        # Update task's instance assignment on both the in-memory object and the DB Record
         task.instance_id = target_instance.id
-        task.updated_at = utc_now_naive()
+        if hasattr(task, "updated_at"):
+            task.updated_at = utc_now_naive()
+        record = self.session.get(Record, task.id)
+        if record:
+            record.instance_id = target_instance.id
+            record.updated_at = utc_now_naive()
 
         self.session.flush()
 
@@ -167,7 +174,7 @@ class Delegator:
         logger.info(f"Rejected delegation {delegation.id}: {reason}")
 
         # Return task to source instance
-        task = self.session.get(Task, delegation.task_id)
+        task = self.session.get(Record, delegation.task_id)
         if task and delegation.source_instance_id:
             task.instance_id = delegation.source_instance_id
             task.updated_at = utc_now_naive()
@@ -230,7 +237,7 @@ class Delegator:
         logger.info(f"Cancelled delegation {delegation.id}")
 
         # Return task to source instance
-        task = self.session.get(Task, delegation.task_id)
+        task = self.session.get(Record, delegation.task_id)
         if task and delegation.source_instance_id:
             task.instance_id = delegation.source_instance_id
             task.updated_at = utc_now_naive()
@@ -238,7 +245,7 @@ class Delegator:
 
         return delegation
 
-    def get_delegation_chain(self, task: Task) -> list[TaskDelegation]:
+    def get_delegation_chain(self, task: Any) -> list[TaskDelegation]:
         """
         Get the full delegation chain for a task.
 
@@ -254,7 +261,7 @@ class Delegator:
         )
         return delegations
 
-    def get_active_delegation(self, task: Task) -> TaskDelegation | None:
+    def get_active_delegation(self, task: Any) -> TaskDelegation | None:
         """
         Get the active (non-terminal) delegation for a task.
 

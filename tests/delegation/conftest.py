@@ -12,6 +12,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
+from types import SimpleNamespace
+
 from hopper.models import (
     DelegationStatus,
     DelegationType,
@@ -21,7 +23,6 @@ from hopper.models import (
     InstanceType,
     Record,
     RecordType,
-    Task,
     TaskDelegation,
     TaskStatus,
 )
@@ -121,10 +122,12 @@ def instance_hierarchy(
 
 
 @pytest.fixture
-def sample_task(db_session: Session, global_instance: HopperInstance) -> Task:
-    """Create a sample task at global level."""
-    task = Task(
-        id=f"task-{uuid4().hex[:8]}",
+def sample_task(db_session: Session, global_instance: HopperInstance) -> SimpleNamespace:
+    """Create a sample task-like namespace backed by a Record row."""
+    task_id = f"task-{uuid4().hex[:8]}"
+    _ensure_record(db_session, task_id, instance_id=global_instance.id)
+    return SimpleNamespace(
+        id=task_id,
         title="Implement feature",
         description="Implement the new feature as described",
         project="test-project",
@@ -132,19 +135,19 @@ def sample_task(db_session: Session, global_instance: HopperInstance) -> Task:
         priority="medium",
         instance_id=global_instance.id,
         tags={"feature": True, "backend": True},
+        depends_on=[],
+        blocks=[],
         created_at=utc_now_naive(),
     )
-    db_session.add(task)
-    db_session.flush()
-    _ensure_record(db_session, task.id)
-    return task
 
 
 @pytest.fixture
-def high_priority_task(db_session: Session, global_instance: HopperInstance) -> Task:
-    """Create a high priority task."""
-    task = Task(
-        id=f"task-{uuid4().hex[:8]}",
+def high_priority_task(db_session: Session, global_instance: HopperInstance) -> SimpleNamespace:
+    """Create a high priority task-like namespace backed by a Record row."""
+    task_id = f"task-{uuid4().hex[:8]}"
+    _ensure_record(db_session, task_id, instance_id=global_instance.id)
+    return SimpleNamespace(
+        id=task_id,
         title="Urgent fix needed",
         description="Critical bug that needs immediate attention",
         project="test-project",
@@ -152,12 +155,10 @@ def high_priority_task(db_session: Session, global_instance: HopperInstance) -> 
         priority="urgent",
         instance_id=global_instance.id,
         tags={"bug": True, "critical": True},
+        depends_on=[],
+        blocks=[],
         created_at=utc_now_naive(),
     )
-    db_session.add(task)
-    db_session.flush()
-    _ensure_record(db_session, task.id)
-    return task
 
 
 @pytest.fixture
@@ -165,8 +166,8 @@ def task_with_delegation(
     db_session: Session,
     global_instance: HopperInstance,
     project_instance: HopperInstance,
-    sample_task: Task,
-) -> tuple[Task, TaskDelegation]:
+    sample_task: SimpleNamespace,
+) -> tuple[SimpleNamespace, TaskDelegation]:
     """Create a task with an existing delegation."""
     delegation = TaskDelegation(
         id=f"del-{uuid4().hex[:8]}",
@@ -183,26 +184,26 @@ def task_with_delegation(
 
 
 @pytest.fixture
-def multiple_tasks(db_session: Session, global_instance: HopperInstance) -> list[Task]:
-    """Create multiple tasks for batch testing."""
+def multiple_tasks(db_session: Session, global_instance: HopperInstance) -> list[SimpleNamespace]:
+    """Create multiple task-like namespaces backed by Record rows."""
     tasks = []
     priorities = ["low", "medium", "high", "urgent"]
     for i in range(4):
-        task = Task(
-            id=f"task-{uuid4().hex[:8]}",
+        task_id = f"task-{uuid4().hex[:8]}"
+        _ensure_record(db_session, task_id, instance_id=global_instance.id)
+        tasks.append(SimpleNamespace(
+            id=task_id,
             title=f"Task {i+1}",
             description=f"Description for task {i+1}",
             project="test-project",
             status=TaskStatus.PENDING,
             priority=priorities[i],
             instance_id=global_instance.id,
+            depends_on=[],
+            blocks=[],
+            tags={},
             created_at=utc_now_naive(),
-        )
-        db_session.add(task)
-        tasks.append(task)
-    db_session.flush()
-    for task in tasks:
-        _ensure_record(db_session, task.id)
+        ))
     return tasks
 
 

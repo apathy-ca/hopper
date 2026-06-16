@@ -37,7 +37,6 @@ def test_init_database(test_engine):
     tables = inspector.get_table_names()
 
     expected_tables = [
-        "tasks",
         "projects",
         "hopper_instances",
         "routing_decisions",

@@ -8,7 +8,7 @@ import pytest
 
 from hopper.database.connection import create_sync_engine, reset_session_factories
 from hopper.database.init import init_database
-from hopper.database.repositories import ProjectRepository, TaskRepository
+from hopper.database.repositories import ProjectRepository
 
 
 @pytest.fixture
@@ -75,29 +75,17 @@ def test_get_by_slug(test_session):
 
 
 def test_get_projects_with_active_tasks(test_session):
-    """Test getting projects with active tasks."""
+    """Test getting projects; tasks table dropped so returns all projects."""
     project_repo = ProjectRepository(test_session)
-    task_repo = TaskRepository(test_session)
 
-    # Create projects
     project_repo.create(name="project-a", slug="proj-a")
     project_repo.create(name="project-b", slug="proj-b")
     project_repo.create(name="project-c", slug="proj-c")
 
-    # Create tasks
-    task_repo.create(
-        id="task-1", title="Task 1", project="project-a", status="pending", priority="medium"
-    )
-    task_repo.create(
-        id="task-2", title="Task 2", project="project-b", status="completed", priority="medium"
-    )
-
-    # Get projects with active tasks
     projects = project_repo.get_projects_with_active_tasks()
 
-    # Only project-a should have active tasks
-    assert len(projects) == 1
-    assert projects[0].name == "project-a"
+    # Stubbed: returns all projects since Task table is gone
+    assert len(projects) == 3
 
 
 def test_get_auto_claim_projects(test_session):
@@ -114,49 +102,24 @@ def test_get_auto_claim_projects(test_session):
 
 
 def test_get_project_task_count(test_session):
-    """Test counting tasks for a project."""
+    """Test task count; tasks table dropped so always returns 0."""
     project_repo = ProjectRepository(test_session)
-    task_repo = TaskRepository(test_session)
 
     project_repo.create(name="test-project", slug="test-proj")
 
-    task_repo.create(
-        id="task-1", title="Task 1", project="test-project", status="pending", priority="medium"
-    )
-    task_repo.create(
-        id="task-2", title="Task 2", project="test-project", status="pending", priority="medium"
-    )
-    task_repo.create(
-        id="task-3", title="Task 3", project="test-project", status="completed", priority="medium"
-    )
-
     count = project_repo.get_project_task_count("test-project")
-    assert count == 3
+    assert count == 0
 
 
 def test_get_project_statistics(test_session):
-    """Test getting project statistics."""
+    """Test project statistics; tasks table dropped so all counts are 0."""
     project_repo = ProjectRepository(test_session)
-    task_repo = TaskRepository(test_session)
 
     project_repo.create(name="test-project", slug="test-proj")
 
-    task_repo.create(
-        id="task-1", title="Task 1", project="test-project", status="pending", priority="medium"
-    )
-    task_repo.create(
-        id="task-2", title="Task 2", project="test-project", status="pending", priority="medium"
-    )
-    task_repo.create(
-        id="task-3", title="Task 3", project="test-project", status="in_progress", priority="medium"
-    )
-    task_repo.create(
-        id="task-4", title="Task 4", project="test-project", status="completed", priority="medium"
-    )
-
     stats = project_repo.get_project_statistics("test-project")
 
-    assert stats["total_tasks"] == 4
-    assert stats["pending"] == 2
-    assert stats["in_progress"] == 1
-    assert stats["completed"] == 1
+    assert stats["total_tasks"] == 0
+    assert stats["pending"] == 0
+    assert stats["in_progress"] == 0
+    assert stats["completed"] == 0

@@ -33,7 +33,7 @@ from hopper.models import (
     DelegationType,
     HopperInstance,
     InstanceStatus,
-    Task,
+    Record,
     TaskDelegation,
 )
 
@@ -86,13 +86,13 @@ async def delegate_task(
         NotFoundException: If task or target instance not found
         ValidationException: If delegation is invalid
     """
-    # Get task
-    task_query = select(Task).where(Task.id == task_id)
+    # Get record (canonical task backing)
+    task_query = select(Record).where(Record.id == task_id)
     task_result = await db.execute(task_query)
     task = task_result.scalar_one_or_none()
 
     if not task:
-        raise NotFoundException("Task", task_id)
+        raise NotFoundException("Record", task_id)
 
     # Get target instance
     target_query = select(HopperInstance).where(
@@ -207,8 +207,8 @@ async def reject_delegation(
 
     delegation.reject(reject_data.reason)
 
-    # Return task to source instance
-    task_query = select(Task).where(Task.id == delegation.task_id)
+    # Return record to source instance
+    task_query = select(Record).where(Record.id == delegation.task_id)
     task_result = await db.execute(task_query)
     task = task_result.scalar_one_or_none()
 
@@ -310,13 +310,13 @@ async def get_task_delegations(
     Raises:
         NotFoundException: If task not found
     """
-    # Verify task exists
-    task_query = select(Task).where(Task.id == task_id)
+    # Verify record exists
+    task_query = select(Record).where(Record.id == task_id)
     task_result = await db.execute(task_query)
     task = task_result.scalar_one_or_none()
 
     if not task:
-        raise NotFoundException("Task", task_id)
+        raise NotFoundException("Record", task_id)
 
     # Get delegations
     query = (

@@ -9,9 +9,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from typing import Any
+
 from hopper.models import (
     DelegationStatus,
-    Task,
     TaskDelegation,
     TaskStatus,
 )
@@ -39,7 +40,7 @@ class CompletionBubbler:
 
     def bubble_completion(
         self,
-        task: Task,
+        task: Any,
         result: dict[str, Any] | None = None,
     ) -> list[TaskDelegation]:
         """
@@ -78,7 +79,7 @@ class CompletionBubbler:
 
     def propagate_status_change(
         self,
-        task: Task,
+        task: Any,
         new_status: str,
     ) -> None:
         """
@@ -116,8 +117,8 @@ class CompletionBubbler:
 
     def aggregate_child_completions(
         self,
-        parent_task: Task,
-        child_tasks: list[Task],
+        parent_task: Any,
+        child_tasks: list[Any],
     ) -> bool:
         """
         Check if all child tasks are completed.
@@ -142,7 +143,7 @@ class CompletionBubbler:
 
     def notify_parent_instance(
         self,
-        task: Task,
+        task: Any,
         event_type: str,
         event_data: dict[str, Any] | None = None,
     ) -> None:
@@ -190,7 +191,7 @@ class CompletionBubbler:
 
         self.session.flush()
 
-    def get_completion_status(self, task: Task) -> dict[str, Any]:
+    def get_completion_status(self, task: Any) -> dict[str, Any]:
         """
         Get the completion status of a task's delegation chain.
 

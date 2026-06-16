@@ -17,7 +17,6 @@ from hopper.timeutils import utc_now_naive
 
 if TYPE_CHECKING:
     from hopper.models.routing_decision import RoutingDecision
-    from hopper.models.task import Task
     from hopper.models.task_feedback import TaskFeedback
 
 
@@ -37,7 +36,7 @@ class RoutingEpisode(Base, TimestampMixin):
     # Link to task and routing decision
     task_id: Mapped[str] = mapped_column(
         String(50),
-        ForeignKey("tasks.id", ondelete="CASCADE"),
+        ForeignKey("records.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -100,7 +99,6 @@ class RoutingEpisode(Base, TimestampMixin):
     )
 
     # Relationships
-    task: Mapped["Task"] = relationship("Task", foreign_keys=[task_id])
     decision: Mapped["RoutingDecision"] = relationship(
         "RoutingDecision", foreign_keys=[decision_task_id]
     )

@@ -26,7 +26,7 @@ from hopper.api.schemas.hopper_instance import (
     InstanceStatus,
     InstanceUpdate,
 )
-from hopper.models import HopperInstance, Task
+from hopper.models import HopperInstance, Record
 from hopper.models import HopperScope as HopperScopeEnum
 from hopper.models import InstanceStatus as InstanceStatusEnum
 from hopper.models import InstanceType as InstanceTypeEnum
@@ -461,8 +461,8 @@ async def get_instance_tasks(
     if not instance:
         raise NotFoundException("HopperInstance", instance_id)
 
-    # Get tasks
-    query = select(Task).where(Task.instance_id == instance_id)
+    # Get records for this instance
+    query = select(Record).where(Record.instance_id == instance_id)
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
@@ -472,12 +472,12 @@ async def get_instance_tasks(
     query = query.offset(pagination.skip).limit(pagination.limit)
 
     result = await db.execute(query)
-    tasks = result.scalars().all()
+    records = result.scalars().all()
 
     return {
         "instance_id": instance_id,
         "instance_name": instance.name,
-        "tasks": [{"id": t.id, "title": t.title, "status": t.status.value} for t in tasks],
+        "tasks": [{"id": r.id, "type": r.type} for r in records],
         "total": total,
         "skip": pagination.skip,
         "limit": pagination.limit,

@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, InstanceStatus, RoutingDecision, Task
+from hopper.models import HopperInstance, InstanceStatus, RoutingDecision
 from hopper.timeutils import utc_now_naive
 
 from .backends import LocalBackend
@@ -148,7 +148,7 @@ class WorkingMemory:
 
     def build_routing_context(
         self,
-        task: Task,
+        task: Any,
         session: Session,
         session_id: str | None = None,
     ) -> RoutingContext:

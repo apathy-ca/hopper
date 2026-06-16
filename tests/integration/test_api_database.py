@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 from tests.factories import (
     HopperInstanceFactory,
     ProjectFactory,
-    TaskFactory,
 )
 from tests.utils import (
     assert_response_error,

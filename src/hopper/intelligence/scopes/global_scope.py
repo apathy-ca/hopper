@@ -10,7 +10,9 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, InstanceStatus, Task, TaskStatus
+from typing import Any
+
+from hopper.models import HopperInstance, HopperScope, InstanceStatus
 
 from .base import BaseScopeBehavior, TaskAction
 
@@ -43,7 +45,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
 
     async def handle_incoming_task(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> TaskAction:
         """
@@ -76,7 +78,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
 
     async def should_delegate(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> bool:
         """Global always delegates."""
@@ -84,7 +86,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
 
     async def find_delegation_target(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -114,7 +116,7 @@ class GlobalScopeBehavior(BaseScopeBehavior):
 
     async def on_task_completed(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> None:
         """
@@ -134,20 +136,9 @@ class GlobalScopeBehavior(BaseScopeBehavior):
     async def get_task_queue(
         self,
         instance: HopperInstance,
-    ) -> list[Task]:
-        """
-        Global instances don't maintain an execution queue.
-
-        Returns only tasks that haven't been routed yet.
-        """
-        # Get tasks at this instance that are pending routing
-        query = (
-            select(Task)
-            .where(Task.instance_id == instance.id)
-            .where(Task.status == TaskStatus.PENDING)
-        )
-        result = self.session.execute(query)
-        return list(result.scalars().all())
+    ) -> list[Any]:
+        """Global instances don't maintain an execution queue. Tasks table is dropped."""
+        return []
 
     async def _find_project_by_name(
         self,

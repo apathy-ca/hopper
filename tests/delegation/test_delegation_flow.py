@@ -10,11 +10,12 @@ from uuid import uuid4
 from hopper.delegation.completion import CompletionBubbler
 from hopper.delegation.delegator import Delegator
 from hopper.delegation.router import InstanceRouter
+from types import SimpleNamespace
+
 from hopper.models import (
     DelegationStatus,
     DelegationType,
     HopperScope,
-    Task,
     TaskStatus,
 )
 from hopper.timeutils import utc_now_naive
@@ -73,7 +74,9 @@ class TestFullDelegationFlow:
         instance_hierarchy,
         sample_task,
     ):
-        """Test that rejection returns task to source instance."""
+        """Test that rejection returns task to source instance (verified via DB Record)."""
+        from hopper.models import Record
+
         delegator = Delegator(db_session)
 
         global_inst = instance_hierarchy["global"]
@@ -90,8 +93,9 @@ class TestFullDelegationFlow:
         # Reject the delegation
         delegator.reject_delegation(delegation, "Project at capacity")
 
-        # Task should return to global
-        assert sample_task.instance_id == global_inst.id
+        # Task Record in DB should return to global
+        record = db_session.get(Record, sample_task.id)
+        assert record.instance_id == global_inst.id
         assert delegation.status == DelegationStatus.REJECTED
 
     def test_multiple_delegation_attempts(
@@ -103,6 +107,8 @@ class TestFullDelegationFlow:
         sample_task,
     ):
         """Test multiple delegation attempts with rejection and reassignment."""
+        from hopper.models import Record
+
         delegator = Delegator(db_session)
 
         # First attempt to project 1
@@ -111,9 +117,10 @@ class TestFullDelegationFlow:
             target_instance=project_instance,
         )
 
-        # Project 1 rejects
+        # Project 1 rejects; check Record in DB
         delegator.reject_delegation(del1, "Cannot handle this type")
-        assert sample_task.instance_id == global_instance.id
+        record = db_session.get(Record, sample_task.id)
+        assert record.instance_id == global_instance.id
 
         # Second attempt to project 2
         del2 = delegator.delegate_task(
@@ -122,7 +129,8 @@ class TestFullDelegationFlow:
         )
         delegator.accept_delegation(del2)
 
-        assert sample_task.instance_id == second_project_instance.id
+        record = db_session.get(Record, sample_task.id)
+        assert record.instance_id == second_project_instance.id
 
         # Chain should show both attempts
         chain = delegator.get_delegation_chain(sample_task)
@@ -213,9 +221,7 @@ class TestInstanceRouter:
         global_instance.children = [project_instance, second_project_instance]
 
         # Task matching Python/FastAPI
-        from hopper.models import TaskStatus
-
-        python_task = Task(
+        python_task = SimpleNamespace(
             id=f"task-{uuid4().hex[:8]}",
             title="Add FastAPI endpoint",
             description="Create a new FastAPI endpoint for user management",
@@ -226,8 +232,6 @@ class TestInstanceRouter:
             tags={"python": True, "api": True},
             created_at=utc_now_naive(),
         )
-        db_session.add(python_task)
-        db_session.flush()
 
         target = router.find_target_instance(
             task=python_task,
@@ -250,11 +254,10 @@ class TestInstanceRouter:
         global_instance.children = [project_instance, second_project_instance]
 
         # Task with tags matching project capabilities
-        from hopper.models import TaskStatus
-
-        task = Task(
+        task = SimpleNamespace(
             id=f"task-{uuid4().hex[:8]}",
             title="New task",
+            description=None,
             project=None,  # No explicit project
             status=TaskStatus.PENDING,
             priority="medium",
@@ -262,8 +265,6 @@ class TestInstanceRouter:
             tags=["python", "testing"],  # Matches Project Alpha capabilities
             created_at=utc_now_naive(),
         )
-        db_session.add(task)
-        db_session.flush()
 
         target = router.find_target_instance(
             task=task,
@@ -284,19 +285,17 @@ class TestInstanceRouter:
         router = InstanceRouter(db_session)
         global_instance.children = [stopped_instance]
 
-        from hopper.models import TaskStatus
-
-        task = Task(
+        task = SimpleNamespace(
             id=f"task-{uuid4().hex[:8]}",
             title="Test task",
+            description=None,
             project=None,
             status=TaskStatus.PENDING,
             priority="medium",
             instance_id=global_instance.id,
+            tags=None,
             created_at=utc_now_naive(),
         )
-        db_session.add(task)
-        db_session.flush()
 
         target = router.find_target_instance(
             task=task,

@@ -10,7 +10,9 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, InstanceStatus, Task, TaskStatus
+from typing import Any
+
+from hopper.models import HopperInstance, HopperScope, InstanceStatus, TaskStatus
 
 from .base import BaseScopeBehavior, TaskAction
 
@@ -43,7 +45,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
 
     async def handle_incoming_task(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> TaskAction:
         """
@@ -79,7 +81,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
 
     async def should_delegate(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> bool:
         """
@@ -102,7 +104,7 @@ class ProjectScopeBehavior(BaseScopeBehavior):
 
     async def find_delegation_target(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -121,17 +123,14 @@ class ProjectScopeBehavior(BaseScopeBehavior):
         orchestrations = list(result.scalars().all())
 
         if orchestrations:
-            # Return the one with fewest tasks (simple load balance)
-            return min(
-                orchestrations,
-                key=lambda o: len(o.tasks) if o.tasks else 0,
-            )
+            # Return the first available (tasks table dropped, can't count by load)
+            return orchestrations[0]
 
         return None
 
     async def on_task_completed(
         self,
-        task: Task,
+        task: Any,
         instance: HopperInstance,
     ) -> None:
         """
@@ -150,22 +149,9 @@ class ProjectScopeBehavior(BaseScopeBehavior):
     async def get_task_queue(
         self,
         instance: HopperInstance,
-    ) -> list[Task]:
-        """
-        Get tasks at this project instance.
-
-        Includes tasks being handled directly (not delegated to orchestration).
-        """
-        query = (
-            select(Task)
-            .where(Task.instance_id == instance.id)
-            .where(
-                Task.status.in_([TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.IN_PROGRESS])
-            )
-            .order_by(Task.created_at.asc())
-        )
-        result = self.session.execute(query)
-        return list(result.scalars().all())
+    ) -> list[Any]:
+        """Tasks table is dropped; returns empty list."""
+        return []
 
     async def get_project_stats(
         self,

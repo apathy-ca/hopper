@@ -3,7 +3,7 @@ Hopper Instance model for multi-instance support.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy import Enum as SQLEnum
@@ -13,9 +13,6 @@ from sqlalchemy.types import JSON
 
 from .base import Base, TimestampMixin
 from .enums import HopperScope, InstanceStatus, InstanceType
-
-if TYPE_CHECKING:
-    from .task import Task
 
 
 class HopperInstance(Base, TimestampMixin):
@@ -80,8 +77,6 @@ class HopperInstance(Base, TimestampMixin):
     children: Mapped[list["HopperInstance"]] = relationship(
         "HopperInstance", back_populates="parent"
     )
-    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="instance")
-
     def __init__(self, **kwargs):
         """Initialize with support for backward compatibility aliases."""
         # Handle backward compatibility aliases

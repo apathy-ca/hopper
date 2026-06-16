@@ -5,7 +5,7 @@ Tests for RoutingDecision model.
 import pytest
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, Project, RoutingDecision, Task
+from hopper.models import HopperInstance, HopperScope, Project, RoutingDecision
 
 
 def test_routing_decision_creation(clean_db: Session, make_record) -> None:

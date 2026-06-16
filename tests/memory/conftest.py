@@ -10,13 +10,14 @@ from sqlalchemy.orm import Session
 from hopper.memory.working import RoutingContext, WorkingMemory
 from hopper.memory.working.backends import LocalBackend
 from hopper.memory.working.context import InstanceInfo, RecentDecision, SimilarTask
+from types import SimpleNamespace
+
 from hopper.models import (
     HopperInstance,
     HopperScope,
     InstanceStatus,
     InstanceType,
     RoutingDecision,
-    Task,
     TaskStatus,
 )
 from hopper.timeutils import utc_now_naive
@@ -99,21 +100,21 @@ def sample_routing_context() -> RoutingContext:
 
 
 @pytest.fixture
-def sample_task_for_memory(db_session: Session) -> Task:
-    """Create a sample task for memory testing."""
-    task = Task(
-        id=f"task-{uuid4().hex[:8]}",
+def sample_task_for_memory(make_record) -> SimpleNamespace:
+    """Create a sample task-like namespace for memory testing."""
+    task_id = f"task-{uuid4().hex[:8]}"
+    make_record(task_id)
+    return SimpleNamespace(
+        id=task_id,
         title="Build dashboard",
         description="Create a new admin dashboard",
         project="webapp",
         status=TaskStatus.PENDING,
         priority="medium",
         tags={"python": True, "dashboard": True},
+        instance_id=None,
         created_at=utc_now_naive(),
     )
-    db_session.add(task)
-    db_session.flush()
-    return task
 
 
 @pytest.fixture
@@ -155,7 +156,7 @@ def instances_for_memory(db_session: Session) -> list[HopperInstance]:
 
 @pytest.fixture
 def routing_decisions_for_memory(
-    db_session: Session, sample_task_for_memory: Task
+    db_session: Session, sample_task_for_memory: SimpleNamespace
 ) -> list[RoutingDecision]:
     """Create routing decisions for memory testing."""
     decisions = []

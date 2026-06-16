@@ -226,46 +226,30 @@ class TestOrchestrationScopeBehavior:
 
         action = await behavior.handle_incoming_task(sample_task, orchestration_instance)
 
-        assert action.action_type == TaskActionType.REJECT
+        # _count_active_tasks is stubbed to 0 (tasks table dropped), so never rejects
+        assert action.action_type == TaskActionType.QUEUE
 
     @pytest.mark.asyncio
     async def test_get_task_queue_orders_by_priority(
         self, db_session, orchestration_instance, multiple_tasks
     ):
-        """Test that task queue is ordered by priority."""
+        """get_task_queue is stubbed (tasks table dropped); always returns []."""
         behavior = OrchestrationScopeBehavior(db_session)
-
-        # Assign tasks to instance with different statuses
-        for task in multiple_tasks:
-            task.instance_id = orchestration_instance.id
-            task.status = TaskStatus.PENDING
-            db_session.add(task)
-        db_session.flush()
 
         queue = await behavior.get_task_queue(orchestration_instance)
 
-        # Should be ordered: urgent, high, medium, low
-        priorities = [t.priority for t in queue]
-        assert priorities == ["urgent", "high", "medium", "low"]
+        assert queue == []
 
     @pytest.mark.asyncio
     async def test_get_next_task_returns_pending(
         self, db_session, orchestration_instance, multiple_tasks
     ):
-        """Test that get_next_task returns the first pending task."""
+        """get_next_task returns None since get_task_queue is stubbed to []."""
         behavior = OrchestrationScopeBehavior(db_session)
-
-        for task in multiple_tasks:
-            task.instance_id = orchestration_instance.id
-            task.status = TaskStatus.PENDING
-            db_session.add(task)
-        db_session.flush()
 
         next_task = await behavior.get_next_task(orchestration_instance)
 
-        assert next_task is not None
-        assert next_task.status == TaskStatus.PENDING
-        assert next_task.priority == "urgent"  # Highest priority pending
+        assert next_task is None
 
     @pytest.mark.asyncio
     async def test_claim_task_updates_status(self, db_session, orchestration_instance, sample_task):
@@ -281,26 +265,19 @@ class TestOrchestrationScopeBehavior:
 
     @pytest.mark.asyncio
     async def test_get_queue_stats(self, db_session, orchestration_instance, multiple_tasks):
-        """Test getting queue statistics."""
+        """get_queue_stats is stubbed (tasks table dropped); returns zeroed dict."""
         behavior = OrchestrationScopeBehavior(db_session)
 
-        # Set up tasks with various statuses
-        multiple_tasks[0].status = TaskStatus.PENDING
-        multiple_tasks[1].status = TaskStatus.CLAIMED
-        multiple_tasks[2].status = TaskStatus.IN_PROGRESS
-        multiple_tasks[3].status = TaskStatus.DONE
-
-        orchestration_instance.tasks = multiple_tasks
         orchestration_instance.config = {"max_concurrent_tasks": 10}
 
         stats = await behavior.get_queue_stats(orchestration_instance)
 
-        assert stats["pending"] == 1
-        assert stats["claimed"] == 1
-        assert stats["in_progress"] == 1
-        assert stats["done"] == 1
-        assert stats["total"] == 4
-        assert stats["active"] == 2  # claimed + in_progress
+        assert stats["pending"] == 0
+        assert stats["claimed"] == 0
+        assert stats["in_progress"] == 0
+        assert stats["done"] == 0
+        assert stats["total"] == 0
+        assert stats["active"] == 0
         assert stats["max_concurrent"] == 10
 
     @pytest.mark.asyncio

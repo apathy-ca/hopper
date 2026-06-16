@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, InstanceStatus, Task
+from hopper.models import HopperInstance, HopperScope, InstanceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class InstanceRouter:
 
     def find_target_instance(
         self,
-        task: Task,
+        task: Any,
         source_instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -89,7 +89,7 @@ class InstanceRouter:
 
     def find_target_with_learning(
         self,
-        task: Task,
+        task: Any,
         source_instance: HopperInstance,
     ) -> RoutingResult:
         """
@@ -133,7 +133,7 @@ class InstanceRouter:
 
     def _route_from_global(
         self,
-        task: Task,
+        task: Any,
         source_instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -181,7 +181,7 @@ class InstanceRouter:
 
     def _route_from_project(
         self,
-        task: Task,
+        task: Any,
         source_instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -205,7 +205,7 @@ class InstanceRouter:
 
     def _route_to_child(
         self,
-        task: Task,
+        task: Any,
         source_instance: HopperInstance,
     ) -> HopperInstance | None:
         """
@@ -293,7 +293,7 @@ class InstanceRouter:
 
     def _should_delegate_to_orchestration(
         self,
-        task: Task,
+        task: Any,
         project_instance: HopperInstance,
     ) -> bool:
         """
@@ -324,7 +324,7 @@ class InstanceRouter:
 
         return task_complexity >= complexity_threshold
 
-    def _estimate_task_complexity(self, task: Task) -> int:
+    def _estimate_task_complexity(self, task: Any) -> int:
         """
         Estimate task complexity for routing decisions.
 
@@ -435,7 +435,7 @@ class InstanceRouter:
 
     def record_routing_decision(
         self,
-        task: Task,
+        task: Any,
         routing_result: RoutingResult,
     ) -> None:
         """

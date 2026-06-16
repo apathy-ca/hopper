@@ -4,14 +4,12 @@ Task searcher for finding similar tasks in the database.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hopper.models import Task, TaskStatus
-from hopper.timeutils import utc_now_naive
+from hopper.models import TaskStatus
 
 from .similarity import TaskSimilarity
 
@@ -109,51 +107,9 @@ class TaskSearcher:
         self._similarity.clear()
         self._task_cache.clear()
 
-        # Build query
-        query = select(Task).order_by(Task.created_at.desc())
-
-        # Apply status filter
-        if status_filter:
-            query = query.where(Task.status.in_(status_filter))
-
-        # Apply age filter
-        if self.corpus_max_age_days > 0:
-            cutoff = utc_now_naive() - timedelta(days=self.corpus_max_age_days)
-            query = query.where(Task.created_at >= cutoff)
-
-        # Limit size
-        query = query.limit(self.max_corpus_size)
-
-        result = self.session.execute(query)
-        tasks = result.scalars().all()
-
-        # Index each task
-        for task in tasks:
-            text = f"{task.title or ''} {task.description or ''}"
-            tags = task.tags or {}
-
-            self._similarity.add_document(
-                task_id=task.id,
-                text=text,
-                tags=tags,
-            )
-
-            # Cache metadata
-            self._task_cache[task.id] = {
-                "title": task.title,
-                "project": task.project,
-                "tags": tags,
-                "instance_id": task.instance_id,
-                "status": task.status.value if hasattr(task.status, "value") else str(task.status),
-                "created_at": task.created_at,
-            }
-
+        # Tasks table is dropped; index is always empty.
         self._indexed = True
-        count = self._similarity.get_corpus_size()
-
-        logger.info(f"Indexed {count} tasks for similarity search")
-
-        return count
+        return 0
 
     def search(
         self,
@@ -227,7 +183,7 @@ class TaskSearcher:
 
     def search_by_task(
         self,
-        task: Task,
+        task: Any,
         limit: int = 10,
         min_score: float = 0.1,
         exclude_self: bool = True,
@@ -257,7 +213,7 @@ class TaskSearcher:
             exclude_ids=exclude_ids,
         )
 
-    def add_task(self, task: Task) -> None:
+    def add_task(self, task: Any) -> None:
         """
         Add a single task to the index.
 

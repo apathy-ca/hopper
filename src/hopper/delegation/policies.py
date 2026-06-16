@@ -7,7 +7,7 @@ Defines how each scope level handles delegation decisions.
 from abc import ABC, abstractmethod
 from typing import Any
 
-from hopper.models import HopperInstance, HopperScope, Task
+from hopper.models import HopperInstance, HopperScope
 
 
 class DelegationPolicy(ABC):
@@ -18,7 +18,7 @@ class DelegationPolicy(ABC):
     """
 
     @abstractmethod
-    def should_delegate(self, task: Task, instance: HopperInstance) -> bool:
+    def should_delegate(self, task: Any, instance: HopperInstance) -> bool:
         """
         Determine if a task should be delegated.
 
@@ -45,7 +45,7 @@ class DelegationPolicy(ABC):
         pass
 
     @abstractmethod
-    def can_handle_directly(self, task: Task, instance: HopperInstance) -> bool:
+    def can_handle_directly(self, task: Any, instance: HopperInstance) -> bool:
         """
         Determine if the instance can handle the task directly.
 
@@ -66,7 +66,7 @@ class GlobalScopePolicy(DelegationPolicy):
     Global instances route tasks to projects but never handle directly.
     """
 
-    def should_delegate(self, task: Task, instance: HopperInstance) -> bool:
+    def should_delegate(self, task: Any, instance: HopperInstance) -> bool:
         """Global always delegates - it routes, doesn't execute."""
         return True
 
@@ -79,7 +79,7 @@ class GlobalScopePolicy(DelegationPolicy):
             "auto_create_projects": config.get("auto_create_projects", False),
         }
 
-    def can_handle_directly(self, task: Task, instance: HopperInstance) -> bool:
+    def can_handle_directly(self, task: Any, instance: HopperInstance) -> bool:
         """Global never handles directly."""
         return False
 
@@ -92,7 +92,7 @@ class ProjectScopePolicy(DelegationPolicy):
     or delegating complex tasks to orchestration.
     """
 
-    def should_delegate(self, task: Task, instance: HopperInstance) -> bool:
+    def should_delegate(self, task: Any, instance: HopperInstance) -> bool:
         """
         Projects delegate based on task complexity and configuration.
         """
@@ -118,11 +118,11 @@ class ProjectScopePolicy(DelegationPolicy):
             "auto_create_orchestrations": config.get("auto_create_orchestrations", True),
         }
 
-    def can_handle_directly(self, task: Task, instance: HopperInstance) -> bool:
+    def can_handle_directly(self, task: Any, instance: HopperInstance) -> bool:
         """Projects can handle simple tasks directly."""
         return not self.should_delegate(task, instance)
 
-    def _estimate_complexity(self, task: Task) -> int:
+    def _estimate_complexity(self, task: Any) -> int:
         """Estimate task complexity."""
         complexity = 1
 
@@ -145,7 +145,7 @@ class OrchestrationScopePolicy(DelegationPolicy):
     Orchestration instances execute tasks and don't delegate further.
     """
 
-    def should_delegate(self, task: Task, instance: HopperInstance) -> bool:
+    def should_delegate(self, task: Any, instance: HopperInstance) -> bool:
         """Orchestration instances execute, don't delegate."""
         return False
 
@@ -158,7 +158,7 @@ class OrchestrationScopePolicy(DelegationPolicy):
             "max_retries": config.get("max_retries", 3),
         }
 
-    def can_handle_directly(self, task: Task, instance: HopperInstance) -> bool:
+    def can_handle_directly(self, task: Any, instance: HopperInstance) -> bool:
         """Orchestration always handles directly."""
         return True
 
@@ -170,7 +170,7 @@ class PersonalScopePolicy(DelegationPolicy):
     Personal instances handle individual user tasks.
     """
 
-    def should_delegate(self, task: Task, instance: HopperInstance) -> bool:
+    def should_delegate(self, task: Any, instance: HopperInstance) -> bool:
         """Personal instances typically don't delegate."""
         return False
 
@@ -182,7 +182,7 @@ class PersonalScopePolicy(DelegationPolicy):
             "notification_preferences": config.get("notifications", {}),
         }
 
-    def can_handle_directly(self, task: Task, instance: HopperInstance) -> bool:
+    def can_handle_directly(self, task: Any, instance: HopperInstance) -> bool:
         """Personal instances handle all tasks."""
         return True
 
