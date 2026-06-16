@@ -201,6 +201,150 @@ def _make_memory_group() -> click.Group:
             provenance=provenance,
         )
 
+    @base.command(name="consolidate")
+    @click.option("--subject", help="Only consolidate records for this subject")
+    @click.option("--scope", help="Only consolidate records for this scope")
+    @click.option(
+        "--dry-run",
+        is_flag=True,
+        help="Show what would be done without writing anything",
+    )
+    @click.option(
+        "--propose",
+        is_flag=True,
+        help="Write propose revisions instead of applying directly",
+    )
+    @click.option("--model", envvar="HOPPER_CONSOLIDATION_MODEL", hidden=True)
+    @click.pass_obj
+    def memory_consolidate(
+        ctx: click.Context,
+        subject: str | None,
+        scope: str | None,
+        dry_run: bool,
+        propose: bool,
+        model: str | None,
+    ) -> None:
+        """Run LLM-driven consolidation over memory records.
+
+        Classifies episodic/durable_fact/noise, merges overlapping episodic
+        records into consolidated summaries, and updates source records with
+        superseded_by. Results sync upstream via the normal record-update path.
+
+        Requires ANTHROPIC_API_KEY to be set.
+
+        Examples:
+            hopper memory consolidate --subject project:waypoint --dry-run
+            hopper memory consolidate --subject project:waypoint
+        """
+        from rich.console import Console
+
+        from hopper.memory.consolidation import run_consolidation
+
+        console = Console()
+
+        with ctx.get_client() as client:
+            result = run_consolidation(
+                client,
+                subject=subject,
+                scope=scope,
+                dry_run=dry_run,
+                propose=propose,
+                model=model,
+            )
+
+        if "error" in result:
+            console.print(f"[red]Error:[/red] {result['error']}")
+            raise SystemExit(1)
+
+        if result.get("skipped"):
+            console.print(f"[yellow]Skipped:[/yellow] {result.get('reason', 'no records')}")
+            return
+
+        if result.get("dry_run"):
+            console.print(
+                f"[bold]Dry run[/bold] — {result['eligible']} eligible records\n"
+                f"  Classifications: {len(result.get('classifications', []))}\n"
+                f"  Clusters to merge: {len(result.get('clusters', []))}"
+            )
+            for cluster in result.get("clusters", []):
+                src = ", ".join(cluster.get("source_ids", []))
+                console.print(f"  [dim]•[/dim] {cluster.get('title')} ← [{src}]")
+            return
+
+        console.print(
+            f"[green]Consolidation complete[/green] (run {result.get('run_id')})\n"
+            f"  Eligible records: {result['eligible']}\n"
+            f"  Consolidated records created: {result['consolidated_records_created']}\n"
+            f"  Source records superseded: {result['source_records_superseded']}\n"
+            f"  Classified only: {result['records_classified_only']}\n"
+            f"  Durable facts flagged: {result['durable_facts_flagged']}"
+        )
+        if result.get("errors"):
+            console.print("[yellow]Errors:[/yellow]")
+            for err in result["errors"]:
+                console.print(f"  [red]•[/red] {err}")
+
+    @base.command(name="drift-check")
+    @click.argument("record_id", required=False)
+    @click.option("--subject", help="Check all consolidated records for this subject")
+    @click.option("--model", envvar="HOPPER_CONSOLIDATION_MODEL", hidden=True)
+    @click.pass_obj
+    def memory_drift_check(
+        ctx: click.Context,
+        record_id: str | None,
+        subject: str | None,
+        model: str | None,
+    ) -> None:
+        """Check consolidated memory records for drift against their sources.
+
+        Re-derives each consolidated summary from its source records and scores
+        how accurately the summary still represents them. Sets drift_score and
+        drift_checked_at on the consolidated record.
+
+        Requires ANTHROPIC_API_KEY to be set.
+
+        Examples:
+            hopper memory drift-check
+            hopper memory drift-check --subject project:waypoint
+            hopper memory drift-check <record-id>
+        """
+        from rich.console import Console
+
+        from hopper.memory.consolidation import run_drift_check
+
+        console = Console()
+
+        with ctx.get_client() as client:
+            result = run_drift_check(
+                client,
+                record_id=record_id,
+                subject=subject,
+                model=model,
+            )
+
+        if "error" in result:
+            console.print(f"[red]Error:[/red] {result['error']}")
+            raise SystemExit(1)
+
+        if result.get("skipped"):
+            console.print(f"[yellow]Skipped:[/yellow] {result.get('reason', 'no records')}")
+            return
+
+        console.print(
+            f"[green]Drift check complete[/green]\n"
+            f"  Checked: {result['checked']}\n"
+            f"  High drift (>0.1): {result['high_drift_count']}"
+        )
+        for rec in result.get("high_drift", []):
+            console.print(
+                f"  [yellow]•[/yellow] {rec['id']} [{rec['drift_score']:.2f}] "
+                f"{rec.get('title', '')} — {rec.get('explanation', '')}"
+            )
+        if result.get("errors"):
+            console.print("[yellow]Errors:[/yellow]")
+            for err in result["errors"]:
+                console.print(f"  [red]•[/red] {err}")
+
     return base
 
 

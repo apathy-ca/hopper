@@ -122,6 +122,13 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
         subject=getattr(task, "subject", None),
         scope=getattr(task, "scope", None),
         provenance=getattr(task, "provenance", None),
+        memory_class=getattr(task, "memory_class", None),
+        superseded_by=getattr(task, "superseded_by", None),
+        source_record_ids=getattr(task, "source_record_ids", None) or [],
+        consolidation_run_id=getattr(task, "consolidation_run_id", None),
+        consolidated_at=getattr(task, "consolidated_at", None),
+        drift_checked_at=getattr(task, "drift_checked_at", None),
+        drift_score=getattr(task, "drift_score", None),
     )
 
 
@@ -182,6 +189,13 @@ def _apply_sync_task_to_local(
         existing.subject = sync_task.subject
         existing.scope = sync_task.scope
         existing.provenance = sync_task.provenance
+        existing.memory_class = sync_task.memory_class
+        existing.superseded_by = sync_task.superseded_by
+        existing.source_record_ids = sync_task.source_record_ids or []
+        existing.consolidation_run_id = sync_task.consolidation_run_id
+        existing.consolidated_at = sync_task.consolidated_at
+        existing.drift_checked_at = sync_task.drift_checked_at
+        existing.drift_score = sync_task.drift_score
         task_store.save(existing, preserve_timestamp=True)
     else:
         # Create new task with the remote ID
@@ -212,6 +226,13 @@ def _apply_sync_task_to_local(
             subject=sync_task.subject,
             scope=sync_task.scope,
             provenance=sync_task.provenance,
+            memory_class=sync_task.memory_class,
+            superseded_by=sync_task.superseded_by,
+            source_record_ids=sync_task.source_record_ids or [],
+            consolidation_run_id=sync_task.consolidation_run_id,
+            consolidated_at=sync_task.consolidated_at,
+            drift_checked_at=sync_task.drift_checked_at,
+            drift_score=sync_task.drift_score,
         )
         task_store.save(new_task, preserve_timestamp=True)
 

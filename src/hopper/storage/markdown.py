@@ -290,6 +290,7 @@ class MarkdownStorage(StorageBackend):
             "by_tag": {},
             "by_project": {},
             "by_kind": {},
+            "by_memory_class": {},
             "generated_at": _utc_now().isoformat(),
         }
 
@@ -307,8 +308,9 @@ class MarkdownStorage(StorageBackend):
 
         task_id = frontmatter["id"]
 
-        # Tolerate older on-disk indexes that predate the by_kind bucket.
+        # Tolerate older on-disk indexes that predate these buckets.
         self._index.setdefault("by_kind", {})
+        self._index.setdefault("by_memory_class", {})
 
         # Main index
         self._index["tasks"][task_id] = {
@@ -318,6 +320,7 @@ class MarkdownStorage(StorageBackend):
             "tags": frontmatter.get("tags", []),
             "project": frontmatter.get("project"),
             "kind": frontmatter.get("kind", "task"),
+            "memory_class": frontmatter.get("memory_class"),
             "file": str(file_path.relative_to(self.base_path)),
             "updated_at": frontmatter.get("updated_at"),
         }
@@ -350,6 +353,14 @@ class MarkdownStorage(StorageBackend):
             self._index["by_kind"][kind] = []
         if task_id not in self._index["by_kind"][kind]:
             self._index["by_kind"][kind].append(task_id)
+
+        # Memory class index (only present on memory records post-consolidation)
+        memory_class = frontmatter.get("memory_class")
+        if memory_class:
+            if memory_class not in self._index["by_memory_class"]:
+                self._index["by_memory_class"][memory_class] = []
+            if task_id not in self._index["by_memory_class"][memory_class]:
+                self._index["by_memory_class"][memory_class].append(task_id)
 
         self._index_dirty = True
 
@@ -387,6 +398,12 @@ class MarkdownStorage(StorageBackend):
         kind = task_data.get("kind", "task")
         if kind in by_kind:
             by_kind[kind] = [t for t in by_kind[kind] if t != task_id]
+
+        # Remove from memory_class index
+        by_mc = self._index.get("by_memory_class", {})
+        memory_class = task_data.get("memory_class")
+        if memory_class and memory_class in by_mc:
+            by_mc[memory_class] = [t for t in by_mc[memory_class] if t != task_id]
 
         self._index_dirty = True
 

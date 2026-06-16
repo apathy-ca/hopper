@@ -374,6 +374,86 @@ hopper project delete proj-123
 hopper project delete proj-123 --force
 ```
 
+## Memory Management
+
+Hopper treats memory as a first-class record kind (`kind=memory`). Memory records carry structured fields — `subject`, `scope`, `provenance` — and sync upstream like any other record. The consolidation commands use an LLM to curate accumulated records.
+
+### Adding Memory Records
+
+```bash
+# Quick add
+hopper memory add "User prefers terse responses" --subject user:preferences
+
+# With full structure
+hopper memory add "Rosetta agent queues peak at 03:00 UTC" \
+  --subject agent:rosetta \
+  --scope shared-across-agents \
+  --provenance "observation 2026-06-01"
+
+# Scope options: private | shared-with-user | shared-across-agents (default: shared-with-user)
+```
+
+### Listing Memory Records
+
+```bash
+hopper memory list
+hopper memory list --status open
+```
+
+### Consolidating Memory
+
+Reads all eligible memory records (not yet superseded, not already consolidated),
+asks an LLM to classify and cluster them, then writes consolidated summaries and
+marks source records as superseded. Results sync upstream through the normal record
+update path.
+
+Requires `ANTHROPIC_API_KEY`. Uses `claude-sonnet-4-6` by default; override with
+`HOPPER_CONSOLIDATION_MODEL`.
+
+```bash
+# Dry run — show what would be done without writing
+hopper memory consolidate --dry-run
+
+# Consolidate all memory records
+hopper memory consolidate
+
+# Scope to a specific subject
+hopper memory consolidate --subject project:waypoint
+
+# Scope to a specific subject + scope pair
+hopper memory consolidate --subject project:waypoint --scope shared-with-user
+
+# Propose revisions instead of applying directly (review gate)
+hopper memory consolidate --propose
+```
+
+Memory records are classified as:
+- **episodic** — point-in-time observations; candidates for clustering
+- **durable_fact** — standing conventions or architecture decisions; kept as-is
+- **noise** — low-value or redundant; classified but not merged
+
+Episodic records that overlap are merged into a single `consolidated` record.
+Source records get a `superseded_by` field pointing at the consolidated record.
+
+### Checking Consolidated Records for Drift
+
+Over time, consolidated summaries can diverge from the source records they
+summarise. `drift-check` re-scores each consolidated record against its sources.
+
+```bash
+# Check all consolidated records
+hopper memory drift-check
+
+# Check all consolidated records for a subject
+hopper memory drift-check --subject project:waypoint
+
+# Check a single record by ID
+hopper memory drift-check <record-id>
+```
+
+A `drift_score` of 0.0 means the summary is accurate; 1.0 means major gaps.
+Records with `drift_score > 0.1` are flagged in the output.
+
 ## Instance Management
 
 ### Understanding Instances

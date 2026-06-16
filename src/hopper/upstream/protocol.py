@@ -46,6 +46,14 @@ class SyncTask(BaseModel):
     subject: str | None = None
     scope: str | None = None
     provenance: str | None = None
+    # Consolidation fields — optional, only present on memory records post-consolidation.
+    memory_class: str | None = None
+    superseded_by: str | None = None
+    source_record_ids: list[str] = Field(default_factory=list)
+    consolidation_run_id: str | None = None
+    consolidated_at: datetime | None = None
+    drift_checked_at: datetime | None = None
+    drift_score: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

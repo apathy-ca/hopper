@@ -181,6 +181,13 @@ class LocalClient:
             subject=data.get("subject"),
             scope=data.get("scope"),
             provenance=data.get("provenance"),
+            memory_class=data.get("memory_class"),
+            superseded_by=data.get("superseded_by"),
+            source_record_ids=data.get("source_record_ids") or [],
+            consolidation_run_id=data.get("consolidation_run_id"),
+            consolidated_at=data.get("consolidated_at"),
+            drift_checked_at=data.get("drift_checked_at"),
+            drift_score=data.get("drift_score"),
         )
         task.instance = self.config.instance_id
         author = self._author_context(
@@ -218,6 +225,8 @@ class LocalClient:
             filters["project"] = params["project"]
         if "kind" in params and params["kind"]:
             filters["kind"] = params["kind"]
+        if "memory_class" in params and params["memory_class"]:
+            filters["memory_class"] = params["memory_class"]
         if "tags" in params:
             # Handle comma-separated tags
             tags = params["tags"]
@@ -439,6 +448,20 @@ class LocalClient:
             task.scope = data["scope"]
         if "provenance" in data:
             task.provenance = data["provenance"]
+        if "memory_class" in data:
+            task.memory_class = data["memory_class"]
+        if "superseded_by" in data:
+            task.superseded_by = data["superseded_by"]
+        if "source_record_ids" in data:
+            task.source_record_ids = data["source_record_ids"] or []
+        if "consolidation_run_id" in data:
+            task.consolidation_run_id = data["consolidation_run_id"]
+        if "consolidated_at" in data:
+            task.consolidated_at = data["consolidated_at"]
+        if "drift_checked_at" in data:
+            task.drift_checked_at = data["drift_checked_at"]
+        if "drift_score" in data:
+            task.drift_score = data["drift_score"]
 
         # Handle tags
         if "add_tags" in data:
@@ -782,6 +805,13 @@ class LocalClient:
             "subject": task.subject,
             "scope": task.scope,
             "provenance": task.provenance,
+            "memory_class": task.memory_class,
+            "superseded_by": task.superseded_by,
+            "source_record_ids": task.source_record_ids,
+            "consolidation_run_id": task.consolidation_run_id,
+            "consolidated_at": task.consolidated_at.isoformat() if task.consolidated_at else None,
+            "drift_checked_at": task.drift_checked_at.isoformat() if task.drift_checked_at else None,
+            "drift_score": task.drift_score,
             "project_id": task.project,
             "instance": task.instance,
             "source": task.source,

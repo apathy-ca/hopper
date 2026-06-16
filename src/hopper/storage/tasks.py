@@ -74,6 +74,14 @@ class LocalTask:
     subject: str | None = None
     scope: str | None = None
     provenance: str | None = None
+    # Consolidation fields: set by the memory consolidation job.
+    memory_class: str | None = None  # episodic | durable_fact | consolidated | noise
+    superseded_by: str | None = None  # ID of the consolidated record that replaced this
+    source_record_ids: list[str] = field(default_factory=list)  # consolidated records only
+    consolidation_run_id: str | None = None
+    consolidated_at: datetime | None = None
+    drift_checked_at: datetime | None = None
+    drift_score: float | None = None
 
     @classmethod
     def _generate_id(cls) -> str:
@@ -103,6 +111,13 @@ class LocalTask:
         subject: str | None = None,
         scope: str | None = None,
         provenance: str | None = None,
+        memory_class: str | None = None,
+        superseded_by: str | None = None,
+        source_record_ids: list[str] | None = None,
+        consolidation_run_id: str | None = None,
+        consolidated_at: datetime | None = None,
+        drift_checked_at: datetime | None = None,
+        drift_score: float | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> LocalTask:
         """Create a new task with generated ID."""
@@ -132,6 +147,13 @@ class LocalTask:
             subject=subject,
             scope=scope,
             provenance=provenance,
+            memory_class=memory_class,
+            superseded_by=superseded_by,
+            source_record_ids=source_record_ids or [],
+            consolidation_run_id=consolidation_run_id,
+            consolidated_at=consolidated_at,
+            drift_checked_at=drift_checked_at,
+            drift_score=drift_score,
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -182,6 +204,20 @@ class LocalTask:
             data["scope"] = self.scope
         if self.provenance:
             data["provenance"] = self.provenance
+        if self.memory_class:
+            data["memory_class"] = self.memory_class
+        if self.superseded_by:
+            data["superseded_by"] = self.superseded_by
+        if self.source_record_ids:
+            data["source_record_ids"] = self.source_record_ids
+        if self.consolidation_run_id:
+            data["consolidation_run_id"] = self.consolidation_run_id
+        if self.consolidated_at:
+            data["consolidated_at"] = self.consolidated_at.isoformat()
+        if self.drift_checked_at:
+            data["drift_checked_at"] = self.drift_checked_at.isoformat()
+        if self.drift_score is not None:
+            data["drift_score"] = self.drift_score
         return data
 
     @classmethod
@@ -218,6 +254,13 @@ class LocalTask:
             subject=fm.get("subject"),
             scope=fm.get("scope"),
             provenance=fm.get("provenance"),
+            memory_class=fm.get("memory_class"),
+            superseded_by=fm.get("superseded_by"),
+            source_record_ids=fm.get("source_record_ids") or [],
+            consolidation_run_id=fm.get("consolidation_run_id"),
+            consolidated_at=_parse_datetime(fm.get("consolidated_at")),
+            drift_checked_at=_parse_datetime(fm.get("drift_checked_at")),
+            drift_score=fm.get("drift_score"),
         )
 
 
@@ -375,6 +418,19 @@ class TaskMarkdownStore:
                 tasks_meta = index.get("tasks", {})
                 task_ids = {
                     tid for tid in task_ids if tasks_meta.get(tid, {}).get("kind", "task") == wanted
+                }
+
+        # Filter by memory_class (consolidation classification)
+        if "memory_class" in filters and filters["memory_class"]:
+            wanted_mc = filters["memory_class"]
+            by_mc = index.get("by_memory_class")
+            if by_mc is not None:
+                task_ids &= set(by_mc.get(wanted_mc, []))
+            else:
+                tasks_meta = index.get("tasks", {})
+                task_ids = {
+                    tid for tid in task_ids
+                    if tasks_meta.get(tid, {}).get("memory_class") == wanted_mc
                 }
 
         include_deleted = filters.pop("include_deleted", False)

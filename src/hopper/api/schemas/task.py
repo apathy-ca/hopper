@@ -94,6 +94,14 @@ class TaskCreate(BaseModel):
     subject: str | None = Field(None, description="Memory subject")
     scope: str | None = Field(None, description="Memory scope")
     provenance: str | None = Field(None, description="Memory provenance")
+    # Consolidation fields
+    memory_class: str | None = Field(None, description="episodic|durable_fact|consolidated|noise")
+    superseded_by: str | None = Field(None, description="ID of consolidated record replacing this")
+    source_record_ids: list[str] = Field(default_factory=list, description="Source IDs for consolidated records")
+    consolidation_run_id: str | None = Field(None, description="ID of the consolidation run that produced this")
+    consolidated_at: str | None = Field(None, description="ISO timestamp of consolidation")
+    drift_checked_at: str | None = Field(None, description="ISO timestamp of last drift check")
+    drift_score: float | None = Field(None, description="Drift score from last reality check (0-1)")
 
     model_config = ConfigDict(use_enum_values=True)
 
