@@ -1,79 +1,92 @@
-"""Tests for kind/type read-back on the SQLite task store.
+"""Tests for kind/type read-back on the records+revisions backend.
 
-The real record kind lives in records.type (written via the revision path),
-not in the tasks table. These tests prove TaskSQLiteStore surfaces that real
-type instead of the old hardcoded "task".
+The real record kind lives in records.type (written via the revision path).
+These tests prove RecordTaskRepository surfaces that real type correctly.
+The legacy tasks table was dropped in Phase 5; these tests use the
+records-backed repository which is the current canonical path.
 """
-
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from hopper.storage.base import StorageConfig
-from hopper.storage.revision_writer import AuthorContext
-from hopper.storage.sqlite import SQLiteStorage
-from hopper.storage.sqlite_tasks import TaskSQLiteStore
-from hopper.storage.tasks import LocalTask
+from hopper.api.repositories.record_tasks import RecordTaskRepository
 
-
-@pytest.fixture
-def sqlite_storage():
-    """Create initialized SQLite storage in a temp dir."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config = StorageConfig.local(Path(tmpdir))
-        storage = SQLiteStorage(config, db_path=Path(tmpdir) / "hopper.db")
-        storage.initialize()
-        yield storage
-        storage.dispose()
-
-
-@pytest.fixture
-def sqlite_store(sqlite_storage):
-    return TaskSQLiteStore(sqlite_storage)
-
-
-@pytest.fixture
-def author():
-    return AuthorContext(did="did:key:test", location="cli")
+_AUTHOR_DID = "did:key:testauthor"
+_AUTHOR_LOC = "cli:test"
 
 
 class TestSQLiteKindReadBack:
-    def test_kind_round_trips_from_records_type(self, sqlite_store, author):
+    def test_kind_round_trips_from_records_type(self, db_session):
         """A record created with kind="memory" reads back as kind="memory"."""
-        memory = LocalTask.create(title="A memory", kind="memory")
-        sqlite_store.create(memory, author=author)
+        repo = RecordTaskRepository(db_session)
+        created = repo.create(
+            {"title": "A memory", "kind": "memory"},
+            author_did=_AUTHOR_DID,
+            author_location=_AUTHOR_LOC,
+        )
+        db_session.flush()
 
-        loaded = sqlite_store.get(memory.id)
+        loaded = repo.get(created["id"])
         assert loaded is not None
-        assert loaded.kind == "memory"
+        assert loaded["kind"] == "memory"
 
-    def test_default_task_kind(self, sqlite_store, author):
-        """A record created without a kind defaults to "task"."""
-        task = LocalTask.create(title="A task")
-        sqlite_store.create(task, author=author)
+    def test_default_task_kind(self, db_session):
+        """A record created without an explicit kind defaults to "task"."""
+        repo = RecordTaskRepository(db_session)
+        created = repo.create(
+            {"title": "A task"},
+            author_did=_AUTHOR_DID,
+            author_location=_AUTHOR_LOC,
+        )
+        db_session.flush()
 
-        loaded = sqlite_store.get(task.id)
+        loaded = repo.get(created["id"])
         assert loaded is not None
-        assert loaded.kind == "task"
+        assert loaded["kind"] == "task"
 
-    def test_list_surfaces_real_kind(self, sqlite_store, author):
-        """list() returns the real kind for each row, not a hardcoded value."""
-        sqlite_store.create(LocalTask.create(title="A task"), author=author)
-        sqlite_store.create(LocalTask.create(title="A memory", kind="memory"), author=author)
+    def test_list_surfaces_real_kind(self, db_session):
+        """list() returns the real kind for each record, not a hardcoded value."""
+        repo = RecordTaskRepository(db_session)
+        repo.create(
+            {"title": "A task"},
+            author_did=_AUTHOR_DID,
+            author_location=_AUTHOR_LOC,
+        )
+        repo.create(
+            {"title": "A memory", "kind": "memory"},
+            author_did=_AUTHOR_DID,
+            author_location=_AUTHOR_LOC,
+        )
+        db_session.flush()
 
-        by_id = {t.title: t.kind for t in sqlite_store.list()}
-        assert by_id["A task"] == "task"
-        assert by_id["A memory"] == "memory"
+        tasks, _ = repo.list(kind="task")
+        memories, _ = repo.list(kind="memory")
 
-    def test_filter_by_kind(self, sqlite_store, author):
+        task_titles = {t["title"] for t in tasks}
+        memory_titles = {m["title"] for m in memories}
+
+        assert "A task" in task_titles
+        assert "A memory" in memory_titles
+        assert "A memory" not in task_titles
+        assert "A task" not in memory_titles
+
+    def test_filter_by_kind(self, db_session):
         """list(kind="memory") returns only memory records."""
-        sqlite_store.create(LocalTask.create(title="A task"), author=author)
-        memory = LocalTask.create(title="A memory", kind="memory")
-        sqlite_store.create(memory, author=author)
+        repo = RecordTaskRepository(db_session)
+        repo.create(
+            {"title": "A task"},
+            author_did=_AUTHOR_DID,
+            author_location=_AUTHOR_LOC,
+        )
+        mem = repo.create(
+            {"title": "A memory", "kind": "memory"},
+            author_did=_AUTHOR_DID,
+            author_location=_AUTHOR_LOC,
+        )
+        db_session.flush()
 
-        memories = sqlite_store.list(kind="memory")
-        assert [m.id for m in memories] == [memory.id]
+        memories, _ = repo.list(kind="memory")
+        assert len(memories) == 1
+        assert memories[0]["id"] == mem["id"]
 
-        tasks = sqlite_store.list(kind="task")
-        assert memory.id not in {t.id for t in tasks}
+        tasks, _ = repo.list(kind="task")
+        assert all(t["id"] != mem["id"] for t in tasks)
