@@ -6,7 +6,6 @@ Fast context-load for an agent starting or resuming a session.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import UTC, datetime

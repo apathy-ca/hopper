@@ -248,9 +248,9 @@ def _make_memory_group() -> click.Group:
         if since:
             try:
                 since_dt = datetime.fromisoformat(since)
-            except ValueError:
+            except ValueError as exc:
                 console.print(f"[red]Invalid --since date:[/red] {since!r} (use ISO format)")
-                raise SystemExit(1)
+                raise SystemExit(1) from exc
 
         with ctx.get_client() as client:
             result = run_session_summary(

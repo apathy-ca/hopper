@@ -6,7 +6,6 @@ The legacy tasks table was dropped in Phase 5; these tests use the
 records-backed repository which is the current canonical path.
 """
 
-import pytest
 
 from hopper.api.repositories.record_tasks import RecordTaskRepository
 

@@ -6,8 +6,6 @@ calls or API keys are required.
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -337,7 +335,6 @@ def test_run_drift_check_scores_and_updates(fake_client):
 
 def test_run_drift_check_record_id_filter(fake_client):
     """record_id filter checks only that specific record."""
-    import json
 
     fake_client.create_task(
         {
