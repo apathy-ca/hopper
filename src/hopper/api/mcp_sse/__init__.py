@@ -1356,4 +1356,3 @@ Never use generic names like "claude:main".
 Revision history (author_did, author_location per write) is tracked
 internally when the server is running with the SQLite shadow enabled.
 """
-
