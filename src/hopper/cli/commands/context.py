@@ -130,6 +130,10 @@ def show(
                 if northbound:
                     _print_northbound_section(northbound)
 
+            # Show last consolidation timestamp from instance metadata
+            if show_memory:
+                _print_consolidation_status(client)
+
             console.print()
 
     except ClientError as e:
@@ -349,6 +353,40 @@ def _print_northbound_section(items: list[dict]) -> None:
         title = item.get("title", "Untitled")
         console.print(f"  [dim]{task_id}[/dim] {title}")
 
+    console.print()
+
+
+def _print_consolidation_status(client: object) -> None:
+    """Show last memory consolidation timestamp from instance metadata."""
+    from hopper.storage.sqlite import SQLiteStorage
+
+    if not isinstance(client.storage, SQLiteStorage):
+        return
+
+    from sqlalchemy import text
+
+    instance_id = getattr(client.config, "instance_id", ".hopper")
+
+    try:
+        with client.storage.session() as session:
+            row = session.execute(
+                text("SELECT runtime_metadata FROM hopper_instances WHERE id = :id"),
+                {"id": instance_id},
+            ).fetchone()
+    except Exception:
+        return
+
+    if not row or not row[0]:
+        return
+
+    import json
+
+    meta = json.loads(row[0]) if isinstance(row[0], str) else (row[0] or {})
+    last_at = meta.get("last_consolidation_at")
+    if not last_at:
+        return
+
+    console.print(f"[dim]Last consolidation: {last_at}[/dim]")
     console.print()
 
 

@@ -101,6 +101,9 @@ def run_consolidation(
     dry_run: bool = False,
     propose: bool = False,
     model: str | None = None,
+    only_unclassified: bool = False,
+    min_batch: int = 1,
+    max_records: int | None = None,
 ) -> dict[str, Any]:
     """Run a consolidation pass over memory records.
 
@@ -113,6 +116,9 @@ def run_consolidation(
             Only meaningful on the SQLite backend; markdown backend always
             applies directly.
         model: Anthropic model to use (default: claude-haiku-4-5-20251001).
+        only_unclassified: Only process records with no memory_class set yet.
+        min_batch: Skip the LLM call if fewer than this many records are eligible.
+        max_records: Cap the number of records sent to the LLM per call.
 
     Returns:
         Summary dict describing what was done (or would be done for --dry-run).
@@ -131,6 +137,9 @@ def run_consolidation(
         if not t.get("superseded_by") and t.get("memory_class") != "consolidated"
     ]
 
+    if only_unclassified:
+        eligible = [t for t in eligible if not t.get("memory_class")]
+
     if subject:
         eligible = [t for t in eligible if t.get("subject") == subject]
     if scope:
@@ -138,6 +147,12 @@ def run_consolidation(
 
     if not eligible:
         return {"skipped": True, "reason": "No eligible memory records found", "eligible": 0}
+
+    if len(eligible) < min_batch:
+        return {"skipped": True, "reason": "below min_batch", "eligible": len(eligible)}
+
+    if max_records is not None and len(eligible) > max_records:
+        eligible = eligible[:max_records]
 
     logger.info(
         "Running consolidation on %d memory records (subject=%s scope=%s)",

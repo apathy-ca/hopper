@@ -208,6 +208,10 @@ def get_instance(ctx: Context, instance_id: str) -> None:
 
             from hopper.cli.output import format_datetime
 
+            if runtime_meta := inst.get("runtime_metadata"):
+                if last_c := runtime_meta.get("last_consolidation_at"):
+                    console.print(f"\n[bold]Last Consolidation:[/bold] {last_c}")
+
             console.print(f"\n[dim]Created: {format_datetime(inst.get('created_at'))}[/dim]")
 
             console.print()

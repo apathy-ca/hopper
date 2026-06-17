@@ -29,6 +29,13 @@ _DIGEST_INTERVAL_SECONDS = int(os.getenv("HOPPER_AUDIT_DIGEST_SECONDS", str(7 * 
 # Agent location token (shows up in revision.author_location)
 _AGENT_LOCATION = os.getenv("HOPPER_AUDIT_LOCATION", "audit-agent@ember")
 
+# Job 3: memory consolidation
+_CONSOLIDATE_ENABLED = os.getenv("HOPPER_AUDIT_CONSOLIDATE_ENABLED", "true").lower() == "true"
+_CONSOLIDATE_INTERVAL_SECONDS = int(os.getenv("HOPPER_AUDIT_CONSOLIDATE_SECONDS", "0"))
+_CONSOLIDATE_MIN_BATCH = int(os.getenv("HOPPER_AUDIT_CONSOLIDATE_MIN_BATCH", "5"))
+_CONSOLIDATE_MAX_RECORDS = int(os.getenv("HOPPER_AUDIT_CONSOLIDATE_MAX_RECORDS", "100"))
+_CONSOLIDATE_MODEL = os.getenv("HOPPER_AUDIT_CONSOLIDATE_MODEL", "claude-haiku-4-5")
+
 
 def _get_or_create_agent_did(hopper_path: Path) -> str:
     """Load or generate the audit agent's DID key.
@@ -52,6 +59,149 @@ def _get_client(hopper_path: Path) -> Any:
     from hopper.cli.local_client import LocalClient
 
     return LocalClient(hopper_path)
+
+
+class _ShadowConsolidationClient:
+    """Thin adapter over RecordTaskRepository so run_consolidation can operate
+    directly on the server's shadow.db (records+revisions) rather than the
+    markdown task store that LocalClient uses for list_tasks/create_task."""
+
+    def __init__(self, shadow_db_path: Path, agent_did: str, instance_id: str):
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.orm import sessionmaker
+
+        url = f"sqlite:///{shadow_db_path}"
+        self._engine = create_engine(url, connect_args={"check_same_thread": False})
+        self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
+        self._session = self._Session()
+        self._agent_did = agent_did
+        self._instance_id = instance_id
+
+        # Build record→instance lookup for scoping queries
+        rows = self._session.execute(
+            text("SELECT id, instance_id FROM records WHERE tombstoned_at IS NULL")
+        ).fetchall()
+        self._instance_records: dict[str, str | None] = {r[0]: r[1] for r in rows}
+
+    def __enter__(self) -> "_ShadowConsolidationClient":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._session.close()
+        self._engine.dispose()
+
+    def _repo(self):
+        from hopper.api.repositories.record_tasks import RecordTaskRepository
+
+        return RecordTaskRepository(self._session, instance_id=self._instance_id)
+
+    def list_tasks(self, **params: Any) -> list[dict[str, Any]]:
+        kind = params.get("kind", "task")
+        memory_class = params.get("memory_class")
+        items, _ = self._repo().list(kind=kind, limit=10000)
+        # Scope to this client's instance
+        items = [
+            t for t in items if self._instance_records.get(t["id"]) == self._instance_id
+        ]
+        if memory_class:
+            items = [t for t in items if t.get("memory_class") == memory_class]
+        return items
+
+    def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
+        result = self._repo().create(
+            data, author_did=self._agent_did, author_location=_AGENT_LOCATION
+        )
+        self._session.commit()
+        return result
+
+    def update_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        result = self._repo().update(
+            task_id, data, author_did=self._agent_did, author_location=_AGENT_LOCATION
+        )
+        self._session.commit()
+        return result or {}
+
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        return self._repo().get(task_id)
+
+
+def _get_instance_id(hopper_path: Path) -> str:
+    """Read instance.id from config.yaml."""
+    import yaml
+
+    config_file = hopper_path / "config.yaml"
+    if config_file.exists():
+        try:
+            data = yaml.safe_load(config_file.read_text()) or {}
+            return data.get("instance", {}).get("id", ".hopper")
+        except Exception:
+            pass
+    return ".hopper"
+
+
+def _update_instance_metadata(
+    hopper_path: Path, instance_id: str, updates: dict[str, Any]
+) -> None:
+    """Merge updates into the instance's runtime_metadata in shadow.db."""
+    import json
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    shadow_db = hopper_path / "shadow.db"
+    if not shadow_db.exists():
+        return
+
+    engine = create_engine(f"sqlite:///{shadow_db}", connect_args={"check_same_thread": False})
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        row = session.execute(
+            text("SELECT runtime_metadata FROM hopper_instances WHERE id = :id"),
+            {"id": instance_id},
+        ).fetchone()
+        if row is None:
+            return
+        existing = json.loads(row[0]) if row[0] else {}
+        existing.update(updates)
+        session.execute(
+            text("UPDATE hopper_instances SET runtime_metadata = :meta WHERE id = :id"),
+            {"id": instance_id, "meta": json.dumps(existing)},
+        )
+        session.commit()
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def _read_instance_metadata(hopper_path: Path, instance_id: str) -> dict[str, Any]:
+    """Read runtime_metadata for an instance from shadow.db."""
+    import json
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    shadow_db = hopper_path / "shadow.db"
+    if not shadow_db.exists():
+        return {}
+
+    engine = create_engine(f"sqlite:///{shadow_db}", connect_args={"check_same_thread": False})
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        row = session.execute(
+            text("SELECT runtime_metadata FROM hopper_instances WHERE id = :id"),
+            {"id": instance_id},
+        ).fetchone()
+        if row is None or row[0] is None:
+            return {}
+        return json.loads(row[0]) if isinstance(row[0], str) else (row[0] or {})
+    finally:
+        session.close()
+        engine.dispose()
 
 
 def run_tag_normalization(client: Any, hopper_path: Path) -> dict[str, Any]:
@@ -178,6 +328,89 @@ def run_idea_synthesis(
     return {"note_id": note.id, "title": title, "ideas_included": len(ideas)}
 
 
+def _get_instances_with_memory(hopper_path: Path) -> list[str]:
+    """Return instance IDs that own at least one memory record in shadow.db."""
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    shadow_db = hopper_path / "shadow.db"
+    if not shadow_db.exists():
+        return []
+    engine = create_engine(f"sqlite:///{shadow_db}", connect_args={"check_same_thread": False})
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        rows = session.execute(
+            text(
+                "SELECT DISTINCT instance_id FROM records "
+                "WHERE type = 'memory' AND tombstoned_at IS NULL AND instance_id IS NOT NULL"
+            )
+        ).fetchall()
+        return [r[0] for r in rows]
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def run_memory_consolidation(
+    client: Any, agent_did: str, hopper_path: Path
+) -> dict[str, Any]:
+    """Job 3: LLM-driven memory consolidation (only_unclassified, gated by min_batch).
+
+    Runs per-instance against the shadow DB (records+revisions) where memory
+    records live, not the markdown task store that LocalClient uses.
+    """
+    if not _CONSOLIDATE_ENABLED:
+        return {"skipped": True, "reason": "consolidation disabled"}
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set — skipping memory consolidation")
+        return {"skipped": True, "reason": "ANTHROPIC_API_KEY not set"}
+
+    shadow_db = hopper_path / "shadow.db"
+    if not shadow_db.exists():
+        return {"skipped": True, "reason": "shadow.db not found"}
+
+    instances = _get_instances_with_memory(hopper_path)
+    if not instances:
+        return {"skipped": True, "reason": "no instances with memory records"}
+
+    from hopper.memory.consolidation import run_consolidation
+
+    results: dict[str, Any] = {}
+    any_ran = False
+
+    for instance_id in instances:
+        with _ShadowConsolidationClient(shadow_db, agent_did, instance_id) as shadow_client:
+            result = run_consolidation(
+                shadow_client,
+                only_unclassified=True,
+                min_batch=_CONSOLIDATE_MIN_BATCH,
+                max_records=_CONSOLIDATE_MAX_RECORDS,
+                model=_CONSOLIDATE_MODEL,
+            )
+
+        logger.info("Memory consolidation [%s]: %s", instance_id, result)
+        results[instance_id] = result
+
+        if not result.get("skipped") and not result.get("error"):
+            any_ran = True
+            _update_instance_metadata(
+                hopper_path,
+                instance_id,
+                {
+                    "last_consolidation_at": datetime.now(UTC).isoformat(),
+                    "last_consolidation_run_id": result.get("run_id"),
+                    "last_consolidation_records": result.get("eligible", 0),
+                },
+            )
+
+    if not any_ran:
+        return {"skipped": True, "reason": "all instances skipped", "details": results}
+    return {"instances": results}
+
+
 def run_once(hopper_path: Path) -> None:
     """Run both jobs once and return."""
     agent_did = _get_or_create_agent_did(hopper_path)
@@ -199,7 +432,18 @@ def run_loop(hopper_path: Path) -> None:
         _DIGEST_INTERVAL_SECONDS,
     )
 
+    instance_id = _get_instance_id(hopper_path)
     last_digest_at: datetime | None = None
+    last_consolidate_at: datetime | None = None
+
+    # Seed last_consolidate_at from instance metadata (survives restarts)
+    try:
+        meta = _read_instance_metadata(hopper_path, instance_id)
+        if ts := meta.get("last_consolidation_at"):
+            last_consolidate_at = datetime.fromisoformat(ts)
+            logger.info("Resuming consolidation timer from %s", ts)
+    except Exception:
+        pass
 
     while True:
         try:
@@ -218,6 +462,18 @@ def run_loop(hopper_path: Path) -> None:
                     if not result.get("skipped"):
                         last_digest_at = now
                         logger.info("Idea synthesis complete: %s", result)
+
+                # Job 3: memory consolidation
+                now = datetime.now(UTC)
+                consolidate_due = _CONSOLIDATE_INTERVAL_SECONDS == 0 or (
+                    last_consolidate_at is None
+                    or (now - last_consolidate_at).total_seconds()
+                    >= _CONSOLIDATE_INTERVAL_SECONDS
+                )
+                if consolidate_due:
+                    result = run_memory_consolidation(client, agent_did, hopper_path)
+                    if not result.get("skipped"):
+                        last_consolidate_at = now
 
         except KeyboardInterrupt:
             logger.info("Audit agent interrupted — exiting")
