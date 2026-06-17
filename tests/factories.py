@@ -131,7 +131,6 @@ class BaseFactory:
         return {}
 
 
-
 class ProjectFactory(BaseFactory):
     """
     Factory for creating Project instances.
@@ -345,5 +344,3 @@ class ExternalMappingFactory(BaseFactory):
 # ============================================================================
 # Utility Functions
 # ============================================================================
-
-

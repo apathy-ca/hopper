@@ -77,6 +77,7 @@ class HopperInstance(Base, TimestampMixin):
     children: Mapped[list["HopperInstance"]] = relationship(
         "HopperInstance", back_populates="parent"
     )
+
     def __init__(self, **kwargs):
         """Initialize with support for backward compatibility aliases."""
         # Handle backward compatibility aliases

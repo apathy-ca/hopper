@@ -80,17 +80,19 @@ def tasks_with_history(make_record, test_instances) -> list:
     for i in range(5):
         task_id = f"hist-task-{uuid4().hex[:8]}"
         make_record(task_id)
-        tasks.append(SimpleNamespace(
-            id=task_id,
-            title=f"API task {i}",
-            description=f"API endpoint task {i}",
-            project="backend",
-            status=TaskStatus.DONE,
-            priority="medium",
-            instance_id="api-instance",
-            tags={"api": True, "python": True},
-            created_at=utc_now_naive(),
-        ))
+        tasks.append(
+            SimpleNamespace(
+                id=task_id,
+                title=f"API task {i}",
+                description=f"API endpoint task {i}",
+                project="backend",
+                status=TaskStatus.DONE,
+                priority="medium",
+                instance_id="api-instance",
+                tags={"api": True, "python": True},
+                created_at=utc_now_naive(),
+            )
+        )
     return tasks
 
 

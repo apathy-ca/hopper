@@ -90,17 +90,19 @@ def multiple_tasks(test_instances, make_record) -> list:
         task_id = f"task-{uuid4().hex[:8]}"
         inst = "api-instance" if i < 3 else "web-instance"
         make_record(task_id, instance_id=inst)
-        tasks.append(SimpleNamespace(
-            id=task_id,
-            title=f"Task {i}",
-            description=f"Description {i}",
-            project="test-project",
-            status=TaskStatus.DONE,
-            priority="medium",
-            instance_id=inst,
-            tags={"api": True} if i < 3 else {"frontend": True},
-            created_at=utc_now_naive(),
-        ))
+        tasks.append(
+            SimpleNamespace(
+                id=task_id,
+                title=f"Task {i}",
+                description=f"Description {i}",
+                project="test-project",
+                status=TaskStatus.DONE,
+                priority="medium",
+                instance_id=inst,
+                tags={"api": True} if i < 3 else {"frontend": True},
+                created_at=utc_now_naive(),
+            )
+        )
     return tasks
 
 

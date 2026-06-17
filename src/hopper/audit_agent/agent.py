@@ -103,9 +103,7 @@ class _ShadowConsolidationClient:
         memory_class = params.get("memory_class")
         items, _ = self._repo().list(kind=kind, limit=10000)
         # Scope to this client's instance
-        items = [
-            t for t in items if self._instance_records.get(t["id"]) == self._instance_id
-        ]
+        items = [t for t in items if self._instance_records.get(t["id"]) == self._instance_id]
         if memory_class:
             items = [t for t in items if t.get("memory_class") == memory_class]
         return items
@@ -142,9 +140,7 @@ def _get_instance_id(hopper_path: Path) -> str:
     return ".hopper"
 
 
-def _update_instance_metadata(
-    hopper_path: Path, instance_id: str, updates: dict[str, Any]
-) -> None:
+def _update_instance_metadata(hopper_path: Path, instance_id: str, updates: dict[str, Any]) -> None:
     """Merge updates into the instance's runtime_metadata in shadow.db."""
     import json
 
@@ -352,9 +348,7 @@ def _get_instances_with_memory(hopper_path: Path) -> list[str]:
         engine.dispose()
 
 
-def run_memory_consolidation(
-    client: Any, agent_did: str, hopper_path: Path
-) -> dict[str, Any]:
+def run_memory_consolidation(client: Any, agent_did: str, hopper_path: Path) -> dict[str, Any]:
     """Job 3: LLM-driven memory consolidation (only_unclassified, gated by min_batch).
 
     Runs per-instance against the shadow DB (records+revisions) where memory
@@ -467,8 +461,7 @@ def run_loop(hopper_path: Path) -> None:
                 now = datetime.now(UTC)
                 consolidate_due = _CONSOLIDATE_INTERVAL_SECONDS == 0 or (
                     last_consolidate_at is None
-                    or (now - last_consolidate_at).total_seconds()
-                    >= _CONSOLIDATE_INTERVAL_SECONDS
+                    or (now - last_consolidate_at).total_seconds() >= _CONSOLIDATE_INTERVAL_SECONDS
                 )
                 if consolidate_due:
                     result = run_memory_consolidation(client, agent_did, hopper_path)

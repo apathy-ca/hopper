@@ -191,19 +191,21 @@ def multiple_tasks(db_session: Session, global_instance: HopperInstance) -> list
     for i in range(4):
         task_id = f"task-{uuid4().hex[:8]}"
         _ensure_record(db_session, task_id, instance_id=global_instance.id)
-        tasks.append(SimpleNamespace(
-            id=task_id,
-            title=f"Task {i+1}",
-            description=f"Description for task {i+1}",
-            project="test-project",
-            status=TaskStatus.PENDING,
-            priority=priorities[i],
-            instance_id=global_instance.id,
-            depends_on=[],
-            blocks=[],
-            tags={},
-            created_at=utc_now_naive(),
-        ))
+        tasks.append(
+            SimpleNamespace(
+                id=task_id,
+                title=f"Task {i+1}",
+                description=f"Description for task {i+1}",
+                project="test-project",
+                status=TaskStatus.PENDING,
+                priority=priorities[i],
+                instance_id=global_instance.id,
+                depends_on=[],
+                blocks=[],
+                tags={},
+                created_at=utc_now_naive(),
+            )
+        )
     return tasks
 
 
