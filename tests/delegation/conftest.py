@@ -7,12 +7,11 @@ Provides fixtures for:
 - Scope behavior testing
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.orm import Session
-
-from types import SimpleNamespace
 
 from hopper.models import (
     DelegationStatus,

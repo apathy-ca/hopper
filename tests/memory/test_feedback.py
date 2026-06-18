@@ -3,14 +3,13 @@ Tests for feedback collection and analytics.
 """
 
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from hopper.memory.episodic import EpisodicStore
 from hopper.memory.feedback import FeedbackAnalytics, FeedbackStore
-from types import SimpleNamespace
-
 from hopper.models import TaskStatus
 from hopper.timeutils import utc_now_naive
 

@@ -30,7 +30,7 @@ from hopper.api.schemas.task import (
 from hopper.api.schemas.task import (
     Status as TaskStatus,
 )
-from hopper.models import TaskFeedback
+from hopper.models import Task, TaskFeedback
 from hopper.models import TaskStatus as StatusEnum
 from hopper.timeutils import utc_now_naive
 

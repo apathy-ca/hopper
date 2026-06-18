@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from tests.factories import (
     RoutingDecisionFactory,
+    TaskFactory,
     TaskFeedbackFactory,
 )
 from tests.utils import (

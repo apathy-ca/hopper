@@ -5,13 +5,12 @@ Tests end-to-end task delegation from Global -> Project -> Orchestration
 and completion bubbling back up.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 from hopper.delegation.completion import CompletionBubbler
 from hopper.delegation.delegator import Delegator
 from hopper.delegation.router import InstanceRouter
-from types import SimpleNamespace
-
 from hopper.models import (
     DelegationStatus,
     DelegationType,

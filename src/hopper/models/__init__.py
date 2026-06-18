@@ -26,6 +26,7 @@ from .project import Project
 from .record import Record
 from .revision import Revision
 from .routing_decision import RoutingDecision
+from .task import Task
 from .task_delegation import DelegationStatus, DelegationType, TaskDelegation
 from .task_feedback import TaskFeedback
 
@@ -37,6 +38,7 @@ __all__ = [
     "Revision",
     "RoutingDecision",
     "TaskFeedback",
+    "Task",
     "ExternalMapping",
     "HopperInstance",
     "TaskDelegation",

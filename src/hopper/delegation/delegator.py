@@ -3,11 +3,10 @@ Main delegation logic for task routing between instances.
 """
 
 import logging
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
-
-from typing import Any
 
 from hopper.models import (
     DelegationStatus,

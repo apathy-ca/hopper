@@ -6,10 +6,9 @@ They don't delegate further - they're the execution level.
 """
 
 import logging
+from typing import Any
 
 from sqlalchemy.orm import Session
-
-from typing import Any
 
 from hopper.models import HopperInstance, TaskStatus
 
@@ -109,14 +108,6 @@ class OrchestrationScopeBehavior(BaseScopeBehavior):
 
         Returns tasks ordered by priority and creation time.
         """
-        # Priority order mapping
-        priority_order = {
-            "urgent": 0,
-            "high": 1,
-            "medium": 2,
-            "low": 3,
-        }
-
         return []
 
     async def _count_active_tasks(self, instance: HopperInstance) -> int:

@@ -13,7 +13,7 @@ import pytest
 from click.testing import CliRunner
 from sqlalchemy.orm import Session
 
-from tests.factories import ProjectFactory
+from tests.factories import ProjectFactory, TaskFactory
 from tests.utils import assert_cli_success
 
 pytestmark = pytest.mark.skip(reason="Integration test: Requires running API server")

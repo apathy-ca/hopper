@@ -10,8 +10,6 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from typing import Any
-
 from hopper.models import RoutingDecision
 from hopper.timeutils import utc_now_naive
 

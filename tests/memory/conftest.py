@@ -2,6 +2,7 @@
 Phase 3 specific fixtures for memory system testing.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -10,8 +11,6 @@ from sqlalchemy.orm import Session
 from hopper.memory.working import RoutingContext, WorkingMemory
 from hopper.memory.working.backends import LocalBackend
 from hopper.memory.working.context import InstanceInfo, RecentDecision, SimilarTask
-from types import SimpleNamespace
-
 from hopper.models import (
     HopperInstance,
     HopperScope,

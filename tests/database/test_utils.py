@@ -69,7 +69,7 @@ def test_dump_schema(test_engine):
     for table in expected_tables:
         assert table in schema["tables"]
 
-    assert "tasks" not in schema["tables"]
+    assert "tasks" in schema["tables"]
 
 
 def test_get_table_row_counts(test_engine):
@@ -89,7 +89,7 @@ def test_get_table_row_counts(test_engine):
         counts = get_table_row_counts(test_engine)
 
         assert counts["projects"] == 1
-        assert "tasks" not in counts  # tasks table was dropped in Phase 5
+        assert "tasks" in counts
 
     finally:
         session.close()

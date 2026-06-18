@@ -6,13 +6,12 @@ directly or delegate to orchestration instances.
 """
 
 import logging
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from typing import Any
-
-from hopper.models import HopperInstance, HopperScope, InstanceStatus, TaskStatus
+from hopper.models import HopperInstance, HopperScope, InstanceStatus
 
 from .base import BaseScopeBehavior, TaskAction
 

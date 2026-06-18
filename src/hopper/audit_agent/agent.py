@@ -83,7 +83,7 @@ class _ShadowConsolidationClient:
         ).fetchall()
         self._instance_records: dict[str, str | None] = {r[0]: r[1] for r in rows}
 
-    def __enter__(self) -> "_ShadowConsolidationClient":
+    def __enter__(self) -> _ShadowConsolidationClient:
         return self
 
     def __exit__(self, *args: Any) -> None:

@@ -4,6 +4,7 @@ Tests for learning API routes.
 Tests the learning API endpoints for feedback, patterns, and statistics.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -22,8 +23,6 @@ from hopper.api.schemas.learning import (
     RoutingAccuracyStats,
 )
 from hopper.memory.consolidated import RoutingPattern
-from types import SimpleNamespace
-
 from hopper.models import (
     HopperInstance,
     HopperScope,
@@ -387,7 +386,7 @@ class TestFeedbackIntegration:
     def test_multiple_feedback_records(self, db_session: Session, make_record):
         """Test tracking multiple feedback records."""
         tasks = []
-        for i in range(5):
+        for _ in range(5):
             task_id = f"multi-task-{uuid4().hex[:8]}"
             make_record(task_id)
             tasks.append(SimpleNamespace(id=task_id))

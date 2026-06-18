@@ -27,12 +27,14 @@ try:
     from hopper.models.hopper_instance import HopperInstance
     from hopper.models.project import Project
     from hopper.models.routing_decision import RoutingDecision
+    from hopper.models.task import Task
     from hopper.models.task_feedback import TaskFeedback
 except ImportError:
     # Models not yet integrated, define mock classes
     Project = None
     HopperInstance = None
     RoutingDecision = None
+    Task = None
     TaskFeedback = None
     ExternalMapping = None
 
@@ -129,6 +131,53 @@ class BaseFactory:
     def _get_defaults(cls) -> dict[str, Any]:
         """Get default attributes for the model. Override in subclasses."""
         return {}
+
+
+class TaskFactory(BaseFactory):
+    model = Task
+
+    @classmethod
+    def _get_defaults(cls) -> dict[str, Any]:
+        seq = cls._get_sequence()
+        return {
+            "id": cls._generate_id("task"),
+            "title": f"Test Task {seq}",
+            "description": f"This is a test task created by TaskFactory (sequence {seq})",
+            "project": "test-project",
+            "status": "pending",
+            "priority": "medium",
+            "requester": "test-user",
+            "owner": None,
+            "source": "test",
+            "tags": {"test": True, "automated": True},
+            "created_at": utc_now_naive(),
+            "updated_at": utc_now_naive(),
+        }
+
+    @classmethod
+    def create_pending(cls, session: Session | None = None, **kwargs) -> Task:
+        return cls.create(session=session, status="pending", **kwargs)
+
+    @classmethod
+    def create_routed(cls, session: Session | None = None, **kwargs) -> Task:
+        return cls.create(session=session, status="routed", **kwargs)
+
+    @classmethod
+    def create_in_progress(cls, session: Session | None = None, **kwargs) -> Task:
+        return cls.create(session=session, status="in_progress", **kwargs)
+
+    @classmethod
+    def create_completed(cls, session: Session | None = None, **kwargs) -> Task:
+        return cls.create(session=session, status="completed", **kwargs)
+
+    @classmethod
+    def create_with_high_priority(cls, session: Session | None = None, **kwargs) -> Task:
+        return cls.create(session=session, priority="high", **kwargs)
+
+    @classmethod
+    def create_with_dependencies(cls, session: Session | None = None, **kwargs) -> Task:
+        depends_on = kwargs.pop("depends_on", ["task-dep-1", "task-dep-2"])
+        return cls.create(session=session, depends_on={"task_ids": depends_on}, **kwargs)
 
 
 class ProjectFactory(BaseFactory):

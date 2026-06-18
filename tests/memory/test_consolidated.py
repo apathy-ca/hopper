@@ -2,6 +2,7 @@
 Tests for consolidated memory (pattern extraction and learning).
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -13,8 +14,6 @@ from hopper.memory.consolidated import (
 )
 from hopper.memory.consolidated.extractor import PatternCandidate
 from hopper.memory.episodic import EpisodicStore
-from types import SimpleNamespace
-
 from hopper.models import TaskStatus
 from hopper.timeutils import utc_now_naive
 

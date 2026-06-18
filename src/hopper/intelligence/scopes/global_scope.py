@@ -6,11 +6,10 @@ Project instances. They never execute tasks directly.
 """
 
 import logging
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
-from typing import Any
 
 from hopper.models import HopperInstance, HopperScope, InstanceStatus
 

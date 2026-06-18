@@ -9,8 +9,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from typing import Any
-
 from hopper.models import (
     DelegationStatus,
     TaskDelegation,

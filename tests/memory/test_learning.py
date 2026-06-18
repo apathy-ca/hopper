@@ -2,14 +2,13 @@
 Tests for the learning loop integration.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from hopper.memory.learning import LearningEngine, RoutingSuggestion, SuggestionSource
 from hopper.memory.working.context import InstanceInfo
-from types import SimpleNamespace
-
 from hopper.models import (
     HopperInstance,
     HopperScope,
