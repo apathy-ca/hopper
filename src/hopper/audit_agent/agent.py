@@ -325,7 +325,12 @@ def run_idea_synthesis(
 
 
 def _get_instances_with_memory(hopper_path: Path) -> list[str]:
-    """Return instance IDs that own at least one memory record in shadow.db."""
+    """Return instance IDs that own memory records or memory-shaped tasks.
+
+    Finds instances with either kind=memory records or task records tagged
+    with learning/decision (which should be re-kinded to memory during
+    consolidation).
+    """
     from sqlalchemy import create_engine, text
     from sqlalchemy.orm import sessionmaker
 
@@ -339,7 +344,12 @@ def _get_instances_with_memory(hopper_path: Path) -> list[str]:
         rows = session.execute(
             text(
                 "SELECT DISTINCT instance_id FROM records "
-                "WHERE type = 'memory' AND tombstoned_at IS NULL AND instance_id IS NOT NULL"
+                "WHERE tombstoned_at IS NULL AND instance_id IS NOT NULL "
+                "AND (type = 'memory' OR ("
+                "  type = 'task' AND ("
+                "    tags LIKE '%learning%' OR tags LIKE '%decision%' OR tags LIKE '%preference%'"
+                "  )"
+                "))"
             )
         ).fetchall()
         return [r[0] for r in rows]

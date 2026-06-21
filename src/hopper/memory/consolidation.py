@@ -20,6 +20,29 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 
+_MEMORY_SHAPED_TAGS = {"learning", "decision", "preference"}
+
+
+def _rekind_memory_shaped_tasks(client: Any) -> int:
+    """Re-kind task records tagged learning/decision/preference to kind=memory.
+
+    Returns the number of records re-kinded.
+    """
+    all_tasks = client.list_tasks(kind="task")
+    rekinds = 0
+    for task in all_tasks:
+        tags = set(task.get("tags") or [])
+        if not tags & _MEMORY_SHAPED_TAGS:
+            continue
+        tid = task["id"]
+        try:
+            client.update_task(tid, {"kind": "memory"})
+            rekinds += 1
+            logger.info("Re-kinded task %s to memory (tags: %s)", tid, tags & _MEMORY_SHAPED_TAGS)
+        except Exception:
+            logger.exception("Failed to re-kind task %s", tid)
+    return rekinds
+
 
 def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[str, Any]:
     """Single LLM call: classify records and produce consolidation clusters.
@@ -128,6 +151,9 @@ def run_consolidation(
         return {"error": "ANTHROPIC_API_KEY not set — cannot run consolidation"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
+
+    # 0. Re-kind memory-shaped tasks (learning/decision/preference) to kind=memory
+    _rekind_memory_shaped_tasks(client)
 
     # 1. Select eligible records: kind=memory, not already consolidated or superseded
     all_memories = client.list_tasks(kind="memory")
