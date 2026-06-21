@@ -343,11 +343,15 @@ def _get_instances_with_memory(hopper_path: Path) -> list[str]:
     try:
         rows = session.execute(
             text(
-                "SELECT DISTINCT instance_id FROM records "
-                "WHERE tombstoned_at IS NULL AND instance_id IS NOT NULL "
-                "AND (type = 'memory' OR ("
-                "  type = 'task' AND ("
-                "    tags LIKE '%learning%' OR tags LIKE '%decision%' OR tags LIKE '%preference%'"
+                "SELECT DISTINCT r.instance_id FROM records r "
+                "WHERE r.tombstoned_at IS NULL AND r.instance_id IS NOT NULL "
+                "AND (r.type = 'memory' OR ("
+                "  r.type = 'task' AND EXISTS ("
+                "    SELECT 1 FROM revisions rev "
+                "    WHERE rev.id = r.current_revision_id "
+                "    AND (rev.payload LIKE '%\"learning\"%' "
+                "      OR rev.payload LIKE '%\"decision\"%' "
+                "      OR rev.payload LIKE '%\"preference\"%')"
                 "  )"
                 "))"
             )
