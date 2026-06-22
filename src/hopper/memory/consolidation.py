@@ -121,6 +121,9 @@ def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[s
     return json.loads(text)
 
 
+_DEFAULT_BATCH_SIZE = 15
+
+
 def run_consolidation(
     client: Any,
     subject: str | None = None,
@@ -131,6 +134,7 @@ def run_consolidation(
     only_unclassified: bool = False,
     min_batch: int = 1,
     max_records: int | None = None,
+    batch_size: int | None = None,
 ) -> dict[str, Any]:
     """Run a consolidation pass over memory records.
 
@@ -184,26 +188,40 @@ def run_consolidation(
     if max_records is not None and len(eligible) > max_records:
         eligible = eligible[:max_records]
 
+    bs = batch_size or int(os.getenv("HOPPER_CONSOLIDATION_BATCH_SIZE", str(_DEFAULT_BATCH_SIZE)))
+
     logger.info(
-        "Running consolidation on %d memory records (subject=%s scope=%s)",
+        "Running consolidation on %d memory records (subject=%s scope=%s batch_size=%d)",
         len(eligible),
         subject,
         scope,
+        bs,
     )
 
-    # 2. LLM classification + clustering
-    try:
-        llm_result = _call_llm(eligible, model, api_key)
-    except Exception as exc:
-        logger.exception("LLM call failed during consolidation")
-        return {"error": f"LLM call failed: {exc}"}
+    # 2. LLM classification + clustering — process in batches
+    batches = [eligible[i : i + bs] for i in range(0, len(eligible), bs)]
+    all_classifications: list[dict[str, Any]] = []
+    all_clusters: list[dict[str, Any]] = []
+    batch_errors: list[str] = []
+
+    for batch_idx, batch in enumerate(batches):
+        logger.info("Consolidation batch %d/%d (%d records)", batch_idx + 1, len(batches), len(batch))
+        try:
+            llm_result = _call_llm(batch, model, api_key)
+            all_classifications.extend(llm_result.get("classifications", []))
+            all_clusters.extend(llm_result.get("clusters", []))
+        except Exception as exc:
+            logger.exception("LLM call failed for batch %d", batch_idx + 1)
+            batch_errors.append(f"Batch {batch_idx + 1} failed: {exc}")
 
     if dry_run:
         return {
             "dry_run": True,
             "eligible": len(eligible),
-            "classifications": llm_result.get("classifications", []),
-            "clusters": llm_result.get("clusters", []),
+            "batches": len(batches),
+            "batch_errors": batch_errors,
+            "classifications": all_classifications,
+            "clusters": all_clusters,
         }
 
     # 3. Apply results
@@ -212,12 +230,11 @@ def run_consolidation(
 
     classifications: dict[str, str] = {
         c["id"]: c["memory_class"]
-        for c in llm_result.get("classifications", [])
+        for c in all_classifications
         if c.get("id") and c.get("memory_class")
     }
-    clusters = llm_result.get("clusters", [])
+    clusters = all_clusters
 
-    # Build a lookup of which records are being consolidated into a cluster
     clustered_ids: set[str] = set()
     for cluster in clusters:
         clustered_ids.update(cluster.get("source_ids", []))
@@ -225,10 +242,10 @@ def run_consolidation(
     created_consolidated: list[str] = []
     updated_source: list[str] = []
     classified_only: list[str] = []
-    errors: list[str] = []
+    errors: list[str] = list(batch_errors)
 
     # 3a. Create consolidated records for each cluster
-    cluster_id_map: dict[str, str] = {}  # source_ids key → new consolidated record ID
+    cluster_id_map: dict[str, str] = {}
     for cluster in clusters:
         source_ids = cluster.get("source_ids", [])
         if len(source_ids) < 2:
@@ -236,7 +253,6 @@ def run_consolidation(
         title = cluster.get("title", "Consolidated memory")
         summary = cluster.get("summary", "")
 
-        # Infer subject/scope from the first source record
         source_tasks = [t for t in eligible if t["id"] in source_ids]
         inferred_subject = next(
             (t.get("subject") for t in source_tasks if t.get("subject")), subject
@@ -295,6 +311,7 @@ def run_consolidation(
     return {
         "run_id": run_id,
         "eligible": len(eligible),
+        "batches": len(batches),
         "consolidated_records_created": len(created_consolidated),
         "source_records_superseded": len(updated_source),
         "records_classified_only": len(classified_only),
