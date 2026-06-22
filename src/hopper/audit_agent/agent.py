@@ -125,6 +125,38 @@ class _ShadowConsolidationClient:
     def get_task(self, task_id: str) -> dict[str, Any] | None:
         return self._repo().get(task_id)
 
+    def rekind_record(self, record_id: str, new_kind: str) -> None:
+        """Change a record's kind (type) at the records table level.
+
+        The normal update path blocks kind changes, so this updates
+        records.type directly and writes a matching revision.
+        """
+        from sqlalchemy import text as sa_text
+
+        from hopper.models.record import Record
+        from hopper.storage.revision_writer import AuthorContext, write_revision
+
+        record = self._session.get(Record, record_id)
+        if record is None or record.tombstoned_at is not None:
+            return
+        payload = self._repo()._current_payload(record) or {}
+        payload = dict(payload)
+        payload["kind"] = new_kind
+        payload["id"] = record_id
+
+        self._session.execute(
+            sa_text("UPDATE records SET type = :kind WHERE id = :id"),
+            {"kind": new_kind, "id": record_id},
+        )
+        author = AuthorContext(did=self._agent_did, location=_AGENT_LOCATION)
+        write_revision(
+            self._session,
+            payload,
+            author,
+            instance_id=self._instance_id,
+        )
+        self._session.commit()
+
 
 def _get_instance_id(hopper_path: Path) -> str:
     """Read instance.id from config.yaml."""

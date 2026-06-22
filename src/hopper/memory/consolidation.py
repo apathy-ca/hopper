@@ -26,6 +26,10 @@ _MEMORY_SHAPED_TAGS = {"learning", "decision", "preference"}
 def _rekind_memory_shaped_tasks(client: Any) -> int:
     """Re-kind task records tagged learning/decision/preference to kind=memory.
 
+    The normal update path blocks kind changes (records.type is immutable via
+    revision merge). This reaches through the client to update records.type
+    directly, then writes a revision to keep the payload consistent.
+
     Returns the number of records re-kinded.
     """
     all_tasks = client.list_tasks(kind="task")
@@ -36,7 +40,7 @@ def _rekind_memory_shaped_tasks(client: Any) -> int:
             continue
         tid = task["id"]
         try:
-            client.update_task(tid, {"kind": "memory"})
+            client.rekind_record(tid, "memory")
             rekinds += 1
             logger.info("Re-kinded task %s to memory (tags: %s)", tid, tags & _MEMORY_SHAPED_TAGS)
         except Exception:
