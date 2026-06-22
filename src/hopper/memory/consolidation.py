@@ -20,11 +20,14 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 
-_MEMORY_SHAPED_TAGS = {"learning", "decision", "preference"}
+_MEMORY_SHAPED_TAGS = {
+    "learning", "decision", "preference",
+    "idea", "session-memory", "observation",
+}
 
 
-def _rekind_memory_shaped_tasks(client: Any) -> int:
-    """Re-kind task records tagged learning/decision/preference to kind=memory.
+def _rekind_memory_shaped_tasks(client: Any, extra_tags: set[str] | None = None) -> int:
+    """Re-kind task records with memory-shaped tags to kind=memory.
 
     The normal update path blocks kind changes (records.type is immutable via
     revision merge). This reaches through the client to update records.type
@@ -32,17 +35,18 @@ def _rekind_memory_shaped_tasks(client: Any) -> int:
 
     Returns the number of records re-kinded.
     """
+    match_tags = _MEMORY_SHAPED_TAGS | (extra_tags or set())
     all_tasks = client.list_tasks(kind="task")
     rekinds = 0
     for task in all_tasks:
         tags = set(task.get("tags") or [])
-        if not tags & _MEMORY_SHAPED_TAGS:
+        if not tags & match_tags:
             continue
         tid = task["id"]
         try:
             client.rekind_record(tid, "memory")
             rekinds += 1
-            logger.info("Re-kinded task %s to memory (tags: %s)", tid, tags & _MEMORY_SHAPED_TAGS)
+            logger.info("Re-kinded task %s to memory (tags: %s)", tid, tags & match_tags)
         except Exception:
             logger.exception("Failed to re-kind task %s", tid)
     return rekinds

@@ -383,7 +383,10 @@ def _get_instances_with_memory(hopper_path: Path) -> list[str]:
                 "    WHERE rev.id = r.current_revision_id "
                 "    AND (rev.payload LIKE '%\"learning\"%' "
                 "      OR rev.payload LIKE '%\"decision\"%' "
-                "      OR rev.payload LIKE '%\"preference\"%')"
+                "      OR rev.payload LIKE '%\"preference\"%' "
+                "      OR rev.payload LIKE '%\"idea\"%' "
+                "      OR rev.payload LIKE '%\"session-memory\"%' "
+                "      OR rev.payload LIKE '%\"observation\"%')"
                 "  )"
                 "))"
             )
