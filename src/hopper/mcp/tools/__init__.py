@@ -11,6 +11,13 @@ from typing import Any
 import httpx
 from mcp.types import Tool
 
+from .overseer_tools import (
+    get_overseer_tools,
+    get_sub_instance_record,
+    overseer_northbound,
+    overseer_search,
+    overseer_status,
+)
 from .project_tools import (
     create_project,
     get_project,
@@ -52,6 +59,11 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     # Routing tools
     "hopper_route_task": route_task,
     "hopper_get_routing_suggestions": get_routing_suggestions,
+    # Overseer tools
+    "hopper_overseer_status": overseer_status,
+    "hopper_overseer_search": overseer_search,
+    "hopper_overseer_northbound": overseer_northbound,
+    "hopper_get_sub_instance_record": get_sub_instance_record,
 }
 
 
@@ -65,6 +77,7 @@ def get_all_tools() -> list[Tool]:
         *get_task_tools(),
         *get_project_tools(),
         *get_routing_tools(),
+        *get_overseer_tools(),
     ]
 
 
@@ -126,4 +139,10 @@ __all__ = [
     "get_project_tasks",
     "route_task",
     "get_routing_suggestions",
+    # Overseer
+    "get_overseer_tools",
+    "overseer_status",
+    "overseer_search",
+    "overseer_northbound",
+    "get_sub_instance_record",
 ]

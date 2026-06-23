@@ -130,6 +130,7 @@ from hopper.cli.commands.kinds import register as register_kinds
 from hopper.cli.commands.knowledge import knowledge
 from hopper.cli.commands.learning import learning
 from hopper.cli.commands.maintenance import maintenance
+from hopper.cli.commands.overseer import overseer
 from hopper.cli.commands.project import project
 from hopper.cli.commands.revision import revision
 from hopper.cli.commands.server import server
@@ -149,6 +150,7 @@ cli.add_command(upstream)
 cli.add_command(revision)
 cli.add_command(mcp)
 cli.add_command(maintenance)
+cli.add_command(overseer)
 
 # Shortcut: `hopper sync` → `hopper upstream sync` (with `hopper sync status`)
 from hopper.cli.commands.upstream import sync_group  # noqa: E402

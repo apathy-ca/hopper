@@ -26,7 +26,7 @@ from hopper.api.schemas.hopper_instance import (
     InstanceStatus,
     InstanceUpdate,
 )
-from hopper.models import HopperInstance, Record
+from hopper.models import HopperInstance, InstanceRelationship, Record
 from hopper.models import HopperScope as HopperScopeEnum
 from hopper.models import InstanceStatus as InstanceStatusEnum
 from hopper.models import InstanceType as InstanceTypeEnum
@@ -349,25 +349,34 @@ async def get_instance_children(
     if not parent:
         raise NotFoundException("HopperInstance", instance_id)
 
-    # Get children
-    query = select(HopperInstance).where(HopperInstance.parent_id == instance_id)
+    # Get children via the DAG join table (instance_relationships) first,
+    # falling back to the legacy parent_id column for backward compat.
+    dag_query = (
+        select(HopperInstance)
+        .join(InstanceRelationship, InstanceRelationship.child_id == HopperInstance.id)
+        .where(InstanceRelationship.parent_id == instance_id)
+    )
+    legacy_query = select(HopperInstance).where(HopperInstance.parent_id == instance_id)
 
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
-    total = await db.scalar(count_query) or 0
+    # Combine both sources, deduplicate by id
+    dag_result = await db.execute(dag_query)
+    legacy_result = await db.execute(legacy_query)
+    seen: set[str] = set()
+    all_children = []
+    for child in [*dag_result.scalars().all(), *legacy_result.scalars().all()]:
+        if child.id not in seen:
+            seen.add(child.id)
+            all_children.append(child)
 
-    # Apply pagination
-    query = query.offset(pagination.skip).limit(pagination.limit)
-
-    result = await db.execute(query)
-    children = result.scalars().all()
+    total = len(all_children)
+    paged = all_children[pagination.skip : pagination.skip + pagination.limit]
 
     return InstanceList(
-        items=[_instance_to_response(child) for child in children],
+        items=[_instance_to_response(child) for child in paged],
         total=total,
         skip=pagination.skip,
         limit=pagination.limit,
-        has_more=(pagination.skip + len(children)) < total,
+        has_more=(pagination.skip + len(paged)) < total,
     )
 
 
@@ -681,3 +690,100 @@ async def resume_instance(
     await db.refresh(instance)
 
     return _instance_to_response(instance)
+
+
+# ---------------------------------------------------------------------------
+# DAG edge management (overseer ↔ sub-instance relationships)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/instances/{parent_id}/children/{child_id}",
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_child_instance(
+    parent_id: str,
+    child_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Register a sub-instance relationship (DAG edge).
+
+    Idempotent: re-posting an existing edge is a no-op (200).
+    Returns 409 if the edge would create a cycle.
+    """
+    from hopper.instances.dag import would_create_cycle
+
+    for iid in (parent_id, child_id):
+        result = await db.execute(select(HopperInstance).where(HopperInstance.id == iid))
+        if result.scalar_one_or_none() is None:
+            raise NotFoundException("HopperInstance", iid)
+
+    existing = await db.execute(
+        select(InstanceRelationship).where(
+            InstanceRelationship.parent_id == parent_id,
+            InstanceRelationship.child_id == child_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return {"status": "already_exists", "parent_id": parent_id, "child_id": child_id}
+
+    all_edges = await db.execute(
+        select(InstanceRelationship.parent_id, InstanceRelationship.child_id)
+    )
+    edges = list(all_edges.all())
+    children_map: dict[str, list[str]] = {}
+    for p, c in edges:
+        children_map.setdefault(p, []).append(c)
+
+    if would_create_cycle(lambda n: children_map.get(n, []), parent_id, child_id):
+        raise ValidationException("Adding this edge would create a cycle in the instance DAG")
+
+    edge = InstanceRelationship(parent_id=parent_id, child_id=child_id)
+    db.add(edge)
+    await db.flush()
+
+    return {"status": "created", "parent_id": parent_id, "child_id": child_id}
+
+
+@router.delete(
+    "/instances/{parent_id}/children/{child_id}",
+    status_code=status.HTTP_200_OK,
+)
+async def remove_child_instance(
+    parent_id: str,
+    child_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Remove a sub-instance relationship (DAG edge)."""
+    result = await db.execute(
+        select(InstanceRelationship).where(
+            InstanceRelationship.parent_id == parent_id,
+            InstanceRelationship.child_id == child_id,
+        )
+    )
+    edge = result.scalar_one_or_none()
+    if edge is None:
+        raise NotFoundException("InstanceRelationship", f"{parent_id}->{child_id}")
+
+    await db.delete(edge)
+    await db.flush()
+
+    return {"status": "removed", "parent_id": parent_id, "child_id": child_id}
+
+
+@router.get(
+    "/instances/{instance_id}/parents",
+    response_model=list[InstanceResponse],
+)
+async def get_parents(
+    instance_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> list[InstanceResponse]:
+    """Get all parent (overseer) instances of a sub-instance."""
+    result = await db.execute(
+        select(HopperInstance)
+        .join(InstanceRelationship, InstanceRelationship.parent_id == HopperInstance.id)
+        .where(InstanceRelationship.child_id == instance_id)
+    )
+    parents = result.scalars().all()
+    return [_instance_to_response(p) for p in parents]

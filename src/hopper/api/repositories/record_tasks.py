@@ -48,6 +48,7 @@ _PASSTHROUGH_OPTIONAL = (
     "consolidated_at",
     "drift_checked_at",
     "drift_score",
+    "source_instance",
 )
 
 

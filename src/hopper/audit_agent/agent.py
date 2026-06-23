@@ -36,6 +36,10 @@ _CONSOLIDATE_MIN_BATCH = int(os.getenv("HOPPER_AUDIT_CONSOLIDATE_MIN_BATCH", "5"
 _CONSOLIDATE_MAX_RECORDS = int(os.getenv("HOPPER_AUDIT_CONSOLIDATE_MAX_RECORDS", "100"))
 _CONSOLIDATE_MODEL = os.getenv("HOPPER_AUDIT_CONSOLIDATE_MODEL", "claude-haiku-4-5")
 
+# Job 3+: northbound (overseer cross-instance) consolidation
+_NORTHBOUND_ENABLED = os.getenv("HOPPER_AUDIT_NORTHBOUND_ENABLED", "true").lower() == "true"
+_NORTHBOUND_INTERVAL_SECONDS = int(os.getenv("HOPPER_AUDIT_NORTHBOUND_SECONDS", str(24 * 3600)))
+
 
 def _get_or_create_agent_did(hopper_path: Path) -> str:
     """Load or generate the audit agent's DID key.
@@ -62,11 +66,23 @@ def _get_client(hopper_path: Path) -> Any:
 
 
 class _ShadowConsolidationClient:
-    """Thin adapter over RecordTaskRepository so run_consolidation can operate
-    directly on the server's shadow.db (records+revisions) rather than the
-    markdown task store that LocalClient uses for list_tasks/create_task."""
+    """Adapter over RecordTaskRepository for consolidation against shadow.db.
 
-    def __init__(self, shadow_db_path: Path, agent_did: str, instance_id: str):
+    Supports both single-instance mode (standard consolidation) and
+    cross-instance mode (northbound): ``read_instance_ids`` controls which
+    instances' records are visible; ``write_instance_id`` controls where new
+    records are owned.
+    """
+
+    def __init__(
+        self,
+        shadow_db_path: Path,
+        agent_did: str,
+        instance_id: str,
+        *,
+        read_instance_ids: set[str] | None = None,
+        write_instance_id: str | None = None,
+    ):
         from sqlalchemy import create_engine, text
         from sqlalchemy.orm import sessionmaker
 
@@ -76,6 +92,8 @@ class _ShadowConsolidationClient:
         self._session = self._Session()
         self._agent_did = agent_did
         self._instance_id = instance_id
+        self._read_ids = read_instance_ids or {instance_id}
+        self._write_id = write_instance_id or instance_id
 
         # Build record→instance lookup for scoping queries
         rows = self._session.execute(
@@ -93,30 +111,30 @@ class _ShadowConsolidationClient:
         self._session.close()
         self._engine.dispose()
 
-    def _repo(self):
+    def _repo(self, *, for_write: bool = False):
         from hopper.api.repositories.record_tasks import RecordTaskRepository
 
-        return RecordTaskRepository(self._session, instance_id=self._instance_id)
+        iid = self._write_id if for_write else self._instance_id
+        return RecordTaskRepository(self._session, instance_id=iid)
 
     def list_tasks(self, **params: Any) -> list[dict[str, Any]]:
         kind = params.get("kind", "task")
         memory_class = params.get("memory_class")
         items, _ = self._repo().list(kind=kind, limit=10000)
-        # Scope to this client's instance
-        items = [t for t in items if self._instance_records.get(t["id"]) == self._instance_id]
+        items = [t for t in items if self._instance_records.get(t["id"]) in self._read_ids]
         if memory_class:
             items = [t for t in items if t.get("memory_class") == memory_class]
         return items
 
     def create_task(self, data: dict[str, Any]) -> dict[str, Any]:
-        result = self._repo().create(
+        result = self._repo(for_write=True).create(
             data, author_did=self._agent_did, author_location=_AGENT_LOCATION
         )
         self._session.commit()
         return result
 
     def update_task(self, task_id: str, data: dict[str, Any]) -> dict[str, Any]:
-        result = self._repo().update(
+        result = self._repo(for_write=True).update(
             task_id, data, author_did=self._agent_did, author_location=_AGENT_LOCATION
         )
         self._session.commit()
@@ -126,11 +144,7 @@ class _ShadowConsolidationClient:
         return self._repo().get(task_id)
 
     def rekind_record(self, record_id: str, new_kind: str) -> None:
-        """Change a record's kind (type) at the records table level.
-
-        The normal update path blocks kind changes, so this updates
-        records.type directly and writes a matching revision.
-        """
+        """Change a record's kind (type) at the records table level."""
         from sqlalchemy import text as sa_text
 
         from hopper.models.record import Record
@@ -397,11 +411,160 @@ def _get_instances_with_memory(hopper_path: Path) -> list[str]:
         engine.dispose()
 
 
-def run_memory_consolidation(client: Any, agent_did: str, hopper_path: Path) -> dict[str, Any]:
-    """Job 3: LLM-driven memory consolidation (only_unclassified, gated by min_batch).
+def _get_instance_edges(hopper_path: Path) -> list[tuple[str, str]]:
+    """Read DAG edges from instance_relationships in shadow.db.
 
-    Runs per-instance against the shadow DB (records+revisions) where memory
-    records live, not the markdown task store that LocalClient uses.
+    Returns (parent_id, child_id) tuples. Returns [] if the table
+    doesn't exist (pre-migration shadow.db).
+    """
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import sessionmaker
+
+    shadow_db = hopper_path / "shadow.db"
+    if not shadow_db.exists():
+        return []
+    engine = create_engine(f"sqlite:///{shadow_db}", connect_args={"check_same_thread": False})
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        rows = session.execute(
+            text("SELECT parent_id, child_id FROM instance_relationships")
+        ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+    except Exception:
+        # Table doesn't exist yet (pre-migration)
+        return []
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def run_bottom_up(
+    shadow_db: Path,
+    agent_did: str,
+    hopper_path: Path,
+    *,
+    run_northbound_pass: bool = False,
+    only: str | None = None,
+    model: str | None = None,
+    min_batch: int | None = None,
+    max_records: int | None = None,
+) -> dict[str, Any]:
+    """Run consolidation bottom-up across the instance DAG.
+
+    Leaf instances consolidate first; overseers consolidate after their
+    children, then optionally run a northbound pass. Each instance
+    consolidates exactly once even if it appears under multiple overseers.
+
+    Args:
+        shadow_db: Path to shadow.db.
+        agent_did: Agent DID for authoring revisions.
+        hopper_path: Path to .hopper directory.
+        run_northbound_pass: If True, run northbound after each overseer.
+        only: Restrict to this overseer and its subtree.
+        model: Anthropic model override.
+        min_batch: Minimum records to trigger consolidation.
+        max_records: Cap records per consolidation pass.
+    """
+    from hopper.instances.dag import build_adjacency, get_subtree_nodes, topo_order_leaves_first
+    from hopper.memory.consolidation import run_consolidation, run_northbound
+
+    mem_instances = set(_get_instances_with_memory(hopper_path))
+    edges = _get_instance_edges(hopper_path)
+    children_of, _parents_of = build_adjacency(edges)
+
+    all_nodes = mem_instances | {p for p, _ in edges} | {c for _, c in edges}
+
+    if only:
+        subtree = get_subtree_nodes(only, children_of)
+        all_nodes = all_nodes & subtree
+
+    order = topo_order_leaves_first(all_nodes, edges)
+
+    consolidated: set[str] = set()
+    results: dict[str, Any] = {}
+    any_ran = False
+    _model = model or _CONSOLIDATE_MODEL
+    _min = min_batch if min_batch is not None else _CONSOLIDATE_MIN_BATCH
+    _max = max_records if max_records is not None else _CONSOLIDATE_MAX_RECORDS
+
+    for instance_id in order:
+        if instance_id in consolidated:
+            continue
+        consolidated.add(instance_id)
+
+        inst_result: dict[str, Any] = {}
+
+        # 1. Standard per-instance consolidation
+        if instance_id in mem_instances:
+            with _ShadowConsolidationClient(shadow_db, agent_did, instance_id) as sc:
+                result = run_consolidation(
+                    sc,
+                    only_unclassified=True,
+                    min_batch=_min,
+                    max_records=_max,
+                    model=_model,
+                )
+            inst_result["consolidation"] = result
+            logger.info("Consolidation [%s]: %s", instance_id, result)
+
+            if not result.get("skipped") and not result.get("error"):
+                any_ran = True
+                _update_instance_metadata(
+                    hopper_path,
+                    instance_id,
+                    {
+                        "last_consolidation_at": datetime.now(UTC).isoformat(),
+                        "last_consolidation_run_id": result.get("run_id"),
+                        "last_consolidation_records": result.get("eligible", 0),
+                    },
+                )
+
+        # 2. Northbound pass if this instance is an overseer with children
+        child_ids = list(children_of.get(instance_id, set()) & all_nodes)
+        if child_ids and run_northbound_pass:
+            with _ShadowConsolidationClient(
+                shadow_db,
+                agent_did,
+                instance_id,
+                read_instance_ids=set(child_ids),
+                write_instance_id=instance_id,
+            ) as nb_client:
+                nb_result = run_northbound(
+                    nb_client,
+                    parent_instance_id=instance_id,
+                    child_instance_ids=child_ids,
+                    model=_model,
+                    max_records=_max,
+                )
+            inst_result["northbound"] = nb_result
+            logger.info("Northbound [%s]: %s", instance_id, nb_result)
+
+            if not nb_result.get("skipped") and not nb_result.get("error"):
+                any_ran = True
+                _update_instance_metadata(
+                    hopper_path,
+                    instance_id,
+                    {
+                        "last_northbound_at": datetime.now(UTC).isoformat(),
+                        "last_northbound_run_id": nb_result.get("run_id"),
+                        "last_northbound_records": nb_result.get("northbound_records_created", 0),
+                    },
+                )
+
+        if inst_result:
+            results[instance_id] = inst_result
+
+    if not any_ran:
+        return {"skipped": True, "reason": "all instances skipped", "details": results}
+    return {"instances": results}
+
+
+def run_memory_consolidation(client: Any, agent_did: str, hopper_path: Path) -> dict[str, Any]:
+    """Job 3: LLM-driven memory consolidation with bottom-up DAG ordering.
+
+    Delegates to ``run_bottom_up`` which handles per-instance consolidation
+    and optional northbound passes for overseer instances.
     """
     if not _CONSOLIDATE_ENABLED:
         return {"skipped": True, "reason": "consolidation disabled"}
@@ -415,43 +578,36 @@ def run_memory_consolidation(client: Any, agent_did: str, hopper_path: Path) -> 
     if not shadow_db.exists():
         return {"skipped": True, "reason": "shadow.db not found"}
 
-    instances = _get_instances_with_memory(hopper_path)
-    if not instances:
-        return {"skipped": True, "reason": "no instances with memory records"}
+    # Determine if northbound is due (separate, slower cadence)
+    northbound_due = False
+    if _NORTHBOUND_ENABLED:
+        edges = _get_instance_edges(hopper_path)
+        if edges:
+            # Only check cadence if there are overseer relationships
+            try:
+                from hopper.instances.dag import build_adjacency
 
-    from hopper.memory.consolidation import run_consolidation
+                children_of, _ = build_adjacency(edges)
+                overseer_ids = [iid for iid, kids in children_of.items() if kids]
+                if overseer_ids:
+                    # Check cadence against first overseer's metadata
+                    meta = _read_instance_metadata(hopper_path, overseer_ids[0])
+                    last_nb = meta.get("last_northbound_at")
+                    if last_nb:
+                        elapsed = (datetime.now(UTC) - datetime.fromisoformat(last_nb)).total_seconds()
+                        northbound_due = elapsed >= _NORTHBOUND_INTERVAL_SECONDS
+                    else:
+                        northbound_due = True
+            except Exception:
+                logger.debug("Error checking northbound cadence", exc_info=True)
+                northbound_due = True
 
-    results: dict[str, Any] = {}
-    any_ran = False
-
-    for instance_id in instances:
-        with _ShadowConsolidationClient(shadow_db, agent_did, instance_id) as shadow_client:
-            result = run_consolidation(
-                shadow_client,
-                only_unclassified=True,
-                min_batch=_CONSOLIDATE_MIN_BATCH,
-                max_records=_CONSOLIDATE_MAX_RECORDS,
-                model=_CONSOLIDATE_MODEL,
-            )
-
-        logger.info("Memory consolidation [%s]: %s", instance_id, result)
-        results[instance_id] = result
-
-        if not result.get("skipped") and not result.get("error"):
-            any_ran = True
-            _update_instance_metadata(
-                hopper_path,
-                instance_id,
-                {
-                    "last_consolidation_at": datetime.now(UTC).isoformat(),
-                    "last_consolidation_run_id": result.get("run_id"),
-                    "last_consolidation_records": result.get("eligible", 0),
-                },
-            )
-
-    if not any_ran:
-        return {"skipped": True, "reason": "all instances skipped", "details": results}
-    return {"instances": results}
+    return run_bottom_up(
+        shadow_db,
+        agent_did,
+        hopper_path,
+        run_northbound_pass=northbound_due,
+    )
 
 
 def run_once(hopper_path: Path) -> None:

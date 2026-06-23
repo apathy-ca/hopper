@@ -22,6 +22,7 @@ from .enums import (
 from .external_mapping import ExternalMapping
 from .hopper_instance import HopperInstance
 from .ids import new_ulid
+from .instance_relationship import InstanceRelationship
 from .project import Project
 from .record import Record
 from .revision import Revision
@@ -41,6 +42,7 @@ __all__ = [
     "Task",
     "ExternalMapping",
     "HopperInstance",
+    "InstanceRelationship",
     "TaskDelegation",
     "DelegationType",
     "DelegationStatus",

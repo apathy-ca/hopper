@@ -172,7 +172,8 @@ def run_consolidation(
     eligible = [
         t
         for t in all_memories
-        if not t.get("superseded_by") and t.get("memory_class") != "consolidated"
+        if not t.get("superseded_by")
+        and t.get("memory_class") not in ("consolidated", "northbound")
     ]
 
     if only_unclassified:
@@ -459,5 +460,187 @@ def run_drift_check(
         "checked": checked,
         "high_drift_count": len(high_drift),
         "high_drift": high_drift,
+        "errors": errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Northbound consolidation — cross-instance genmem for overseer instances
+# ---------------------------------------------------------------------------
+
+
+def _call_northbound_llm(
+    records: list[dict[str, Any]],
+    child_instance_ids: list[str],
+    model: str,
+    api_key: str,
+) -> dict[str, Any]:
+    """LLM call: synthesize cross-cutting summaries from sub-instance memories.
+
+    Returns ``{"summaries": [{"title", "summary", "source_ids", "source_instances"}]}``.
+    """
+    import anthropic
+
+    records_text = "\n\n".join(
+        "Instance: {inst}\nID: {id}\nTitle: {title}{content}".format(
+            inst=r.get("source_instance_id", "unknown"),
+            id=r["id"],
+            title=r.get("title", "(untitled)"),
+            content=(
+                f"\nContent: {r.get('description', '')[:500]}" if r.get("description") else ""
+            ),
+        )
+        for r in records
+    )
+
+    prompt = (
+        "You are synthesizing cross-cutting summaries for a Hopper overseer instance. "
+        "Hopper is a task and knowledge management tool for AI agents. An overseer "
+        "instance coordinates across multiple sub-instances.\n\n"
+        f"Sub-instances: {', '.join(child_instance_ids)}\n\n"
+        f"Below are {len(records)} consolidated/durable memory records from these "
+        "sub-instances. Your job:\n\n"
+        "1. Identify cross-cutting themes, overlaps, tensions, or synergies that "
+        "span multiple sub-instances.\n"
+        "2. For each theme, write a concise northbound summary that synthesizes the "
+        "relevant records. Do NOT copy content verbatim — distill and point.\n"
+        "3. Reference which sub-instances and source record IDs are relevant to "
+        "each summary.\n"
+        "4. Only create summaries for genuine cross-instance insights — skip themes "
+        "that live entirely within one sub-instance.\n\n"
+        "Return ONLY valid JSON with this exact structure (no other text):\n"
+        "{\n"
+        '  "summaries": [\n'
+        "    {\n"
+        '      "title": "Brief title for the cross-cutting theme",\n'
+        '      "summary": "Synthesized insight spanning sub-instances",\n'
+        '      "source_ids": ["record-id-1", "record-id-2"],\n'
+        '      "source_instances": ["instance-a", "instance-b"]\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Records:\n\n"
+        f"{records_text}"
+    )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    text = message.content[0].text.strip()
+    if text.startswith("```"):
+        parts = text.split("```")
+        text = parts[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+
+    return json.loads(text)
+
+
+def run_northbound(
+    client: Any,
+    parent_instance_id: str,
+    child_instance_ids: list[str],
+    model: str | None = None,
+    dry_run: bool = False,
+    min_batch: int = 2,
+    max_records: int | None = None,
+) -> dict[str, Any]:
+    """Run a northbound consolidation pass for an overseer instance.
+
+    Reads sub-instances' consolidated and durable_fact memories (via the
+    client's read scope), synthesizes cross-cutting summaries, and writes
+    them as the overseer's own ``memory_class="northbound"`` records.
+
+    The client must be configured to read from child instances and write
+    to the parent instance.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"error": "ANTHROPIC_API_KEY not set — cannot run northbound"}
+
+    model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
+
+    all_memories = client.list_tasks(kind="memory")
+    eligible = [
+        t
+        for t in all_memories
+        if t.get("memory_class") in ("consolidated", "durable_fact")
+        and t.get("memory_class") != "northbound"
+    ]
+
+    if not eligible:
+        return {"skipped": True, "reason": "No consolidated/durable_fact records in sub-instances"}
+
+    if len(eligible) < min_batch:
+        return {"skipped": True, "reason": "below min_batch", "eligible": len(eligible)}
+
+    if max_records is not None and len(eligible) > max_records:
+        eligible = eligible[:max_records]
+
+    # Tag each record with its source instance for the LLM prompt.
+    # The client reads across child instances but record payloads don't always
+    # carry instance info, so we enrich from the client's knowledge.
+    for rec in eligible:
+        if not rec.get("source_instance_id"):
+            rec["source_instance_id"] = rec.get("instance", "unknown")
+
+    logger.info(
+        "Running northbound consolidation for %s (%d records from %s)",
+        parent_instance_id,
+        len(eligible),
+        child_instance_ids,
+    )
+
+    try:
+        llm_result = _call_northbound_llm(eligible, child_instance_ids, model, api_key)
+    except Exception:
+        logger.exception("Northbound LLM call failed")
+        return {"error": "LLM call failed", "eligible": len(eligible)}
+
+    summaries = llm_result.get("summaries", [])
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "eligible": len(eligible),
+            "summaries": summaries,
+        }
+
+    run_id = f"northbound-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    created: list[str] = []
+    errors: list[str] = []
+
+    for summary in summaries:
+        try:
+            result = client.create_task(
+                {
+                    "title": summary.get("title", "Northbound summary"),
+                    "description": summary.get("summary", ""),
+                    "kind": "memory",
+                    "memory_class": "northbound",
+                    "source_record_ids": summary.get("source_ids", []),
+                    "source_instance": summary.get("source_instances", child_instance_ids),
+                    "provenance": f"northbound-run:{run_id}",
+                    "consolidation_run_id": run_id,
+                    "consolidated_at": now.isoformat(),
+                    "tags": ["memory", "northbound", "overseer"],
+                }
+            )
+            created.append(result["id"])
+        except Exception as exc:
+            errors.append(f"Failed to create northbound record: {exc}")
+            logger.exception("Failed to create northbound record")
+
+    return {
+        "run_id": run_id,
+        "parent_instance": parent_instance_id,
+        "eligible": len(eligible),
+        "northbound_records_created": len(created),
         "errors": errors,
     }
