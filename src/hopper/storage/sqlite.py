@@ -102,6 +102,16 @@ class SQLiteStorage(StorageBackend):
             # URL wins even when alembic.ini has a default.
             prev_db_url = os.environ.get("DATABASE_URL")
             os.environ["DATABASE_URL"] = self._url
+
+            # alembic/env.py calls logging.config.fileConfig(), which
+            # reconfigures the root logger's level and handlers as a side
+            # effect. Since migrations run on every SQLiteStorage
+            # construction (not just once at process start), that would
+            # otherwise silently clobber the host application's logging
+            # config every time. Snapshot and restore it around the call.
+            root_logger = logging.getLogger()
+            prev_level = root_logger.level
+            prev_handlers = list(root_logger.handlers)
             try:
                 alembic_cfg = alembic.config.Config(str(alembic_ini))
                 alembic_cfg.set_main_option("sqlalchemy.url", self._url)
@@ -112,6 +122,8 @@ class SQLiteStorage(StorageBackend):
                     os.environ.pop("DATABASE_URL", None)
                 else:
                     os.environ["DATABASE_URL"] = prev_db_url
+                root_logger.setLevel(prev_level)
+                root_logger.handlers = prev_handlers
         except Exception:
             logger.exception("Alembic migration failed — proceeding anyway")
 

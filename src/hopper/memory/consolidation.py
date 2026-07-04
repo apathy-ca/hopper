@@ -165,7 +165,8 @@ def run_consolidation(
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
 
     # 0. Re-kind memory-shaped tasks (learning/decision/preference) to kind=memory
-    _rekind_memory_shaped_tasks(client)
+    if not dry_run:
+        _rekind_memory_shaped_tasks(client)
 
     # 1. Select eligible records: kind=memory, not already consolidated or superseded
     all_memories = client.list_tasks(kind="memory")

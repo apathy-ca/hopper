@@ -449,6 +449,7 @@ def run_bottom_up(
     model: str | None = None,
     min_batch: int | None = None,
     max_records: int | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Run consolidation bottom-up across the instance DAG.
 
@@ -504,12 +505,14 @@ def run_bottom_up(
                     min_batch=_min,
                     max_records=_max,
                     model=_model,
+                    dry_run=dry_run,
                 )
             inst_result["consolidation"] = result
             logger.info("Consolidation [%s]: %s", instance_id, result)
 
             if not result.get("skipped") and not result.get("error"):
                 any_ran = True
+            if not dry_run and not result.get("skipped") and not result.get("error"):
                 _update_instance_metadata(
                     hopper_path,
                     instance_id,
@@ -536,12 +539,14 @@ def run_bottom_up(
                     child_instance_ids=child_ids,
                     model=_model,
                     max_records=_max,
+                    dry_run=dry_run,
                 )
             inst_result["northbound"] = nb_result
             logger.info("Northbound [%s]: %s", instance_id, nb_result)
 
             if not nb_result.get("skipped") and not nb_result.get("error"):
                 any_ran = True
+            if not dry_run and not nb_result.get("skipped") and not nb_result.get("error"):
                 _update_instance_metadata(
                     hopper_path,
                     instance_id,
@@ -635,9 +640,12 @@ def run_loop(hopper_path: Path) -> None:
     last_digest_at: datetime | None = None
     last_consolidate_at: datetime | None = None
 
-    # Seed last_consolidate_at from instance metadata (survives restarts)
+    # Seed last_digest_at / last_consolidate_at from instance metadata (survives restarts)
     try:
         meta = _read_instance_metadata(hopper_path, instance_id)
+        if ts := meta.get("last_digest_at"):
+            last_digest_at = datetime.fromisoformat(ts)
+            logger.info("Resuming digest timer from %s", ts)
         if ts := meta.get("last_consolidation_at"):
             last_consolidate_at = datetime.fromisoformat(ts)
             logger.info("Resuming consolidation timer from %s", ts)
@@ -658,9 +666,16 @@ def run_loop(hopper_path: Path) -> None:
                 )
                 if digest_due:
                     result = run_idea_synthesis(client, agent_did, hopper_path)
-                    if not result.get("skipped"):
+                    if result.get("skipped"):
+                        logger.info("Idea synthesis skipped: %s", result.get("reason", "unknown"))
+                    else:
                         last_digest_at = now
                         logger.info("Idea synthesis complete: %s", result)
+                        _update_instance_metadata(
+                            hopper_path,
+                            instance_id,
+                            {"last_digest_at": now.isoformat()},
+                        )
 
                 # Job 3: memory consolidation
                 now = datetime.now(UTC)
@@ -670,8 +685,11 @@ def run_loop(hopper_path: Path) -> None:
                 )
                 if consolidate_due:
                     result = run_memory_consolidation(client, agent_did, hopper_path)
-                    if not result.get("skipped"):
+                    if result.get("skipped"):
+                        logger.info("Memory consolidation skipped: %s", result.get("reason", "unknown"))
+                    else:
                         last_consolidate_at = now
+                        logger.info("Memory consolidation complete: %s", result)
 
         except KeyboardInterrupt:
             logger.info("Audit agent interrupted — exiting")

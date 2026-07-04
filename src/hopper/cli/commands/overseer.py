@@ -167,6 +167,7 @@ def consolidate(ctx: Context, only: str | None, dry_run: bool, model: str | None
         run_northbound_pass=True,
         only=only,
         model=model,
+        dry_run=dry_run,
     )
 
     if ctx.json_output:
@@ -179,10 +180,16 @@ def consolidate(ctx: Context, only: str | None, dry_run: bool, model: str | None
             parts = []
             if c := detail.get("consolidation"):
                 if not c.get("skipped"):
-                    parts.append(f"consolidated {c.get('eligible', 0)} records")
+                    if dry_run:
+                        parts.append(f"would consolidate {c.get('eligible', 0)} records")
+                    else:
+                        parts.append(f"consolidated {c.get('eligible', 0)} records")
             if n := detail.get("northbound"):
                 if not n.get("skipped"):
-                    parts.append(f"northbound: {n.get('northbound_records_created', 0)} summaries")
+                    if dry_run:
+                        parts.append(f"northbound: would create {len(n.get('summaries', []))} summaries")
+                    else:
+                        parts.append(f"northbound: {n.get('northbound_records_created', 0)} summaries")
             if parts:
                 print_success(f"  {iid}: {', '.join(parts)}")
             else:
