@@ -5,6 +5,7 @@ FastAPI server that accepts sync requests with DID authentication.
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Annotated
@@ -132,9 +133,20 @@ async def sync(
     if is_new and status == DIDStatus.ADMIN:
         pass  # First DID — global admin
     elif not storage.did_registry.is_authorized(did, namespace):
+        # Point the caller at whoever can actually approve them. Operators can
+        # set HOPPER_UPSTREAM_ADMIN_CONTACT to an email or chat handle; we fall
+        # back to the admin's DID, which at least names the right party.
+        contact = (
+            os.environ.get("HOPPER_UPSTREAM_ADMIN_CONTACT")
+            or storage.did_registry.admin_did
+            or "the server operator"
+        )
         raise HTTPException(
             status_code=403,
-            detail=f"DID not approved for namespace '{namespace}'. Contact admin: {did}",
+            detail=(
+                f"DID not approved for namespace '{namespace}'. "
+                f"Your DID is {did} — request approval from {contact}."
+            ),
         )
 
     server_time = int(time.time() * 1000)
