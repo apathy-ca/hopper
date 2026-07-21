@@ -118,6 +118,9 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
         expected_heartbeat=task.expected_heartbeat,
         parent_id=task.parent_id,
         deleted=task.deleted,
+        notes=getattr(task, "notes", None) or [],
+        created_by=getattr(task, "created_by", None),
+        created_by_did=getattr(task, "created_by_did", None),
         kind=getattr(task, "kind", None),
         subject=getattr(task, "subject", None),
         scope=getattr(task, "scope", None),
@@ -130,6 +133,22 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
         drift_checked_at=getattr(task, "drift_checked_at", None),
         drift_score=getattr(task, "drift_score", None),
     )
+
+
+def _merge_notes(
+    local: list[dict] | None, remote: list[dict] | None
+) -> list[dict]:
+    """Union two append-only note streams, deduped and time-ordered.
+
+    Notes are append-only (never edited or deleted), so a set-union by
+    (author, ts, body) loses nothing and resolves concurrent note-adds on
+    different instances without last-write-wins dropping either side.
+    """
+    merged: dict[tuple, dict] = {}
+    for note in (local or []) + (remote or []):
+        key = (note.get("author"), note.get("ts"), note.get("body"))
+        merged.setdefault(key, note)
+    return sorted(merged.values(), key=lambda n: n.get("ts") or "")
 
 
 def _apply_sync_task_to_local(
@@ -185,6 +204,13 @@ def _apply_sync_task_to_local(
         existing.last_heartbeat = sync_task.last_heartbeat
         existing.expected_heartbeat = sync_task.expected_heartbeat
         existing.parent_id = sync_task.parent_id
+        # Notes are append-only: union both sides so a concurrent add on another
+        # instance is never dropped by last-write-wins.
+        existing.notes = _merge_notes(existing.notes, sync_task.notes)
+        # Creator attribution is immutable: keep whatever was stamped first, so a
+        # later edit (or an older client that omits the field) can't wipe it.
+        existing.created_by = existing.created_by or sync_task.created_by
+        existing.created_by_did = existing.created_by_did or sync_task.created_by_did
         existing.kind = sync_task.kind or "task"
         existing.subject = sync_task.subject
         existing.scope = sync_task.scope
@@ -222,6 +248,9 @@ def _apply_sync_task_to_local(
             last_heartbeat=sync_task.last_heartbeat,
             expected_heartbeat=sync_task.expected_heartbeat,
             parent_id=sync_task.parent_id,
+            notes=sync_task.notes or [],
+            created_by=sync_task.created_by,
+            created_by_did=sync_task.created_by_did,
             kind=sync_task.kind or "task",
             subject=sync_task.subject,
             scope=sync_task.scope,

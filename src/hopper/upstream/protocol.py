@@ -37,6 +37,12 @@ class SyncTask(BaseModel):
     expected_heartbeat: datetime | None = None
     parent_id: str | None = None
     deleted: bool = False  # Tombstone marker
+    # Append-only note stream and immutable creator attribution. Optional so
+    # older clients/servers that omit them validate cleanly (Pydantic drops
+    # unknown fields, so BOTH ends must carry these for them to survive sync).
+    notes: list[dict] = Field(default_factory=list)
+    created_by: str | None = None
+    created_by_did: str | None = None
     # Record kind/type and structured memory fields. Optional for backward
     # compatibility: older clients/servers that omit them still validate.
     # `kind=None` is treated as "task" by the server's revision_writer
@@ -84,6 +90,9 @@ class SyncTask(BaseModel):
             expected_heartbeat=task.expected_heartbeat,
             parent_id=task.parent_id,
             deleted=False,
+            notes=getattr(task, "notes", None) or [],
+            created_by=getattr(task, "created_by", None),
+            created_by_did=getattr(task, "created_by_did", None),
             kind=getattr(task, "kind", None),
             subject=getattr(task, "subject", None),
             scope=getattr(task, "scope", None),
