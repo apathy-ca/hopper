@@ -3,7 +3,13 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from hopper.models import HopperInstance, HopperScope, InstanceRelationship, InstanceStatus, InstanceType
+from hopper.models import (
+    HopperInstance,
+    HopperScope,
+    InstanceRelationship,
+    InstanceStatus,
+    InstanceType,
+)
 
 
 def _make_instance(session: Session, iid: str) -> HopperInstance:

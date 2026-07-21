@@ -69,9 +69,7 @@ def register(ctx: Context, dry_run: bool) -> None:
             for sub in subs:
                 child_id = sub["id"]
                 try:
-                    result = client.post(
-                        f"/api/v1/instances/{parent_id}/children/{child_id}"
-                    )
+                    result = client.post(f"/api/v1/instances/{parent_id}/children/{child_id}")
                     if result.get("status") == "created":
                         print_success(f"  {parent_id} → {child_id}")
                         created += 1
@@ -187,9 +185,13 @@ def consolidate(ctx: Context, only: str | None, dry_run: bool, model: str | None
             if n := detail.get("northbound"):
                 if not n.get("skipped"):
                     if dry_run:
-                        parts.append(f"northbound: would create {len(n.get('summaries', []))} summaries")
+                        parts.append(
+                            f"northbound: would create {len(n.get('summaries', []))} summaries"
+                        )
                     else:
-                        parts.append(f"northbound: {n.get('northbound_records_created', 0)} summaries")
+                        parts.append(
+                            f"northbound: {n.get('northbound_records_created', 0)} summaries"
+                        )
             if parts:
                 print_success(f"  {iid}: {', '.join(parts)}")
             else:
@@ -261,7 +263,9 @@ def northbound(ctx: Context, overseer_id: str, dry_run: bool, model: str | None)
     elif result.get("error"):
         print_error(result["error"])
     elif dry_run:
-        console.print(f"[bold]Would create {len(result.get('summaries', []))} northbound summaries:[/bold]")
+        console.print(
+            f"[bold]Would create {len(result.get('summaries', []))} northbound summaries:[/bold]"
+        )
         for s in result.get("summaries", []):
             console.print(f"  • {s.get('title', '?')}")
     else:

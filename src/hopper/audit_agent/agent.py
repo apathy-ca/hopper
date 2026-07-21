@@ -599,7 +599,9 @@ def run_memory_consolidation(client: Any, agent_did: str, hopper_path: Path) -> 
                     meta = _read_instance_metadata(hopper_path, overseer_ids[0])
                     last_nb = meta.get("last_northbound_at")
                     if last_nb:
-                        elapsed = (datetime.now(UTC) - datetime.fromisoformat(last_nb)).total_seconds()
+                        elapsed = (
+                            datetime.now(UTC) - datetime.fromisoformat(last_nb)
+                        ).total_seconds()
                         northbound_due = elapsed >= _NORTHBOUND_INTERVAL_SECONDS
                     else:
                         northbound_due = True
@@ -686,7 +688,9 @@ def run_loop(hopper_path: Path) -> None:
                 if consolidate_due:
                     result = run_memory_consolidation(client, agent_did, hopper_path)
                     if result.get("skipped"):
-                        logger.info("Memory consolidation skipped: %s", result.get("reason", "unknown"))
+                        logger.info(
+                            "Memory consolidation skipped: %s", result.get("reason", "unknown")
+                        )
                     else:
                         last_consolidate_at = now
                         logger.info("Memory consolidation complete: %s", result)
