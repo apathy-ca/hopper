@@ -158,7 +158,7 @@ hopper mcp config --stdout    # Show MCP config for claude_desktop_config.json
 """
 
 
-AGENTS_MD_VERSION = 1
+AGENTS_MD_VERSION = 2
 
 AGENTS_MD_SECTION = f"""## Hopper - Persistent Memory
 <!-- hopper-agent-files: v{AGENTS_MD_VERSION} -->
@@ -175,7 +175,9 @@ hopper task list                            # See open tasks
 hopper task status <id> in_progress -f     # Claim a task
 hopper task status <id> completed -f       # Complete a task
 hopper task heartbeat <id>                  # Signal still working
+hopper task note <id> "finding: ..."        # Leave an attributed note on any task
 hopper context                              # Recent learnings + open tasks
+hopper sync                                 # Push/pull with the shared server
 ```
 
 ### Agent identity
@@ -183,11 +185,22 @@ hopper context                              # Recent learnings + open tasks
 Identify yourself with `platform:task-name` when claiming work:
 - `opencode:my-task`, `claude:acm-rewrite`, `kilocode:prh-transfer`, `human:james`
 - Never use generic names like `main`.
+- Set `HOPPER_IDENTITY=platform:you` (or pass `--by`) so records you create are
+  attributed to you (`created_by`), not just your machine.
+
+### Notes & attribution
+
+- Leave a finding on a task another agent owns with `hopper task note <id> "..."`.
+  Notes are append-only and never overwrite the description, so hand-offs are
+  safe; they render in `hopper task get`.
+- Every record stamps an immutable `created_by`. Notes and creator both travel
+  with the task through `hopper sync` to the shared board.
 
 ### Session lifecycle
 
-On start: `hopper task list` → check `in_progress` tasks → claim or create your task.
-During work: heartbeat every 10-15 min. On end: mark `completed` or release to `open`.
+On start: `hopper sync` → `hopper task list` → check `in_progress` tasks → claim or create your task.
+During work: heartbeat every 10-15 min; `hopper sync` periodically (task writes stay local until you sync).
+On end: mark `completed` or release to `open`, then `hopper sync` to push your work.
 
 ### Knowledge base
 
@@ -234,6 +247,10 @@ hopper task status <id> in_progress --assign "opencode:my-task" -f
 hopper task heartbeat <id>
 hopper task heartbeat <id> --expect 2h        # Before long-running work
 
+# Leave an attributed, append-only note on any task (never overwrites the description)
+hopper task note <id> "finding: ..."          # author defaults to $HOPPER_IDENTITY
+hopper task notes <id>                         # list a task's note stream
+
 # Complete or release
 hopper task status <id> completed -f
 hopper task update <id> --unassign && hopper task status <id> open -f
@@ -255,6 +272,8 @@ hopper sync
 Always use `platform:task-name` when assigning:
 - `opencode:my-task`, `claude:acm-rewrite`, `kilocode:prh-transfer`, `human:james`
 - Never use generic names like `main`
+- Set `HOPPER_IDENTITY=platform:you` (or pass `--by`) so records you create are
+  stamped with `created_by`, attributing them to you rather than just the machine.
 
 ## Status values
 
@@ -271,19 +290,22 @@ GLOBAL_AGENTS_MD_SECTION = """\
 Hopper is the persistent memory system used across all agents. It is available as a CLI (`hopper`) and stores tasks, learnings, and decisions in `.hopper/` as markdown files.
 
 **On every session start:**
-1. Run `hopper context` to load recent learnings and open tasks
+1. `hopper sync` to pull the latest shared board, then `hopper context` for recent learnings and open tasks
 2. Check `in_progress` tasks before starting new work — another agent may already own it
 3. Claim your task: `hopper task status <id> in_progress --assign "platform:short-task-name" -f`
 
 **During work:**
 - Heartbeat every 10-15 min: `hopper task heartbeat <id>`
 - Record learnings as you go: `hopper task add "Learning: ..." --tag learning`
+- Leave a finding on another agent's task with `hopper task note <id> "..."` — append-only, never overwrites its description
+- `hopper sync` periodically — task writes stay local until you sync
 
 **On session end:**
 - Mark completed: `hopper task status <id> completed -f`
 - Or release: `hopper task update <id> --unassign && hopper task status <id> open -f`
+- `hopper sync` to push your work to the shared board
 
-**Agent identity:** always `platform:task-name` — e.g. `opencode:hopper-fixes`, never `opencode:main`.
+**Agent identity:** always `platform:task-name` — e.g. `opencode:hopper-fixes`, never `opencode:main`. Set `HOPPER_IDENTITY=platform:you` so records you create are stamped with `created_by`.
 
 Load the `hopper` skill for the full CLI reference.
 """
