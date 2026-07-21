@@ -499,6 +499,19 @@ class LocalClient:
         self.task_store.save(task, author=author)
         return self._task_to_dict(task)
 
+    def add_task_note(
+        self, task_id: str, body: str, author: str | None = None
+    ) -> dict[str, Any]:
+        """Append an attributed, timestamped note to a task (append-only).
+
+        Notes never overwrite the description, so this is the safe way for one
+        agent to leave a finding on a task another agent owns.
+        """
+        task = self.task_store.add_note(task_id, body, author=author)
+        if task is None:
+            raise LocalClientError(f"Task not found: {task_id}")
+        return self._task_to_dict(task)
+
     def delete_task(self, task_id: str, author_did: str | None = None) -> None:
         """Soft-delete task so the deletion propagates via sync."""
         author = self._author_context(author_did=author_did)
@@ -817,6 +830,7 @@ class LocalClient:
             "source": task.source,
             "depends_on": task.depends_on,
             "parent_id": task.parent_id,
+            "notes": task.notes,
             "assigned_to": task.assigned_to,
             "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,
             "expected_heartbeat": (

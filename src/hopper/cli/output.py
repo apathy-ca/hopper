@@ -284,12 +284,32 @@ def print_task_detail(task: dict[str, Any]) -> None:
     if tags := task.get("tags"):
         console.print(f"[bold]Tags:[/bold] {', '.join(tags)}")
 
+    # Notes (append-only, attributed) — newest last
+    if notes := task.get("notes"):
+        console.print("\n[bold]Notes:[/bold]")
+        print_task_notes(notes)
+
     # Metadata
     console.print(f"\n[dim]Created: {format_datetime(task.get('created_at'))}[/dim]")
     if updated_at := task.get("updated_at"):
         console.print(f"[dim]Updated: {format_datetime(updated_at)}[/dim]")
 
     console.print()
+
+
+def print_task_notes(notes: list[dict[str, Any]]) -> None:
+    """Render a task's append-only note stream (oldest first).
+
+    Each note shows its UTC timestamp and author on a dim header line, followed
+    by the (possibly multi-line, markdown) body indented beneath it.
+    """
+    for note in notes:
+        ts = format_datetime(note.get("ts"))
+        author = note.get("author", "unknown")
+        console.print(f"  [dim]{ts} · {author}[/dim]")
+        body = note.get("body", "")
+        for line in (body.splitlines() or [""]):
+            console.print(f"    {line}")
 
 
 def print_project_table(projects: list[dict[str, Any]]) -> None:

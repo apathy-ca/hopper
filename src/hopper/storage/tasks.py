@@ -67,6 +67,10 @@ class LocalTask:
     parent_id: str | None = None
     # Soft delete — propagated via sync
     deleted: bool = False
+    # Append-only cross-agent notes: list of {author, ts, body}. Each note is
+    # attributed and timestamped; notes never overwrite the description, so it
+    # is safe for one agent to leave a finding on a task another agent owns.
+    notes: list[dict[str, Any]] = field(default_factory=list)
     # Record kind (Phase 4c): task | idea | note | memory | log | reference | inbox | job
     kind: str = "task"
     # Memory structured fields (Phase 2): first-class on memory records,
@@ -194,6 +198,8 @@ class LocalTask:
             data["parent_id"] = self.parent_id
         if self.deleted:
             data["deleted"] = True
+        if self.notes:
+            data["notes"] = self.notes
         if self.kind and self.kind != "task":
             data["kind"] = self.kind
         # Memory structured fields — only written when present, so ordinary
@@ -250,6 +256,7 @@ class LocalTask:
             expected_heartbeat=_parse_datetime(fm.get("expected_heartbeat")),
             parent_id=fm.get("parent_id"),
             deleted=bool(fm.get("deleted", False)),
+            notes=fm.get("notes") or [],
             kind=fm.get("kind", "task"),
             subject=fm.get("subject"),
             scope=fm.get("scope"),
@@ -584,6 +591,30 @@ class TaskMarkdownStore:
             return None
 
         task.tags = [t for t in task.tags if t not in tags]
+        self.save(task)
+        return task
+
+    def add_note(
+        self, task_id: str, body: str, author: str | None = None
+    ) -> LocalTask | None:
+        """Append an attributed, timestamped note to a task.
+
+        Append-only: the note is added to the task's note stream without
+        touching the description, so it is safe to leave a finding on a task
+        another agent owns. Saving bumps updated_at, so the note propagates via
+        the normal sync path (it rides the task's frontmatter).
+        """
+        task = self.get(task_id)
+        if task is None:
+            return None
+
+        task.notes.append(
+            {
+                "author": author or "unknown",
+                "ts": _utc_now().isoformat(),
+                "body": body,
+            }
+        )
         self.save(task)
         return task
 
