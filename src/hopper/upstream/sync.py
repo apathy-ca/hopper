@@ -135,9 +135,7 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
     )
 
 
-def _merge_notes(
-    local: list[dict] | None, remote: list[dict] | None
-) -> list[dict]:
+def _merge_notes(local: list[dict] | None, remote: list[dict] | None) -> list[dict]:
     """Union two append-only note streams, deduped and time-ordered.
 
     Notes are append-only (never edited or deleted), so a set-union by

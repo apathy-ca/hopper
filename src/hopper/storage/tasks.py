@@ -611,9 +611,7 @@ class TaskMarkdownStore:
         self.save(task)
         return task
 
-    def add_note(
-        self, task_id: str, body: str, author: str | None = None
-    ) -> LocalTask | None:
+    def add_note(self, task_id: str, body: str, author: str | None = None) -> LocalTask | None:
         """Append an attributed, timestamped note to a task.
 
         Append-only: the note is added to the task's note stream without

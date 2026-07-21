@@ -317,7 +317,7 @@ def print_task_notes(notes: list[dict[str, Any]]) -> None:
         author = note.get("author", "unknown")
         console.print(f"  [dim]{ts} · {author}[/dim]")
         body = note.get("body", "")
-        for line in (body.splitlines() or [""]):
+        for line in body.splitlines() or [""]:
             console.print(f"    {line}")
 
 

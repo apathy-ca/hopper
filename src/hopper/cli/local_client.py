@@ -534,9 +534,7 @@ class LocalClient:
         self.task_store.save(task, author=author)
         return self._task_to_dict(task)
 
-    def add_task_note(
-        self, task_id: str, body: str, author: str | None = None
-    ) -> dict[str, Any]:
+    def add_task_note(self, task_id: str, body: str, author: str | None = None) -> dict[str, Any]:
         """Append an attributed, timestamped note to a task (append-only).
 
         Notes never overwrite the description, so this is the safe way for one

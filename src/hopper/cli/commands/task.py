@@ -416,9 +416,7 @@ def list_notes(ctx: Context, task_id: str) -> None:
     "--note",
     help="Append an attributed, append-only note (does not overwrite the description)",
 )
-@click.option(
-    "--from", "note_from", help="Author for --note, e.g. 'claude:my-task'"
-)
+@click.option("--from", "note_from", help="Author for --note, e.g. 'claude:my-task'")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
 @click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
 @click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
