@@ -38,6 +38,8 @@ from hopper.storage.revision_writer import (
 
 # Fields hydrated onto every task-shaped dict, mirroring LocalTask.to_frontmatter.
 _PASSTHROUGH_OPTIONAL = (
+    "created_by",
+    "created_by_did",
     "subject",
     "scope",
     "provenance",

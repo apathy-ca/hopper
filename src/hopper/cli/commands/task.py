@@ -62,6 +62,13 @@ def task() -> None:
 @click.option(
     "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:acm-rewrite', 'human:james')"
 )
+@click.option(
+    "--by",
+    "created_by",
+    envvar="HOPPER_IDENTITY",
+    help="Creator identity to record (e.g. 'human:james'). Defaults to --assign. "
+    "Immutable once set; also settable via HOPPER_IDENTITY.",
+)
 @click.option("--parent", help="Parent task ID (creates a child task)")
 @click.option(
     "--author-did",
@@ -91,6 +98,7 @@ def add_task(
     status: str,
     non_interactive: bool,
     assign: str | None,
+    created_by: str | None,
     parent: str | None,
     author_did: str | None,
     author_location: str | None,
@@ -152,6 +160,8 @@ def add_task(
 
     if assign:
         task_data["assigned_to"] = assign
+    if created_by:
+        task_data["created_by"] = created_by
     if parent:
         task_data["parent_id"] = parent
     if author_did:

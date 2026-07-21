@@ -148,6 +148,29 @@ class LocalClient:
 
         return AuthorContext(did=did, location=location)
 
+    def _resolve_creator_did(self, author_did: str | None = None) -> str | None:
+        """Resolve the creating principal's DID, independent of storage backend.
+
+        Unlike _author_context (which only resolves on SQLite, for revisions),
+        this works on the markdown backend too so creator attribution can be
+        stamped on the shared multi-user board. Resolution order matches
+        _author_context: explicit arg → HOPPER_DID → local did.key. Returns None
+        if no identity is available (attribution is best-effort, never fatal).
+        """
+        import os
+
+        did = author_did or os.getenv("HOPPER_DID")
+        if not did and self.storage_path:
+            key_path = self.storage_path / "did.key"
+            if key_path.exists():
+                try:
+                    from hopper.upstream.did import DIDKey
+
+                    did = DIDKey.load(key_path).did
+                except Exception:
+                    pass
+        return did
+
     # =========================================================================
     # Task API methods
     # =========================================================================
@@ -165,6 +188,13 @@ class LocalClient:
         from hopper.location import resolve_location
 
         location = data.get("source") or resolve_location(transport="cli")
+        # Stamp immutable creator attribution. The human-readable label comes
+        # from an explicit created_by (CLI --by / HOPPER_IDENTITY) or, failing
+        # that, the identity the creator claimed the task with (assigned_to).
+        # The DID is resolved best-effort so the shared board can show who made
+        # each record, not just which machine (source).
+        created_by = data.get("created_by") or data.get("assigned_to")
+        created_by_did = self._resolve_creator_did(data.get("author_did"))
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
             description=data.get("description"),
@@ -174,6 +204,8 @@ class LocalClient:
             status=data.get("status", "pending"),
             assigned_to=data.get("assigned_to"),
             parent_id=parent_id,
+            created_by=created_by,
+            created_by_did=created_by_did,
             source=location,
             kind=data.get("kind", "task"),
             subject=data.get("subject"),
@@ -354,6 +386,9 @@ class LocalClient:
             tags=data.get("tags", []),
             project=data.get("project_id"),
             status=data.get("status", "open"),
+            assigned_to=data.get("assigned_to"),
+            created_by=data.get("created_by") or data.get("assigned_to"),
+            created_by_did=self._resolve_creator_did(data.get("author_did")),
             source=location,
         )
         task.instance = self.config.instance_id
@@ -830,6 +865,8 @@ class LocalClient:
             "source": task.source,
             "depends_on": task.depends_on,
             "parent_id": task.parent_id,
+            "created_by": task.created_by,
+            "created_by_did": task.created_by_did,
             "notes": task.notes,
             "assigned_to": task.assigned_to,
             "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,

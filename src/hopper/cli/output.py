@@ -264,6 +264,15 @@ def print_task_detail(task: dict[str, Any]) -> None:
             parts.append(f"next expected: {format_datetime(expected)}")
         console.print(parts[0] + (" (" + ", ".join(parts[1:]) + ")" if len(parts) > 1 else ""))
 
+    # Creator attribution (immutable, stamped at creation)
+    if created_by := task.get("created_by"):
+        line = f"Created by: [bold]{created_by}[/bold]"
+        if did := task.get("created_by_did"):
+            line += f" [dim]({did[:16]}…)[/dim]"
+        console.print(line)
+    elif did := task.get("created_by_did"):
+        console.print(f"Created by: [dim]{did[:16]}…[/dim]")
+
     # Child rollup
     if children := task.get("children"):
         total = children["total"]

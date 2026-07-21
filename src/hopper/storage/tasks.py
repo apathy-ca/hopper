@@ -67,6 +67,13 @@ class LocalTask:
     parent_id: str | None = None
     # Soft delete — propagated via sync
     deleted: bool = False
+    # Immutable creator attribution, stamped once at creation and never changed.
+    # created_by is a human-readable platform:task identity (e.g. 'human:james',
+    # 'claude:gem-refinement'); created_by_did is the did:key principal for
+    # verification. Both optional — records created before this feature, and any
+    # write with no resolvable identity, leave them unset.
+    created_by: str | None = None
+    created_by_did: str | None = None
     # Append-only cross-agent notes: list of {author, ts, body}. Each note is
     # attributed and timestamped; notes never overwrite the description, so it
     # is safe for one agent to leave a finding on a task another agent owns.
@@ -111,6 +118,8 @@ class LocalTask:
         assigned_to: str | None = None,
         expected_heartbeat: datetime | None = None,
         parent_id: str | None = None,
+        created_by: str | None = None,
+        created_by_did: str | None = None,
         kind: str = "task",
         subject: str | None = None,
         scope: str | None = None,
@@ -145,6 +154,8 @@ class LocalTask:
             last_heartbeat=now if assigned_to else None,
             expected_heartbeat=expected_heartbeat,
             parent_id=parent_id,
+            created_by=created_by,
+            created_by_did=created_by_did,
             created_at=now,
             updated_at=now,
             kind=kind,
@@ -196,6 +207,10 @@ class LocalTask:
             data["expected_heartbeat"] = self.expected_heartbeat.isoformat()
         if self.parent_id:
             data["parent_id"] = self.parent_id
+        if self.created_by:
+            data["created_by"] = self.created_by
+        if self.created_by_did:
+            data["created_by_did"] = self.created_by_did
         if self.deleted:
             data["deleted"] = True
         if self.notes:
@@ -255,6 +270,8 @@ class LocalTask:
             last_heartbeat=_parse_datetime(fm.get("last_heartbeat")),
             expected_heartbeat=_parse_datetime(fm.get("expected_heartbeat")),
             parent_id=fm.get("parent_id"),
+            created_by=fm.get("created_by"),
+            created_by_did=fm.get("created_by_did"),
             deleted=bool(fm.get("deleted", False)),
             notes=fm.get("notes") or [],
             kind=fm.get("kind", "task"),
