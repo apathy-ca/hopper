@@ -25,9 +25,7 @@ class InstanceRelationship(Base):
         ForeignKey("hopper_instances.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utc_now_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive, nullable=False)
 
     def __repr__(self) -> str:
         return f"<InstanceRelationship({self.parent_id} -> {self.child_id})>"

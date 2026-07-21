@@ -142,9 +142,7 @@ async def overseer_status(
 
         # Get task count
         try:
-            tasks_resp = await client.get(
-                "/api/v1/tasks", params={"kind": "task", "limit": 1}
-            )
+            tasks_resp = await client.get("/api/v1/tasks", params={"kind": "task", "limit": 1})
             tasks_resp.raise_for_status()
             summary["task_count"] = tasks_resp.json().get("total", 0)
         except Exception:
@@ -152,9 +150,7 @@ async def overseer_status(
 
         # Get memory count
         try:
-            mem_resp = await client.get(
-                "/api/v1/tasks", params={"kind": "memory", "limit": 1}
-            )
+            mem_resp = await client.get("/api/v1/tasks", params={"kind": "memory", "limit": 1})
             mem_resp.raise_for_status()
             summary["memory_count"] = mem_resp.json().get("total", 0)
         except Exception:
@@ -239,9 +235,7 @@ async def overseer_northbound(
     memories = data.get("tasks", data.get("items", []))
 
     # Filter to northbound class
-    northbound_summaries = [
-        m for m in memories if m.get("memory_class") == "northbound"
-    ]
+    northbound_summaries = [m for m in memories if m.get("memory_class") == "northbound"]
 
     return {
         "instance_id": instance_id,

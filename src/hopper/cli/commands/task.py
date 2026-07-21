@@ -13,6 +13,7 @@ from hopper.cli.output import (
     print_json,
     print_success,
     print_task_detail,
+    print_task_notes,
     print_task_table,
 )
 
@@ -61,6 +62,13 @@ def task() -> None:
 @click.option(
     "--assign", "-a", help="Assign to an agent or user (e.g. 'claude:acm-rewrite', 'human:james')"
 )
+@click.option(
+    "--by",
+    "created_by",
+    envvar="HOPPER_IDENTITY",
+    help="Creator identity to record (e.g. 'human:james'). Defaults to --assign. "
+    "Immutable once set; also settable via HOPPER_IDENTITY.",
+)
 @click.option("--parent", help="Parent task ID (creates a child task)")
 @click.option(
     "--author-did",
@@ -90,6 +98,7 @@ def add_task(
     status: str,
     non_interactive: bool,
     assign: str | None,
+    created_by: str | None,
     parent: str | None,
     author_did: str | None,
     author_location: str | None,
@@ -151,6 +160,8 @@ def add_task(
 
     if assign:
         task_data["assigned_to"] = assign
+    if created_by:
+        task_data["created_by"] = created_by
     if parent:
         task_data["parent_id"] = parent
     if author_did:
@@ -323,6 +334,71 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
         raise click.Abort() from e
 
 
+@task.command(name="note")
+@click.argument("task_id")
+@click.argument("body")
+@click.option(
+    "--from",
+    "from_",
+    help="Author identity, e.g. 'claude:my-task'. Defaults to 'unknown'.",
+)
+@click.pass_obj
+def add_note(ctx: Context, task_id: str, body: str, from_: str | None) -> None:
+    """Append an attributed, timestamped note to a task.
+
+    Notes are append-only — they never overwrite the description, so it is safe
+    to leave a finding on a task another agent (or a human) owns. Notes render
+    under the task in `hopper task get` and `hopper task notes`.
+
+    Examples:
+        hopper task note abc12345 "finding: exfil recompute left stale residuals"
+        hopper task note abc12345 --from claude:cross-paper-sync "look here"
+    """
+    try:
+        with ctx.get_client() as client:
+            if not hasattr(client, "add_task_note"):
+                print_error(
+                    "Task notes require local (markdown) storage; the configured "
+                    "backend does not support them yet."
+                )
+                raise click.Abort()
+            result = client.add_task_note(task_id, body, author=from_)  # type: ignore[union-attr]
+
+        if ctx.json_output:
+            print_json(result)
+        else:
+            print_success(f"Note added to {result.get('id', '')}")
+
+    except ClientError as e:
+        print_error(f"Failed to add note: {e.message}")
+        raise click.Abort() from e
+
+
+@task.command(name="notes")
+@click.argument("task_id")
+@click.pass_obj
+def list_notes(ctx: Context, task_id: str) -> None:
+    """List the append-only note stream for a task (oldest first)."""
+    try:
+        with ctx.get_client() as client:
+            task = client.get_task(task_id)
+
+        notes = task.get("notes") or []
+        if ctx.json_output:
+            print_json(notes)
+            return
+        if not notes:
+            print_info("No notes on this task")
+            return
+        console.print(f"\n[bold cyan]Notes for {task.get('id', '')}[/bold cyan]\n")
+        print_task_notes(notes)
+        console.print()
+
+    except ClientError as e:
+        print_error(f"Failed to get notes: {e.message}")
+        raise click.Abort() from e
+
+
 @task.command(name="update")
 @click.argument("task_id")
 @click.option("--title", help="New title")
@@ -336,6 +412,11 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
 @click.option("--unassign", is_flag=True, help="Clear assignment")
 @click.option("--parent", help="Set parent task ID")
 @click.option("--unparent", is_flag=True, help="Remove from parent")
+@click.option(
+    "--note",
+    help="Append an attributed, append-only note (does not overwrite the description)",
+)
+@click.option("--from", "note_from", help="Author for --note, e.g. 'claude:my-task'")
 @click.option("--interactive", "-i", is_flag=True, help="Interactive mode")
 @click.option("--author-did", envvar="HOPPER_DID", hidden=True, help="DID of the author")
 @click.option("--author-location", envvar="HOPPER_LOCATION", hidden=True, help="Location context")
@@ -352,6 +433,8 @@ def update_task(
     unassign: bool,
     parent: str | None,
     unparent: bool,
+    note: str | None,
+    note_from: str | None,
     interactive: bool,
     author_did: str | None,
     author_location: str | None,
@@ -417,14 +500,24 @@ def update_task(
     if author_location:
         update_data["author_location"] = author_location
 
-    if not update_data:
+    if not update_data and not note:
         print_error("No updates specified")
         raise click.Abort()
 
     # Update task
     try:
         with ctx.get_client() as client:
-            result = client.update_task(task_id, update_data)
+            result = None
+            if update_data:
+                result = client.update_task(task_id, update_data)
+            if note:
+                if not hasattr(client, "add_task_note"):
+                    print_error(
+                        "Task notes require local (markdown) storage; the "
+                        "configured backend does not support them yet."
+                    )
+                    raise click.Abort()
+                result = client.add_task_note(task_id, note, author=note_from)  # type: ignore[union-attr]
 
         if ctx.json_output:
             print_json(result)

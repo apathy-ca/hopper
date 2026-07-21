@@ -9,9 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from hopper.models.base import Base
-from hopper.models.enums import HopperScope, InstanceStatus, InstanceType
-from hopper.models.hopper_instance import HopperInstance
-from hopper.models.instance_relationship import InstanceRelationship
 
 
 def _make_edge_client(monkeypatch) -> tuple[TestClient, async_sessionmaker]:

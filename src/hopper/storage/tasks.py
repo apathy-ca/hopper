@@ -67,6 +67,17 @@ class LocalTask:
     parent_id: str | None = None
     # Soft delete — propagated via sync
     deleted: bool = False
+    # Immutable creator attribution, stamped once at creation and never changed.
+    # created_by is a human-readable platform:task identity (e.g. 'human:james',
+    # 'claude:gem-refinement'); created_by_did is the did:key principal for
+    # verification. Both optional — records created before this feature, and any
+    # write with no resolvable identity, leave them unset.
+    created_by: str | None = None
+    created_by_did: str | None = None
+    # Append-only cross-agent notes: list of {author, ts, body}. Each note is
+    # attributed and timestamped; notes never overwrite the description, so it
+    # is safe for one agent to leave a finding on a task another agent owns.
+    notes: list[dict[str, Any]] = field(default_factory=list)
     # Record kind (Phase 4c): task | idea | note | memory | log | reference | inbox | job
     kind: str = "task"
     # Memory structured fields (Phase 2): first-class on memory records,
@@ -107,6 +118,8 @@ class LocalTask:
         assigned_to: str | None = None,
         expected_heartbeat: datetime | None = None,
         parent_id: str | None = None,
+        created_by: str | None = None,
+        created_by_did: str | None = None,
         kind: str = "task",
         subject: str | None = None,
         scope: str | None = None,
@@ -141,6 +154,8 @@ class LocalTask:
             last_heartbeat=now if assigned_to else None,
             expected_heartbeat=expected_heartbeat,
             parent_id=parent_id,
+            created_by=created_by,
+            created_by_did=created_by_did,
             created_at=now,
             updated_at=now,
             kind=kind,
@@ -192,8 +207,14 @@ class LocalTask:
             data["expected_heartbeat"] = self.expected_heartbeat.isoformat()
         if self.parent_id:
             data["parent_id"] = self.parent_id
+        if self.created_by:
+            data["created_by"] = self.created_by
+        if self.created_by_did:
+            data["created_by_did"] = self.created_by_did
         if self.deleted:
             data["deleted"] = True
+        if self.notes:
+            data["notes"] = self.notes
         if self.kind and self.kind != "task":
             data["kind"] = self.kind
         # Memory structured fields — only written when present, so ordinary
@@ -249,7 +270,10 @@ class LocalTask:
             last_heartbeat=_parse_datetime(fm.get("last_heartbeat")),
             expected_heartbeat=_parse_datetime(fm.get("expected_heartbeat")),
             parent_id=fm.get("parent_id"),
+            created_by=fm.get("created_by"),
+            created_by_did=fm.get("created_by_did"),
             deleted=bool(fm.get("deleted", False)),
+            notes=fm.get("notes") or [],
             kind=fm.get("kind", "task"),
             subject=fm.get("subject"),
             scope=fm.get("scope"),
@@ -584,6 +608,28 @@ class TaskMarkdownStore:
             return None
 
         task.tags = [t for t in task.tags if t not in tags]
+        self.save(task)
+        return task
+
+    def add_note(self, task_id: str, body: str, author: str | None = None) -> LocalTask | None:
+        """Append an attributed, timestamped note to a task.
+
+        Append-only: the note is added to the task's note stream without
+        touching the description, so it is safe to leave a finding on a task
+        another agent owns. Saving bumps updated_at, so the note propagates via
+        the normal sync path (it rides the task's frontmatter).
+        """
+        task = self.get(task_id)
+        if task is None:
+            return None
+
+        task.notes.append(
+            {
+                "author": author or "unknown",
+                "ts": _utc_now().isoformat(),
+                "body": body,
+            }
+        )
         self.save(task)
         return task
 

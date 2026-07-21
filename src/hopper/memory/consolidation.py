@@ -21,8 +21,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 
 _MEMORY_SHAPED_TAGS = {
-    "learning", "decision", "preference",
-    "idea", "session-memory", "observation",
+    "learning",
+    "decision",
+    "preference",
+    "idea",
+    "session-memory",
+    "observation",
 }
 
 
@@ -211,7 +215,9 @@ def run_consolidation(
     batch_errors: list[str] = []
 
     for batch_idx, batch in enumerate(batches):
-        logger.info("Consolidation batch %d/%d (%d records)", batch_idx + 1, len(batches), len(batch))
+        logger.info(
+            "Consolidation batch %d/%d (%d records)", batch_idx + 1, len(batches), len(batch)
+        )
         try:
             llm_result = _call_llm(batch, model, api_key)
             all_classifications.extend(llm_result.get("classifications", []))
