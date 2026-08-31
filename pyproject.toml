@@ -38,7 +38,13 @@ dependencies = [
     "httpx>=0.25.0",
     # MCP server (primary use case for Claude Desktop / Claude Code)
     # Requires >=1.0.0 for SSE transport support (includes starlette, sse-starlette)
-    "mcp>=1.0.0",
+    # <2.0.0: mcp 2.x renamed FastMCP -> MCPServer and changed other APIs
+    # (mcp.server.sse, mcp.server.streamable_http*) that src/hopper/api/mcp_sse/
+    # and src/hopper/mcp/ import directly. An unpinned upper bound let CI's
+    # plain `pip install` (which ignores uv.lock) pick up a 2.x release and
+    # break every test that imports hopper.api at collection time. Bump this
+    # only alongside an actual migration of those call sites to the 2.x API.
+    "mcp>=1.0.0,<2.0.0",
     # DID signing for upstream sync
     "pynacl>=1.5.0",
 ]
