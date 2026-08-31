@@ -358,3 +358,124 @@ class TestNegativeCaching:
         found = registry.get_by_did("did:key:zAbc123")
         assert found is not None
         assert found.id == "james"
+
+
+class TestNegativeCacheGenerationGuard:
+    """Regression coverage for a round-4 finding on PR
+    owner-identity-instance-discovery: a positive pointer hit re-verifies
+    against its specific owner record every read, but the original
+    negative-cache entries trusted 'owner_id: null' unconditionally, with
+    no equivalent check — reproducibly stale in the gap between link_did's
+    two writes (owner file, then pointer file), since the fast path is
+    deliberately unlocked. Every owner-registry mutation now bumps a
+    generation counter *before* touching the owner file, and a negative
+    entry is only trusted if its stamped generation still matches."""
+
+    def test_fresh_negative_entry_is_trusted(self, registry: OwnerRegistry) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zAbc123")  # scans, caches negative at the current generation
+
+        cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
+
+        assert cache_hit is True
+        assert owner is None
+
+    def test_negative_entry_with_a_stale_generation_is_treated_as_a_miss(
+        self, registry: OwnerRegistry
+    ) -> None:
+        """Simulates exactly the race: a negative entry was cached, then
+        *something* mutated the registry (bumping the generation) without
+        that mutation having reached this pointer file yet."""
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zAbc123")  # caches negative at generation N
+        registry._bump_generation()  # a concurrent mutation elsewhere advances to N+1
+
+        cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
+
+        assert cache_hit is False  # stale — must fall through to a real scan
+
+    def test_stale_negative_entry_still_resolves_correctly_via_scan_fallback(
+        self, registry: OwnerRegistry
+    ) -> None:
+        """The end-to-end version: get_by_did as a whole must still return
+        the right answer even when the fast path can't trust its cache."""
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zAbc123")  # negative, generation N
+        registry.link_did("james", "did:key:zAbc123")  # bumps generation, writes a fresh positive
+
+        # Manually reintroduce a stale negative entry with an old
+        # generation, as if a reader's cache were frozen mid-race.
+        import json
+
+        registry._did_index_path("did:key:zAbc123").write_text(
+            json.dumps({"owner_id": None, "generation": 0})
+        )
+
+        found = registry.get_by_did("did:key:zAbc123")
+
+        assert found is not None
+        assert found.id == "james"  # falls through, finds the real (linked) state
+
+    def test_every_mutating_method_bumps_the_generation(self, registry: OwnerRegistry) -> None:
+        gen0 = registry._current_generation()
+        registry.create("james", "james@eigan.ai")
+        gen1 = registry._current_generation()
+        registry.add_email("james", "james2@eigan.ai")
+        gen2 = registry._current_generation()
+        registry.link_did("james", "did:key:zAbc123")
+        gen3 = registry._current_generation()
+        registry.unlink_did("james", "did:key:zAbc123")
+        gen4 = registry._current_generation()
+
+        assert gen0 < gen1 < gen2 < gen3 < gen4
+
+
+class TestNegativeCacheGating:
+    """Regression coverage for the other round-4 finding: get_by_did used
+    to write a permanent negative-cache file for *any* DID on a scan miss,
+    with no cap — server.py's sync() calls this before any admission
+    check, so a caller could mint a fresh did:key, sign one /sync call,
+    and plant one file, forever, for free. cache_negative=False finds the
+    same correct answer without writing anything."""
+
+    def test_cache_negative_false_writes_no_pointer_file(self, registry: OwnerRegistry) -> None:
+        registry.create("james", "james@eigan.ai")
+
+        found = registry.get_by_did("did:key:zNeverSeen", cache_negative=False)
+
+        assert found is None
+        assert not registry._did_index_path("did:key:zNeverSeen").exists()
+
+    def test_cache_negative_false_still_returns_the_correct_answer(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.link_did("james", "did:key:zAbc123")
+
+        found = registry.get_by_did("did:key:zAbc123", cache_negative=False)
+
+        assert found is not None
+        assert found.id == "james"
+
+    def test_cache_negative_false_does_not_prevent_a_later_true_call_from_caching(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zNeverSeen", cache_negative=False)
+        assert not registry._did_index_path("did:key:zNeverSeen").exists()
+
+        registry.get_by_did("did:key:zNeverSeen")  # default True, now DID is "known" to the caller
+
+        assert registry._did_index_path("did:key:zNeverSeen").exists()
+
+    def test_repeated_cache_negative_false_calls_never_accumulate_files(
+        self, registry: OwnerRegistry
+    ) -> None:
+        """The actual attack this closes: spamming fresh, never-approved
+        DIDs must not grow did_index/ at all."""
+        registry.create("james", "james@eigan.ai")
+
+        for i in range(20):
+            registry.get_by_did(f"did:key:zSpam{i}", cache_negative=False)
+
+        assert list(registry.did_index_dir.glob("*.json")) == []

@@ -131,14 +131,25 @@ async def verify_did_auth(
     return did
 
 
-def _resolve_owner_and_orgs(storage: UpstreamStorage, did: str) -> tuple[str | None, list[str]]:
+def _resolve_owner_and_orgs(
+    storage: UpstreamStorage, did: str, cache_negative: bool = True
+) -> tuple[str | None, list[str]]:
     """(owner_id, org_ids) for a DID's grant fallthrough — the DID's linked
     owner, if any, and every org that owner is a member of. Used at every
     authority call site (sync, approve, revoke, invite create/redeem/list)
     so a DID that's only authorized *via* an owner or org grant — not
     directly — is actually recognized as authorized everywhere, not just
-    in the sync path this was first wired into."""
-    owner = storage.owner_registry.get_by_did(did)
+    in the sync path this was first wired into.
+
+    ``cache_negative`` passes straight through to
+    ``OwnerRegistry.get_by_did`` — see that method's docstring. Defaults
+    to True for the admin/approver-authenticated call sites where an
+    unbounded number of permanent negative-cache files isn't a realistic
+    concern; sync() is the one call site any freshly-signed, never-
+    approved key can reach for free, so it passes False until the DID has
+    some other reason to be considered established.
+    """
+    owner = storage.owner_registry.get_by_did(did, cache_negative=cache_negative)
     if owner is None:
         return None, []
     org_ids = [o.id for o in storage.org_registry.orgs_for_owner(owner.id)]
@@ -170,7 +181,22 @@ async def sync(
     # Phase B/E: resolve the caller's linked owner and that owner's orgs, if
     # any — a DID with no direct grant for this namespace can still be
     # authorized through its owner's grant, or an org that owner belongs to.
-    owner_id, org_ids = _resolve_owner_and_orgs(storage, did)
+    #
+    # cache_negative is gated on the DID already being an established
+    # registry entry (has a DIDRegistry record from a prior call, or is
+    # admin). Without this, a caller mints a fresh did:key, signs one
+    # /sync call with it, and plants a permanent negative-cache file under
+    # owners/did_index/ for free, with zero authorization — this is the
+    # one call site reachable by any signed-but-never-approved key before
+    # any admission check runs, so looped it's an unbounded disk-
+    # exhaustion vector against a server exposed to the internet. A
+    # returning DID (one that's already gone through register_or_get at
+    # least once, even just to land PENDING) has already paid the same
+    # one-file cost DIDRegistry always charged for a first contact, so
+    # letting it also earn the did_index/ speedup adds no new attack
+    # surface beyond what already existed.
+    already_established = storage.did_registry.has_record(did)
+    owner_id, org_ids = _resolve_owner_and_orgs(storage, did, cache_negative=already_established)
 
     # Register DID for this namespace if new, check authorization
     status, is_new = storage.did_registry.register_or_get(

@@ -289,3 +289,39 @@ class TestApproveRevokeActorFallthrough:
 
         assert success is True
         assert registry.is_authorized(BOB, "rosetta") is False
+
+
+class TestHasRecord:
+    """has_record gates OwnerRegistry's negative-cache writes (round-4
+    finding: server.py's sync() must only let a DID earn a permanent
+    did_index/ file once it's an established registry entry, not on its
+    very first, possibly-throwaway contact)."""
+
+    def test_admin_has_a_record(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        assert registry.has_record(ADMIN) is True
+
+    def test_never_seen_did_has_no_record(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        assert registry.has_record(ALICE) is False
+
+    def test_did_registered_pending_now_has_a_record(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "eigan")
+
+        assert registry.has_record(ALICE) is True
+
+    def test_did_authorized_only_via_owner_shortcut_still_has_no_record(
+        self, registry: DIDRegistry
+    ) -> None:
+        """register_or_get's owner/org shortcut deliberately writes
+        nothing for the DID itself (see its own docstring) — so a DID
+        that's only ever been resolved through an owner/org grant, never
+        landing PENDING, correctly still reads as 'not established' here.
+        """
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+
+        registry.register_or_get(ALICE, "eigan", owner_id="james")
+
+        assert registry.has_record(ALICE) is False
