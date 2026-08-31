@@ -235,7 +235,7 @@ def test_owner_registry_and_did_registry_compose_end_to_end(tmp_path: Path) -> N
     owner_registry.link_did("james", ALICE)
     did_registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
 
-    owner = owner_registry.get_by_did(ALICE)
+    owner = owner_registry.get_by_did(ALICE, cache_negative=True)
     assert owner is not None
     assert did_registry.is_authorized(ALICE, "eigan", owner_id=owner.id) is True
 
@@ -289,6 +289,159 @@ class TestApproveRevokeActorFallthrough:
 
         assert success is True
         assert registry.is_authorized(BOB, "rosetta") is False
+
+
+class TestRevokeOwnerOrgDerivedAccessDoesNotSilentlyNoOp:
+    """Regression coverage for a round-6 finding on PR
+    owner-identity-instance-discovery: revoke(target=<a plain DID>) only
+    ever removed a *direct* per-namespace registry entry — but
+    register_or_get's owner/org shortcut deliberately never writes one for
+    a DID authorized purely through its owner (see TestIsEstablished's
+    ``test_did_authorized_only_via_owner_shortcut_is_not_established``
+    just below). Revoking such a DID had nothing to pop, yet still
+    reported ``(True, "revoked from ...")`` — an admin cutting off a
+    stolen laptop was told it worked while ``is_authorized`` stayed True.
+
+    Passing ``target_owner_id``/``target_org_ids`` lets ``revoke()``
+    re-check authorization after the pop and fail loudly instead."""
+
+    def test_revoking_a_purely_owner_derived_did_without_the_hint_reports_false_success(
+        self, registry: DIDRegistry
+    ) -> None:
+        """Without target_owner_id, the exact bug: nothing to pop, but the
+        old behavior claimed success anyway. Locks down that this needs
+        the hint to be caught -- it's not a magic global fix."""
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+        registry.register_or_get(ALICE, "eigan", owner_id="james")
+        assert registry.is_authorized(ALICE, "eigan", owner_id="james") is True
+
+        success, message = registry.revoke(ALICE, "eigan", by_did=ADMIN)
+
+        assert success is True  # the old, misleading behavior -- no hint, no detection
+        assert (
+            registry.is_authorized(ALICE, "eigan", owner_id="james") is True
+        )  # but nothing changed
+
+    def test_revoking_a_purely_owner_derived_did_with_the_hint_fails_loudly(
+        self, registry: DIDRegistry
+    ) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+        registry.register_or_get(ALICE, "eigan", owner_id="james")
+        assert registry.is_authorized(ALICE, "eigan", owner_id="james") is True
+
+        success, message = registry.revoke(ALICE, "eigan", by_did=ADMIN, target_owner_id="james")
+
+        assert success is False
+        assert "owner/org grant" in message
+        assert registry.is_authorized(ALICE, "eigan", owner_id="james") is True  # still has access
+
+    def test_revoking_a_directly_granted_did_still_succeeds_with_the_hint_present(
+        self, registry: DIDRegistry
+    ) -> None:
+        """The hint must not cause false negatives for the ordinary case —
+        a DID with its own direct grant and no owner at all."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+
+        success, message = registry.revoke(
+            ALICE, "eigan", by_did=ADMIN, target_owner_id=None, target_org_ids=[]
+        )
+
+        assert success is True
+        assert registry.is_authorized(ALICE, "eigan") is False
+
+    def test_revoking_an_owner_key_still_authorized_via_a_different_org_fails_loudly(
+        self, registry: DIDRegistry
+    ) -> None:
+        """Same shape, one level up: an owner-key target that's also a
+        member of an org holding its own grant."""
+        from hopper.upstream.storage import org_key
+
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "rosetta", by_did=ADMIN)
+        registry.approve(org_key("eigan-corp"), "rosetta", by_did=ADMIN)
+
+        success, message = registry.revoke(
+            owner_key("james"), "rosetta", by_did=ADMIN, target_org_ids=["eigan-corp"]
+        )
+
+        assert success is False
+        assert "owner/org grant" in message
+
+
+class TestApproveRevokeBlocksNonAdminFromOwnerOrgTargets:
+    """Regression coverage for a round-6 finding on PR
+    owner-identity-instance-discovery: can_approve()/can_revoke() checked
+    only the *caller's* approver authority for the namespace, never what
+    *kind* of target was being granted/revoked — so a plain namespace
+    approver (not admin) could pass ``target=owner_key(...)`` or
+    ``org_key(...)`` and grant/revoke access for every DID currently and
+    future linked to that owner/org in one call, a far bigger blast radius
+    than the one-device delegation approver status is meant for."""
+
+    def test_namespace_approver_cannot_grant_an_owner_key(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        success, message = registry.approve(owner_key("mallory"), "eigan", by_did=ALICE)
+
+        assert success is False
+        assert "only admin" in message
+        assert registry.is_authorized(owner_key("mallory"), "eigan") is False
+
+    def test_namespace_approver_cannot_grant_an_org_key(self, registry: DIDRegistry) -> None:
+        from hopper.upstream.storage import org_key
+
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        success, message = registry.approve(org_key("mallory-corp"), "eigan", by_did=ALICE)
+
+        assert success is False
+        assert "only admin" in message
+
+    def test_namespace_approver_can_still_grant_a_plain_did(self, registry: DIDRegistry) -> None:
+        """The restriction is target-kind-specific -- must not regress the
+        ordinary approver capability this whole plan is about."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        success, message = registry.approve(BOB, "eigan", by_did=ALICE)
+
+        assert success is True
+        assert registry.is_authorized(BOB, "eigan") is True
+
+    def test_admin_can_still_grant_an_owner_key(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+
+        success, message = registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+
+        assert success is True
+
+    def test_namespace_approver_cannot_revoke_an_owner_key(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        success, message = registry.revoke(owner_key("james"), "eigan", by_did=ALICE)
+
+        assert success is False
+        assert "only admin" in message
+        assert registry.is_authorized(owner_key("james"), "eigan") is True
+
+    def test_namespace_approver_can_still_revoke_a_plain_approved_did(
+        self, registry: DIDRegistry
+    ) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+        registry.approve(BOB, "eigan", by_did=ADMIN)
+
+        success, message = registry.revoke(BOB, "eigan", by_did=ALICE)
+
+        assert success is True
+        assert registry.is_authorized(BOB, "eigan") is False
 
 
 class TestIsEstablished:

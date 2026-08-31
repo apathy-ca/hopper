@@ -177,6 +177,29 @@ def _resolve_owner_and_orgs(storage: UpstreamStorage, did: str) -> tuple[str | N
     return owner.id, org_ids
 
 
+def _resolve_target_fallthrough(
+    storage: UpstreamStorage, target: str
+) -> tuple[str | None, list[str]]:
+    """The (owner_id, org_ids) a revoke *target* could still draw access
+    from after its own direct namespace entry is removed — used only by
+    ``revoke_did`` to pass through to ``DIDRegistry.revoke``'s post-removal
+    re-check (see that method's docstring), which is what actually
+    verifies a revoke took effect rather than silently no-opping on a
+    target whose access is entirely owner/org-derived.
+
+    Mirrors ``_resolve_owner_and_orgs``'s shape but for the *target* of an
+    admin action rather than the caller, and extended to cover owner-key
+    targets, which have no linked owner of their own but can still be a
+    member of an org.
+    """
+    if is_org_key(target):
+        return None, []
+    if is_owner_key(target):
+        owner_id = target[len(OWNER_KEY_PREFIX) :]
+        return None, [o.id for o in storage.org_registry.orgs_for_owner(owner_id)]
+    return _resolve_owner_and_orgs(storage, target)
+
+
 @router.post("/sync")
 async def sync(
     request: Request,
@@ -398,7 +421,7 @@ async def approve_did(
     # 404-vs-403, with zero approve authority of its own.
     by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
     can, reason = storage.did_registry.can_approve(
-        did, req.namespace, role, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+        did, req.namespace, req.did, role=role, by_owner_id=by_owner_id, by_org_ids=by_org_ids
     )
     if not can:
         raise HTTPException(status_code=403, detail=reason)
@@ -437,7 +460,7 @@ async def revoke_did(
     # approve_did above.
     by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
     can, reason = storage.did_registry.can_revoke(
-        did, req.namespace, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+        did, req.namespace, req.did, by_owner_id=by_owner_id, by_org_ids=by_org_ids
     )
     if not can:
         raise HTTPException(status_code=403, detail=reason)
@@ -446,8 +469,15 @@ async def revoke_did(
     if not_found:
         raise HTTPException(status_code=404, detail=not_found)
 
+    target_owner_id, target_org_ids = _resolve_target_fallthrough(storage, req.did)
     success, message = storage.did_registry.revoke(
-        req.did, namespace=req.namespace, by_did=did, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+        req.did,
+        namespace=req.namespace,
+        by_did=did,
+        by_owner_id=by_owner_id,
+        by_org_ids=by_org_ids,
+        target_owner_id=target_owner_id,
+        target_org_ids=target_org_ids,
     )
     if not success:
         raise HTTPException(status_code=403, detail=message)
@@ -655,18 +685,30 @@ async def owner_instances(
     Self-service: any DID linked to the target owner can query it (this is
     the "what can I reach" audit view, not an admin-only operation). Admin
     can query any owner.
+
+    Authority before existence for non-admins: whether ``owner`` exists at
+    all can only be checked here after loading it (unlike approve/revoke's
+    ``owner:<id>``/``org:<id>`` targets, self-service "am I linked to it"
+    is inherently target-dependent) — so a non-admin caller who isn't
+    linked gets the same 403 whether the id is unknown or just not theirs,
+    rather than a 404 that would let any authenticated DID enumerate
+    which owner ids exist.
     """
+    caller_is_admin = storage.did_registry.is_admin(did)
     target = storage.owner_registry.get(owner)
     if target is None:
-        raise HTTPException(status_code=404, detail=f"owner '{owner}' not found")
-
-    is_self = did in target.linked_dids
-    if not (storage.did_registry.is_admin(did) or is_self):
+        if caller_is_admin:
+            raise HTTPException(status_code=404, detail=f"owner '{owner}' not found")
+        raise HTTPException(status_code=403, detail="not authorized to view this owner's instances")
+    if not caller_is_admin and did not in target.linked_dids:
         raise HTTPException(status_code=403, detail="not authorized to view this owner's instances")
 
-    is_admin, global_access, instances = _owner_reach(storage, target)
+    target_is_admin, global_access, instances = _owner_reach(storage, target)
     return OwnerInstancesResponse(
-        owner_id=target.id, is_admin=is_admin, global_access=global_access, instances=instances
+        owner_id=target.id,
+        is_admin=target_is_admin,
+        global_access=global_access,
+        instances=instances,
     )
 
 
@@ -747,15 +789,19 @@ async def get_org(
     did: Annotated[str, Depends(verify_did_auth)],
 ) -> OrgResponse:
     """Get one org. Admin, or any owner who is a member — same self-service
-    visibility principle as owner instances."""
+    visibility principle as owner instances (see its docstring for why
+    existence is checked after authority for non-admins, not before)."""
+    caller_is_admin = storage.did_registry.is_admin(did)
     org = storage.org_registry.get(org_id)
     if org is None:
-        raise HTTPException(status_code=404, detail=f"org '{org_id}' not found")
-
-    caller_owner_id, _ = _resolve_owner_and_orgs(storage, did)
-    is_member = caller_owner_id is not None and caller_owner_id in org.member_owner_ids
-    if not (storage.did_registry.is_admin(did) or is_member):
+        if caller_is_admin:
+            raise HTTPException(status_code=404, detail=f"org '{org_id}' not found")
         raise HTTPException(status_code=403, detail="not authorized to view this org")
+    if not caller_is_admin:
+        caller_owner_id, _ = _resolve_owner_and_orgs(storage, did)
+        is_member = caller_owner_id is not None and caller_owner_id in org.member_owner_ids
+        if not is_member:
+            raise HTTPException(status_code=403, detail="not authorized to view this org")
     return OrgResponse(success=True, message="found", org=_org_info(org))
 
 
@@ -820,15 +866,19 @@ async def org_instances(
     did: Annotated[str, Depends(verify_did_auth)],
 ) -> OrgInstancesResponse:
     """Namespaces this org itself has been directly granted. Admin, or any
-    member owner, can view."""
+    member owner, can view (see ``get_org``'s docstring for the existence-
+    oracle reasoning behind checking authority before existence below)."""
+    caller_is_admin = storage.did_registry.is_admin(did)
     target_org = storage.org_registry.get(org_id)
     if target_org is None:
-        raise HTTPException(status_code=404, detail=f"org '{org_id}' not found")
-
-    caller_owner_id, _ = _resolve_owner_and_orgs(storage, did)
-    is_member = caller_owner_id is not None and caller_owner_id in target_org.member_owner_ids
-    if not (storage.did_registry.is_admin(did) or is_member):
+        if caller_is_admin:
+            raise HTTPException(status_code=404, detail=f"org '{org_id}' not found")
         raise HTTPException(status_code=403, detail="not authorized to view this org")
+    if not caller_is_admin:
+        caller_owner_id, _ = _resolve_owner_and_orgs(storage, did)
+        is_member = caller_owner_id is not None and caller_owner_id in target_org.member_owner_ids
+        if not is_member:
+            raise HTTPException(status_code=403, detail="not authorized to view this org")
 
     has_global, instances = storage.did_registry.namespaces_for_keys({org_key(org_id)})
     return OrgInstancesResponse(org_id=org_id, global_access=has_global, instances=instances)
@@ -960,8 +1010,17 @@ async def invite_create(
         if not req.owner_id:
             raise HTTPException(status_code=400, detail="owner_id required for a device invite")
         target_owner = storage.owner_registry.get(req.owner_id)
+        # Existence-oracle reasoning as owner_instances/get_org: a non-admin
+        # caller isn't entitled to learn whether owner_id exists at all if
+        # they're not linked to it, so an unknown id and "exists but not
+        # yours" collapse into the same 403 rather than a distinguishing 404.
         if target_owner is None:
-            raise HTTPException(status_code=404, detail=f"owner '{req.owner_id}' not found")
+            if is_admin:
+                raise HTTPException(status_code=404, detail=f"owner '{req.owner_id}' not found")
+            raise HTTPException(
+                status_code=403,
+                detail="must be linked to this owner to mint a device invite for it",
+            )
         if not is_admin and did not in target_owner.linked_dids:
             raise HTTPException(
                 status_code=403,
@@ -984,6 +1043,16 @@ async def invite_create(
             )
         if storage.owner_registry.get(req.owner_id) is not None:
             raise HTTPException(status_code=409, detail=f"owner '{req.owner_id}' already exists")
+        if req.max_uses > 1:
+            # A NEW_OWNER invite mints one specific owner id -- only the
+            # first redemption can ever succeed (owner_registry.create
+            # rejects the duplicate id on every later attempt and gets
+            # unredeem()'d, leaving the invite looking like it still has
+            # uses left). max_uses>1 would silently promise N working
+            # invites while only ever delivering one.
+            raise HTTPException(
+                status_code=400, detail="a new-owner invite can only ever be redeemed once"
+            )
         token, invite = storage.invites.create(
             kind=kind,
             owner_id=req.owner_id,

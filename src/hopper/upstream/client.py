@@ -45,6 +45,28 @@ class NotAdminError(UpstreamError):
     pass
 
 
+def _detail_or(response: httpx.Response, fallback: str) -> str:
+    """The server's JSON ``detail`` field, if the response body has one —
+    otherwise ``fallback``.
+
+    Every method's catch-all ``HTTPStatusError`` branch used to build its
+    error message from the status code alone (``f"Failed to X:
+    {status_code}"``), discarding the response body entirely — including
+    detail the server went out of its way to provide, like
+    ``_check_grant_target_exists``'s ``"owner 'jhenrry' not found"`` on a
+    404 nothing here special-cased. A caller only ever saw a bare status
+    code for any status the specific branches above this fallback didn't
+    handle.
+    """
+    try:
+        data = response.json()
+    except ValueError:
+        return fallback
+    if isinstance(data, dict):
+        return data.get("detail", fallback)
+    return fallback
+
+
 @dataclass
 class UpstreamClient:
     """Client for syncing with an upstream server."""
@@ -125,7 +147,9 @@ class UpstreamClient:
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
-            raise UpstreamError(f"Failed to get self info: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to get self info: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -193,7 +217,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can list DIDs") from e
-            raise UpstreamError(f"Failed to list DIDs: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to list DIDs: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -209,7 +235,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can view pending DIDs") from e
-            raise UpstreamError(f"Failed to list pending: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to list pending: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -232,7 +260,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
-            raise UpstreamError(f"Failed to approve: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to approve: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -312,7 +342,9 @@ class UpstreamClient:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
             if e.response.status_code == 404:
                 raise UpstreamError(e.response.json().get("detail", "not found")) from e
-            raise UpstreamError(f"Failed to create invite: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to create invite: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -331,7 +363,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code in (403, 404):
                 raise NotAuthorizedError(e.response.json().get("detail", "redeem failed")) from e
-            raise UpstreamError(f"Failed to redeem: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to redeem: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -345,7 +379,9 @@ class UpstreamClient:
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
-            raise UpstreamError(f"Failed to list invites: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to list invites: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -364,7 +400,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
-            raise UpstreamError(f"Failed to revoke invite: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to revoke invite: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -383,7 +421,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can create owners") from e
-            raise UpstreamError(f"Failed to create owner: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to create owner: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -398,7 +438,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can list owners") from e
-            raise UpstreamError(f"Failed to list owners: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to list owners: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -413,7 +455,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can view owners") from e
-            raise UpstreamError(f"Failed to get owner: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to get owner: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -432,7 +476,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can edit owners") from e
-            raise UpstreamError(f"Failed to add email: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to add email: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -451,7 +497,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can link DIDs to owners") from e
-            raise UpstreamError(f"Failed to link DID: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to link DID: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -470,7 +518,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can unlink DIDs from owners") from e
-            raise UpstreamError(f"Failed to unlink DID: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to unlink DID: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -485,7 +535,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can create orgs") from e
-            raise UpstreamError(f"Failed to create org: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to create org: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -500,7 +552,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can list orgs") from e
-            raise UpstreamError(f"Failed to list orgs: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to list orgs: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -517,7 +571,9 @@ class UpstreamClient:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
             if e.response.status_code == 404:
                 raise UpstreamError(e.response.json().get("detail", "org not found")) from e
-            raise UpstreamError(f"Failed to get org: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to get org: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -538,7 +594,9 @@ class UpstreamClient:
                 raise NotAdminError("Only admin can manage org membership") from e
             if e.response.status_code == 404:
                 raise UpstreamError(e.response.json().get("detail", "not found")) from e
-            raise UpstreamError(f"Failed to add org member: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to add org member: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -557,7 +615,9 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can manage org membership") from e
-            raise UpstreamError(f"Failed to remove org member: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to remove org member: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -575,7 +635,9 @@ class UpstreamClient:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
             if e.response.status_code == 404:
                 raise UpstreamError(e.response.json().get("detail", "org not found")) from e
-            raise UpstreamError(f"Failed to get org instances: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to get org instances: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -607,7 +669,9 @@ class UpstreamClient:
                 raise NotAdminError(e.response.json().get("detail", "not authorized")) from e
             if e.response.status_code == 404:
                 raise UpstreamError(e.response.json().get("detail", "owner not found")) from e
-            raise UpstreamError(f"Failed to get owner instances: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to get owner instances: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 
@@ -641,6 +705,8 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
-            raise UpstreamError(f"Failed to revoke: {e.response.status_code}") from e
+            raise UpstreamError(
+                _detail_or(e.response, f"Failed to revoke: {e.response.status_code}")
+            ) from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e

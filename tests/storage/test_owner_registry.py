@@ -134,13 +134,13 @@ class TestDidLinking:
         registry.create("james", "james@eigan.ai")
         registry.link_did("james", "did:key:zAbc123")
 
-        found = registry.get_by_did("did:key:zAbc123")
+        found = registry.get_by_did("did:key:zAbc123", cache_negative=True)
 
         assert found is not None
         assert found.id == "james"
 
     def test_get_by_did_unlinked_returns_none(self, registry: OwnerRegistry) -> None:
-        assert registry.get_by_did("did:key:znotlinked") is None
+        assert registry.get_by_did("did:key:znotlinked", cache_negative=True) is None
 
     def test_link_did_rejects_conflicting_owner(self, registry: OwnerRegistry) -> None:
         """Design-doc leaning for the 'conflicting owner claims' open
@@ -154,7 +154,7 @@ class TestDidLinking:
         assert ok is False
         assert "different owner 'james'" in message
         # James still holds it — the attempted reassignment had no effect.
-        assert registry.get_by_did("did:key:zShared").id == "james"  # type: ignore[union-attr]
+        assert registry.get_by_did("did:key:zShared", cache_negative=True).id == "james"  # type: ignore[union-attr]
 
     def test_link_did_is_idempotent_error_not_duplicate(self, registry: OwnerRegistry) -> None:
         registry.create("james", "james@eigan.ai")
@@ -174,7 +174,7 @@ class TestDidLinking:
 
         assert ok is True
         assert registry.get("james").linked_dids == []  # type: ignore[union-attr]
-        assert registry.get_by_did("did:key:zAbc123") is None
+        assert registry.get_by_did("did:key:zAbc123", cache_negative=True) is None
 
     def test_unlink_did_not_linked_fails(self, registry: OwnerRegistry) -> None:
         registry.create("james", "james@eigan.ai")
@@ -195,7 +195,7 @@ class TestDidLinking:
         ok, _ = registry.link_did("sarah", "did:key:zShared")
 
         assert ok is True
-        assert registry.get_by_did("did:key:zShared").id == "sarah"  # type: ignore[union-attr]
+        assert registry.get_by_did("did:key:zShared", cache_negative=True).id == "sarah"  # type: ignore[union-attr]
 
 
 class TestListAll:
@@ -252,7 +252,7 @@ class TestGetByDidSelfHealing:
         # Simulate data written before the did_index cache existed.
         registry._did_index_path("did:key:zAbc123").unlink()
 
-        found = registry.get_by_did("did:key:zAbc123")
+        found = registry.get_by_did("did:key:zAbc123", cache_negative=True)
 
         assert found is not None
         assert found.id == "james"
@@ -270,7 +270,7 @@ class TestGetByDidSelfHealing:
 
         registry._did_index_path("did:key:zAbc123").write_text(json.dumps({"owner_id": "james"}))
 
-        found = registry.get_by_did("did:key:zAbc123")
+        found = registry.get_by_did("did:key:zAbc123", cache_negative=True)
 
         assert found is not None
         assert found.id == "sarah"  # the real owner, not the stale pointer's claim
@@ -293,14 +293,14 @@ class TestGetByDidSelfHealing:
         cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
         assert cache_hit is True
         assert owner is None
-        assert registry.get_by_did("did:key:zAbc123") is None
+        assert registry.get_by_did("did:key:zAbc123", cache_negative=True) is None
 
     def test_corrupt_pointer_file_falls_back_to_scan(self, registry: OwnerRegistry) -> None:
         registry.create("james", "james@eigan.ai")
         registry.link_did("james", "did:key:zAbc123")
         registry._did_index_path("did:key:zAbc123").write_text("not valid json{{{")
 
-        found = registry.get_by_did("did:key:zAbc123")
+        found = registry.get_by_did("did:key:zAbc123", cache_negative=True)
 
         assert found is not None
         assert found.id == "james"
@@ -322,7 +322,7 @@ class TestNegativeCaching:
         cache_hit_before, _ = registry._get_by_did_fast("did:key:zNeverLinked")
         assert cache_hit_before is False  # nothing cached yet — must scan
 
-        found = registry.get_by_did("did:key:zNeverLinked")
+        found = registry.get_by_did("did:key:zNeverLinked", cache_negative=True)
 
         assert found is None
         cache_hit_after, owner_after = registry._get_by_did_fast("did:key:zNeverLinked")
@@ -333,7 +333,9 @@ class TestNegativeCaching:
         self, registry: OwnerRegistry
     ) -> None:
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zNeverLinked")  # first call: scans, caches negative
+        registry.get_by_did(
+            "did:key:zNeverLinked", cache_negative=True
+        )  # first call: scans, caches negative
 
         # Delete every owner file to prove a second scan would find
         # nothing meaningfully different anyway, then confirm the fast
@@ -344,18 +346,18 @@ class TestNegativeCaching:
         cache_hit, owner = registry._get_by_did_fast("did:key:zNeverLinked")
         assert cache_hit is True
         assert owner is None
-        assert registry.get_by_did("did:key:zNeverLinked") is None
+        assert registry.get_by_did("did:key:zNeverLinked", cache_negative=True) is None
 
     def test_linking_a_previously_negative_cached_did_overwrites_the_cache(
         self, registry: OwnerRegistry
     ) -> None:
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # caches negative
-        assert registry.get_by_did("did:key:zAbc123") is None
+        registry.get_by_did("did:key:zAbc123", cache_negative=True)  # caches negative
+        assert registry.get_by_did("did:key:zAbc123", cache_negative=True) is None
 
         registry.link_did("james", "did:key:zAbc123")
 
-        found = registry.get_by_did("did:key:zAbc123")
+        found = registry.get_by_did("did:key:zAbc123", cache_negative=True)
         assert found is not None
         assert found.id == "james"
 
@@ -381,7 +383,7 @@ class TestNegativeCacheStalenessGuard:
 
     def test_fresh_negative_entry_is_trusted(self, registry: OwnerRegistry) -> None:
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # scans, caches negative
+        registry.get_by_did("did:key:zAbc123", cache_negative=True)  # scans, caches negative
 
         cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
 
@@ -395,7 +397,7 @@ class TestNegativeCacheStalenessGuard:
         file is written, any prior pointer for this DID is already gone —
         never still sitting there stale next to data that's moved on."""
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # caches negative
+        registry.get_by_did("did:key:zAbc123", cache_negative=True)  # caches negative
         pointer_path = registry._did_index_path("did:key:zAbc123")
         assert pointer_path.exists()
 
@@ -415,7 +417,7 @@ class TestNegativeCacheStalenessGuard:
         self, registry: OwnerRegistry
     ) -> None:
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # caches negative
+        registry.get_by_did("did:key:zAbc123", cache_negative=True)  # caches negative
 
         registry.link_did("james", "did:key:zAbc123")
 
@@ -431,7 +433,7 @@ class TestNegativeCacheStalenessGuard:
         shared generation counter: linking one DID must not force every
         *other* DID's already-cached negative result to be re-scanned."""
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zUnrelated")  # caches negative
+        registry.get_by_did("did:key:zUnrelated", cache_negative=True)  # caches negative
         unrelated_pointer = registry._did_index_path("did:key:zUnrelated")
         assert unrelated_pointer.exists()
 
@@ -448,7 +450,7 @@ class TestNegativeCacheStalenessGuard:
         any DID's negative cache stale — no reason for them to touch
         did_index/ at all."""
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # caches negative
+        registry.get_by_did("did:key:zAbc123", cache_negative=True)  # caches negative
 
         registry.create("sarah", "sarah@eigan.ai")
         registry.add_email("sarah", "sarah2@eigan.ai")
@@ -492,7 +494,9 @@ class TestNegativeCacheGating:
         registry.get_by_did("did:key:zNeverSeen", cache_negative=False)
         assert not registry._did_index_path("did:key:zNeverSeen").exists()
 
-        registry.get_by_did("did:key:zNeverSeen")  # default True, now DID is "known" to the caller
+        registry.get_by_did(
+            "did:key:zNeverSeen", cache_negative=True
+        )  # now DID is "known" to the caller
 
         assert registry._did_index_path("did:key:zNeverSeen").exists()
 

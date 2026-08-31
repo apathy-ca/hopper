@@ -95,7 +95,24 @@ class DIDRegistry:
         self.dids_dir.mkdir(parents=True, exist_ok=True)
         self.registry_path = self.dids_dir / "registry.json"
         self.lock_path = self.dids_dir / ".lock"
-        self._load_registry()
+        # Locked, unlike every other registry's constructor: this is the
+        # only one that loads a single shared JSON blob into memory once
+        # and mutates that in-memory copy incrementally rather than
+        # reading each record fresh per call. _save_registry() writes via
+        # a plain truncating open(), so an unlocked read landing mid-write
+        # elsewhere can see a torn/empty file, hit _load_registry's
+        # except clause, and silently reset self._admin_did to None and
+        # self._registry to {} -- with no reload before the next authority
+        # check (can_approve/is_authorized read the in-memory snapshot
+        # directly), that reads as "not admin" and denies a grant that
+        # should have succeeded. Reproduced as the likely cause of an
+        # intermittent failure in test_concurrent_approve_from_separate_
+        # processes_loses_no_grant: 8 worker processes each construct a
+        # fresh DIDRegistry (and so call this) right as others are mid
+        # set_status() write; failed under full-suite load, never in
+        # isolation, exactly as this race's odds would predict.
+        with self._lock():
+            self._load_registry()
 
     def _lock(self):
         return _file_lock(self.lock_path)
@@ -440,12 +457,13 @@ class DIDRegistry:
         self,
         by_did: str,
         namespace: str,
+        target: str,
         role: DIDStatus = DIDStatus.APPROVED,
         by_owner_id: str | None = None,
         by_org_ids: list[str] | None = None,
     ) -> tuple[bool, str]:
         """Authority-only check for ``approve()`` — no mutation, and no
-        opinion on whether the target itself is valid.
+        opinion on whether the target itself *exists*.
 
         Exposed separately so a caller (the ``/admin/approve`` endpoint)
         can verify authority *before* checking whether an ``owner:<id>``/
@@ -453,6 +471,16 @@ class DIDRegistry:
         404-vs-403 split into an existence oracle: an unauthorized caller
         could learn whether an id exists just from the response code,
         with zero approve authority of its own.
+
+        A plain namespace approver may only grant single DIDs — granting
+        an ``owner:<id>``/``org:<id>`` target hands every DID currently
+        *and future* linked to it access in one call, a far bigger blast
+        radius than the one-device delegation approver status is meant
+        for (the same reasoning this plan already applies to keeping org
+        membership changes admin-only). Checking the target's *kind* here
+        is a plain string-prefix test — it reveals nothing about whether
+        the id inside actually exists, so it doesn't reopen the oracle
+        the existence check above guards against.
         """
         if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
             return False, f"invalid role: {role}"
@@ -462,6 +490,11 @@ class DIDRegistry:
             return False, "only admin can grant approver role"
         if namespace == GLOBAL_NS:
             return False, "only admin can approve across all namespaces"
+        if is_owner_key(target) or is_org_key(target):
+            return (
+                False,
+                "only admin can grant access to an owner or org, not just a namespace approver",
+            )
         if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
             return False, f"not authorized to approve for namespace '{namespace}'"
         return True, ""
@@ -482,10 +515,11 @@ class DIDRegistry:
         this stays safe to call directly without a separate pre-check).
 
         Approving an owner or org key grants every DID currently *and
-        future* linked to it, without touching any of them individually.
+        future* linked to it, without touching any of them individually —
+        admin only, enforced inside ``can_approve``.
         """
         ok, reason = self.can_approve(
-            by_did, namespace, role, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+            by_did, namespace, target, role, by_owner_id=by_owner_id, by_org_ids=by_org_ids
         )
         if not ok:
             return False, reason
@@ -501,11 +535,18 @@ class DIDRegistry:
         self,
         by_did: str,
         namespace: str,
+        target: str,
         by_owner_id: str | None = None,
         by_org_ids: list[str] | None = None,
     ) -> tuple[bool, str]:
         """Authority-only check for ``revoke()`` — see ``can_approve``'s
-        docstring for why this is split out (existence-oracle avoidance).
+        docstring for why this is split out (existence-oracle avoidance),
+        and for why a plain approver is blocked from an ``owner:<id>``/
+        ``org:<id>`` target here too, symmetric with the grant side: an
+        approver revoking an owner's or org's whole grant cuts off every
+        DID linked to it at once, the same oversized blast radius
+        ``can_approve`` restricts to admin only.
+
         Does not check the target's current grant status — that rule
         ("approvers can only revoke APPROVED members") needs the target to
         already be known to exist, so it stays in ``revoke()`` itself,
@@ -515,9 +556,45 @@ class DIDRegistry:
             return True, ""
         if namespace == GLOBAL_NS:
             return False, "only admin can revoke across all namespaces"
+        if is_owner_key(target) or is_org_key(target):
+            return (
+                False,
+                "only admin can revoke access from an owner or org, not just a namespace approver",
+            )
         if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
             return False, f"not authorized to revoke for namespace '{namespace}'"
         return True, ""
+
+    def _would_still_be_authorized(
+        self,
+        target: str,
+        namespace: str,
+        target_owner_id: str | None,
+        target_org_ids: list[str] | None,
+    ) -> bool:
+        """After ``target``'s own direct namespace entry has already been
+        removed, would it still resolve as authorized through fallthrough?
+
+        A plain DID falls through to its linked owner, then that owner's
+        orgs — exactly ``is_authorized``'s resolution order, since that's
+        the same chain ``register_or_get`` used to grant it access without
+        ever writing a direct per-DID entry in the first place (Phase B/E:
+        an owner- or org-derived grant intentionally has no direct
+        registry row to remove). An owner key has no *linked owner* of its
+        own, but can still be a member of an org with its own grant. An
+        org key has no further fallthrough — an org's grant is never
+        inherited from anything above it.
+        """
+        if is_org_key(target):
+            return False
+        if is_owner_key(target):
+            return any(
+                self._is_directly_authorized(org_key(org_id), namespace)
+                for org_id in target_org_ids or []
+            )
+        return self.is_authorized(
+            target, namespace, owner_id=target_owner_id, org_ids=target_org_ids
+        )
 
     def revoke(
         self,
@@ -526,6 +603,8 @@ class DIDRegistry:
         by_did: str,
         by_owner_id: str | None = None,
         by_org_ids: list[str] | None = None,
+        target_owner_id: str | None = None,
+        target_org_ids: list[str] | None = None,
     ) -> tuple[bool, str]:
         """Revoke a DID's — or (Phase B) an owner's, or (Phase E) an org's —
         access to a namespace (or all if namespace == '*').
@@ -533,6 +612,19 @@ class DIDRegistry:
         Admin can revoke anyone. Approver (direct, or via owner/org
         fallthrough — same as ``approve``) can revoke only APPROVED members
         of their specific namespace (never another approver or admin).
+
+        ``target_owner_id``/``target_org_ids`` describe *the target's own*
+        fallthrough chain (contrast ``by_owner_id``/``by_org_ids``, which
+        describe the caller's) — for a DID target, its linked owner (if
+        any) and that owner's orgs; for an owner-key target, that owner's
+        own org memberships (``org_ids`` only — an owner has no owner of
+        its own). Without them this can only ever remove a *direct* registry
+        entry: a target whose access is entirely owner/org-derived (the
+        common case for a linked device — see ``register_or_get``) has no
+        such entry to remove, so the pop below is silently a no-op and this
+        would otherwise still report success — the admin is told the
+        laptop is cut off when it isn't. Passing them lets the post-removal
+        check below catch that and fail loudly instead.
         """
         if self.is_admin(target):
             return False, "cannot revoke admin DID"
@@ -540,7 +632,7 @@ class DIDRegistry:
         by_is_admin = self.is_admin(by_did)
         if not by_is_admin:
             ok, reason = self.can_revoke(
-                by_did, namespace, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+                by_did, namespace, target, by_owner_id=by_owner_id, by_org_ids=by_org_ids
             )
             if not ok:
                 return False, reason
@@ -565,6 +657,15 @@ class DIDRegistry:
                 if record:
                     record.namespaces.pop(namespace, None)
                     self._save_record(record)
+
+            if self._would_still_be_authorized(target, namespace, target_owner_id, target_org_ids):
+                scope = "all namespaces" if namespace == GLOBAL_NS else f"'{namespace}'"
+                kind = "owner" if is_owner_key(target) else "org" if is_org_key(target) else "DID"
+                return False, (
+                    f"{kind} still has access to {scope} through an owner/org grant — "
+                    "this had no direct grant to remove here; revoke the owner/org grant "
+                    "itself, or unlink the DID from its owner, to actually cut off access"
+                )
             return True, f"revoked from {'all namespaces' if namespace == GLOBAL_NS else namespace}"
 
     def list_all(self, namespace: str | None = None) -> list[DIDRecord]:
@@ -834,8 +935,21 @@ class OwnerRegistry:
             self._write_did_pointer(did, None)
         return None
 
-    def get_by_did(self, did: str, cache_negative: bool = True) -> Owner | None:
+    def get_by_did(self, did: str, cache_negative: bool) -> Owner | None:
         """Find the owner a DID is linked to, if any.
+
+        ``cache_negative`` has no default on purpose: this method is the
+        one place a caller can plant a permanent negative-cache file for
+        an unbounded number of never-established DIDs (see below), and a
+        round of review found the disk-exhaustion fix this guards against
+        had been correctly applied at one call site while every other one
+        silently kept the unsafe default. Server.py now funnels every
+        caller through ``_resolve_owner_and_orgs``, which decides this
+        centrally — but a convention only some future call site remembers
+        to follow is exactly the kind of thing that broke last time.
+        Forcing an explicit argument here means a new call site that
+        bypasses that helper fails loudly (``TypeError``) instead of
+        silently reopening the vector.
 
         Fast path: a per-DID pointer file, checked first, that caches
         *both* outcomes — which owner a DID is linked to, and the
