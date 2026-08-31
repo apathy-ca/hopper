@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from hopper.upstream.storage import OwnerRegistry
+from hopper.upstream.storage import Owner, OwnerRegistry
 
 
 @pytest.fixture
@@ -360,74 +360,102 @@ class TestNegativeCaching:
         assert found.id == "james"
 
 
-class TestNegativeCacheGenerationGuard:
-    """Regression coverage for a round-4 finding on PR
+class TestNegativeCacheStalenessGuard:
+    """Regression coverage for a round-4/round-5 finding on PR
     owner-identity-instance-discovery: a positive pointer hit re-verifies
     against its specific owner record every read, but the original
     negative-cache entries trusted 'owner_id: null' unconditionally, with
     no equivalent check — reproducibly stale in the gap between link_did's
     two writes (owner file, then pointer file), since the fast path is
-    deliberately unlocked. Every owner-registry mutation now bumps a
-    generation counter *before* touching the owner file, and a negative
-    entry is only trusted if its stamped generation still matches."""
+    deliberately unlocked.
+
+    An earlier fix used a shared generation counter bumped before every
+    mutation, but that invalidated *every* DID's negative cache on *any*
+    owner-registry change, not just the affected one — round 5 flagged
+    this as unnecessary shared-state churn. This version instead has
+    link_did delete the specific DID's stale pointer before touching the
+    owner file: a reader hitting a *missing* pointer during that window
+    correctly falls through to the locked scan and waits, while every
+    other DID's cache entry is untouched.
+    """
 
     def test_fresh_negative_entry_is_trusted(self, registry: OwnerRegistry) -> None:
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # scans, caches negative at the current generation
+        registry.get_by_did("did:key:zAbc123")  # scans, caches negative
 
         cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
 
         assert cache_hit is True
         assert owner is None
 
-    def test_negative_entry_with_a_stale_generation_is_treated_as_a_miss(
+    def test_link_did_leaves_no_pointer_file_during_the_owner_file_write(
         self, registry: OwnerRegistry
     ) -> None:
-        """Simulates exactly the race: a negative entry was cached, then
-        *something* mutated the registry (bumping the generation) without
-        that mutation having reached this pointer file yet."""
+        """The actual mechanism, observed directly: by the time the owner
+        file is written, any prior pointer for this DID is already gone —
+        never still sitting there stale next to data that's moved on."""
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # caches negative at generation N
-        registry._bump_generation()  # a concurrent mutation elsewhere advances to N+1
+        registry.get_by_did("did:key:zAbc123")  # caches negative
+        pointer_path = registry._did_index_path("did:key:zAbc123")
+        assert pointer_path.exists()
+
+        observed: dict[str, bool] = {}
+        original_save_owner = registry._save_owner
+
+        def spying_save_owner(owner: Owner) -> None:
+            observed["pointer_existed_during_owner_write"] = pointer_path.exists()
+            original_save_owner(owner)
+
+        registry._save_owner = spying_save_owner  # type: ignore[method-assign]
+        registry.link_did("james", "did:key:zAbc123")
+
+        assert observed["pointer_existed_during_owner_write"] is False
+
+    def test_after_link_did_the_pointer_reflects_the_final_state_not_stale(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zAbc123")  # caches negative
+
+        registry.link_did("james", "did:key:zAbc123")
 
         cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
+        assert cache_hit is True
+        assert owner is not None
+        assert owner.id == "james"
 
-        assert cache_hit is False  # stale — must fall through to a real scan
-
-    def test_stale_negative_entry_still_resolves_correctly_via_scan_fallback(
+    def test_link_did_does_not_invalidate_a_different_dids_negative_cache(
         self, registry: OwnerRegistry
     ) -> None:
-        """The end-to-end version: get_by_did as a whole must still return
-        the right answer even when the fast path can't trust its cache."""
+        """The property this per-pointer approach was chosen for over a
+        shared generation counter: linking one DID must not force every
+        *other* DID's already-cached negative result to be re-scanned."""
         registry.create("james", "james@eigan.ai")
-        registry.get_by_did("did:key:zAbc123")  # negative, generation N
-        registry.link_did("james", "did:key:zAbc123")  # bumps generation, writes a fresh positive
+        registry.get_by_did("did:key:zUnrelated")  # caches negative
+        unrelated_pointer = registry._did_index_path("did:key:zUnrelated")
+        assert unrelated_pointer.exists()
 
-        # Manually reintroduce a stale negative entry with an old
-        # generation, as if a reader's cache were frozen mid-race.
-        import json
+        registry.link_did("james", "did:key:zAbc123")  # a different DID entirely
 
-        registry._did_index_path("did:key:zAbc123").write_text(
-            json.dumps({"owner_id": None, "generation": 0})
-        )
+        cache_hit, owner = registry._get_by_did_fast("did:key:zUnrelated")
+        assert cache_hit is True  # untouched — not invalidated by an unrelated mutation
+        assert owner is None
 
-        found = registry.get_by_did("did:key:zAbc123")
-
-        assert found is not None
-        assert found.id == "james"  # falls through, finds the real (linked) state
-
-    def test_every_mutating_method_bumps_the_generation(self, registry: OwnerRegistry) -> None:
-        gen0 = registry._current_generation()
+    def test_create_and_add_email_do_not_touch_any_negative_pointer(
+        self, registry: OwnerRegistry
+    ) -> None:
+        """create/add_email never mutate linked_dids, so they can't make
+        any DID's negative cache stale — no reason for them to touch
+        did_index/ at all."""
         registry.create("james", "james@eigan.ai")
-        gen1 = registry._current_generation()
-        registry.add_email("james", "james2@eigan.ai")
-        gen2 = registry._current_generation()
-        registry.link_did("james", "did:key:zAbc123")
-        gen3 = registry._current_generation()
-        registry.unlink_did("james", "did:key:zAbc123")
-        gen4 = registry._current_generation()
+        registry.get_by_did("did:key:zAbc123")  # caches negative
 
-        assert gen0 < gen1 < gen2 < gen3 < gen4
+        registry.create("sarah", "sarah@eigan.ai")
+        registry.add_email("sarah", "sarah2@eigan.ai")
+
+        cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
+        assert cache_hit is True
+        assert owner is None
 
 
 class TestNegativeCacheGating:

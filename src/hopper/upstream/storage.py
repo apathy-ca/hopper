@@ -208,18 +208,33 @@ class DIDRegistry:
     def is_admin(self, did: str) -> bool:
         return self._admin_did == did
 
-    def has_record(self, did: str) -> bool:
-        """Whether this DID has ever been seen by the server at all — a
-        per-DID record exists somewhere, regardless of namespace or
-        status (admin counts too, trivially).
+    def is_established(self, did: str) -> bool:
+        """Whether this DID has ever actually been granted access
+        somewhere — APPROVED or APPROVER on at least one namespace, or
+        admin — as opposed to merely having *asked* once.
 
-        Used to gate OwnerRegistry.get_by_did's negative-cache writes: a
-        DID with no record yet is indistinguishable from one freshly
-        generated for a single throwaway request (any Ed25519 keypair
-        signs a valid request — no registration needed to mint one), so
-        it shouldn't earn a permanent cache file just for asking once.
+        Deliberately stronger than "has any record at all": a plain
+        PENDING record costs an attacker nothing (one signed request
+        against any endpoint self-registers it — see register_or_get) and
+        an earlier version of this gate used exactly that weaker test, so
+        a synthetic DID could satisfy it for free with one throwaway call
+        before the one that actually plants a cache file, merely doubling
+        the attacker's request cost rather than bounding it at all.
+        APPROVED/APPROVER status cannot be self-granted — it only exists
+        because a real admin or approver, or a real invite token minted
+        by one, put it there — so this can't be satisfied by spamming
+        signed requests alone.
+
+        Checked against the in-memory ``_registry`` (already resident,
+        no disk read) rather than the per-DID file ``has_record`` used to
+        read — this is called on every ``/sync``, the hottest endpoint,
+        so an unconditional extra file read per call for a value that's
+        usually unchanged from the last call was worth avoiding.
         """
-        return self.is_admin(did) or self._load_record(did) is not None
+        if self.is_admin(did):
+            return True
+        authorized = {DIDStatus.APPROVED, DIDStatus.APPROVER}
+        return any(did in dids and dids[did] in authorized for dids in self._registry.values())
 
     def _is_directly_authorized(self, key: str, namespace: str) -> bool:
         """Original DID-only authorization check — also reused for owner
@@ -694,7 +709,6 @@ class OwnerRegistry:
         self.did_index_dir = self.owners_dir / "did_index"
         self.did_index_dir.mkdir(parents=True, exist_ok=True)
         self.lock_path = self.owners_dir / ".lock"
-        self.generation_path = self.owners_dir / ".generation"
 
     def _lock(self):
         return _file_lock(self.lock_path)
@@ -707,47 +721,13 @@ class OwnerRegistry:
         did_hash = hashlib.sha256(did.encode()).hexdigest()[:16]
         return self.did_index_dir / f"{did_hash}.json"
 
-    def _current_generation(self) -> int:
-        try:
-            return int(self.generation_path.read_text())
-        except (OSError, ValueError):
-            return 0
-
-    def _bump_generation(self) -> int:
-        """Advance and persist the generation counter. Call this — while
-        holding the lock — *before* the owner-file write it's guarding,
-        not after: a negative-cache reader (unlocked, by design — see
-        ``_get_by_did_fast``) can observe file writes out of program order
-        relative to each other, so the only way to guarantee "if you can
-        see the new owner data, you can also see the bumped generation" is
-        to make the generation write happen-before the owner write in
-        real time, not just in this function's call sequence.
-        """
-        new_generation = self._current_generation() + 1
-        self.generation_path.write_text(str(new_generation))
-        return new_generation
-
-    def _write_did_pointer(
-        self, did: str, owner_id: str | None, generation: int | None = None
-    ) -> None:
+    def _write_did_pointer(self, did: str, owner_id: str | None) -> None:
         """``owner_id=None`` writes an explicit *negative* cache entry —
         "as of this write, this DID is confirmed linked to no one" — not a
         missing/absent pointer. See ``_get_by_did_fast``'s docstring for
-        why the distinction matters.
-
-        ``generation`` (negative entries only) stamps the owner-registry
-        generation this negative result is valid as of — see
-        ``_bump_generation``'s docstring. Positive entries don't need it;
-        they're already re-verified against the specific owner record on
-        every read.
-        """
-        payload: dict[str, str | int | None] = {"owner_id": owner_id}
-        if owner_id is None:
-            payload["generation"] = (
-                generation if generation is not None else self._current_generation()
-            )
+        why the distinction matters."""
         with open(self._did_index_path(did), "w") as f:
-            json.dump(payload, f)
+            json.dump({"owner_id": owner_id}, f)
 
     def _save_owner(self, owner: Owner) -> None:
         with open(self._owner_path(owner.id), "w") as f:
@@ -798,41 +778,33 @@ class OwnerRegistry:
 
         Returns ``(cache_hit, owner)``. ``cache_hit=True`` means no scan is
         needed — either a verified positive hit (``owner`` set) or a
-        *still-fresh* negative cache entry (``owner=None``, meaning
-        "confirmed unlinked as of the last lookup/link/unlink, and nothing
-        in the owner registry has changed since"). ``cache_hit=False``
-        means there's no usable entry — never looked up before, a stale
-        positive pointer that failed verification, or a negative entry
-        whose generation is behind the registry's current one — and the
-        caller must fall through to a (locked) scan.
+        negative cache entry (``owner=None``, meaning "confirmed unlinked
+        as of the last lookup/link/unlink"). ``cache_hit=False`` means
+        there's no usable entry — never looked up before, or a stale
+        positive pointer that failed verification — and the caller must
+        fall through to a (locked) scan.
 
-        The generation check on negative entries closes a real race a
-        plain "trust it forever" negative cache would have that a
-        positive entry's per-read re-verification doesn't: link_did
-        writes the owner file, *then* the pointer, both while holding the
-        lock — but this fast path is deliberately unlocked, so a reader
-        can land in the gap between those two writes and see "owner file
-        already says linked" together with "pointer file still says
-        unlinked" from before. A positive entry re-checks against its
-        specific owner record every time and self-corrects; a negative
-        entry has no single record to re-check against, so instead it's
-        stamped with the registry-wide generation at write time — any
-        mutation bumps that counter *before* touching the owner file (see
-        ``_bump_generation``), so a reader who can see the new owner data
-        is guaranteed to also see a newer generation, correctly treating
-        the stale negative entry as a miss instead of trusting it.
+        A negative entry has no single owner record to re-verify against
+        the way a positive one does, so its safety comes from write
+        discipline instead: ``link_did`` deletes this exact DID's pointer
+        file *before* touching the owner file (see its comment), so the
+        only states a reader can ever observe here are "no pointer at
+        all" (correctly a cache miss, whatever the owner file currently
+        says) or "a pointer that already reflects the current owner
+        file" — never a negative entry sitting stale next to owner data
+        that's already moved on. That's scoped to exactly the one DID
+        being linked, unlike a shared generation counter, which an
+        earlier version of this used and which invalidated every DID's
+        negative entry on every mutation, not just the affected one's.
         """
         pointer_path = self._did_index_path(did)
         if not pointer_path.exists():
             return False, None
         try:
             with open(pointer_path) as f:
-                data = json.load(f)
-            owner_id = data.get("owner_id")
+                owner_id = json.load(f).get("owner_id")
             if owner_id is None:
-                if data.get("generation") == self._current_generation():
-                    return True, None  # confirmed negative, still fresh
-                return False, None  # something changed since — recheck
+                return True, None  # confirmed negative cache entry
             owner = self.get(owner_id)
             if owner is not None and did in owner.linked_dids:
                 return True, owner
@@ -859,7 +831,7 @@ class OwnerRegistry:
                 self._write_did_pointer(did, owner.id)  # heal for next time
                 return owner
         if cache_negative:
-            self._write_did_pointer(did, None, generation=self._current_generation())
+            self._write_did_pointer(did, None)
         return None
 
     def get_by_did(self, did: str, cache_negative: bool = True) -> Owner | None:
@@ -896,9 +868,9 @@ class OwnerRegistry:
         pointer (a crash mid-write, or data from before this cache
         existed) falls through to a full scan and self-heals — never
         returns a wrong answer, worst case is one slow lookup. A negative
-        hit is additionally checked against the owner-registry generation
-        counter before being trusted — see ``_get_by_did_fast``'s
-        docstring for the race that guards against.
+        hit's safety comes from ``link_did``'s write ordering instead —
+        see ``_get_by_did_fast``'s docstring for the race that guards
+        against.
 
         The fallback scan-and-heal runs under the same lock link_did/
         unlink_did use. Without it, a concurrent unlocked scan could read
@@ -955,7 +927,6 @@ class OwnerRegistry:
             owner = Owner(
                 id=owner_id, created_at=now, primary_email=primary_email, emails=[primary_email]
             )
-            self._bump_generation()  # before the write — see its docstring
             self._save_owner(owner)
             return owner, "created"
 
@@ -971,7 +942,6 @@ class OwnerRegistry:
                 return False, f"email already linked to a different owner '{existing.id}'"
 
             owner.emails.append(email)
-            self._bump_generation()  # before the write — see its docstring
             self._save_owner(owner)
             return True, f"added {email} to '{owner_id}'"
 
@@ -997,8 +967,20 @@ class OwnerRegistry:
             if did in owner.linked_dids:
                 return False, f"DID already linked to '{owner_id}'"
 
+            # Drop any pointer for this exact DID *before* mutating the
+            # owner file — if it was a negative entry, that entry is
+            # about to become wrong. Deleting it first (rather than
+            # overwriting it after, as the positive write below already
+            # does) means a reader landing in the gap between this line
+            # and the owner-file write below finds no pointer at all —
+            # correctly a cache miss, which falls through to the locked
+            # scan and waits for this operation to finish — instead of a
+            # stale negative entry sitting next to owner data that's
+            # already moved on. Scoped to exactly this one DID; see
+            # _get_by_did_fast's docstring for why that's better than the
+            # shared generation counter an earlier version of this used.
+            self._did_index_path(did).unlink(missing_ok=True)
             owner.linked_dids.append(did)
-            self._bump_generation()  # before the write — see its docstring
             self._save_owner(owner)
             self._write_did_pointer(did, owner_id)
             return True, f"linked {did} to '{owner_id}'"
@@ -1012,14 +994,16 @@ class OwnerRegistry:
                 return False, f"DID not linked to '{owner_id}'"
 
             owner.linked_dids.remove(did)
-            self._bump_generation()  # before the write — see its docstring
             self._save_owner(owner)
             # Negative cache entry, not a delete — the DID is now
             # confirmed unlinked, so the *next* lookup should be the fast
             # path too, not fall through to a scan just because there's no
-            # pointer file at all (see get_by_did's docstring). Written
-            # after the bump, so it's correctly stamped with the new
-            # generation, not the one it just invalidated.
+            # pointer file at all (see get_by_did's docstring). No race to
+            # guard here the way link_did has: a stale *positive* pointer
+            # left over from before this unlink already re-verifies
+            # against the owner record on every read and self-corrects
+            # (did no longer in linked_dids), so there's no window where
+            # trusting the old pointer would give a wrong answer.
             self._write_did_pointer(did, None)
             return True, f"unlinked {did} from '{owner_id}'"
 

@@ -131,25 +131,46 @@ async def verify_did_auth(
     return did
 
 
-def _resolve_owner_and_orgs(
-    storage: UpstreamStorage, did: str, cache_negative: bool = True
-) -> tuple[str | None, list[str]]:
+def _resolve_owner_and_orgs(storage: UpstreamStorage, did: str) -> tuple[str | None, list[str]]:
     """(owner_id, org_ids) for a DID's grant fallthrough — the DID's linked
-    owner, if any, and every org that owner is a member of. Used at every
-    authority call site (sync, approve, revoke, invite create/redeem/list)
-    so a DID that's only authorized *via* an owner or org grant — not
-    directly — is actually recognized as authorized everywhere, not just
-    in the sync path this was first wired into.
+    owner, if any, and every org that owner is a member of.
 
-    ``cache_negative`` passes straight through to
-    ``OwnerRegistry.get_by_did`` — see that method's docstring. Defaults
-    to True for the admin/approver-authenticated call sites where an
-    unbounded number of permanent negative-cache files isn't a realistic
-    concern; sync() is the one call site any freshly-signed, never-
-    approved key can reach for free, so it passes False until the DID has
-    some other reason to be considered established.
+    This is the *only* place server.py should ever call
+    ``OwnerRegistry.get_by_did`` — every endpoint that needs to know a
+    caller's (or an invite issuer's) owner/orgs, authenticated or not,
+    goes through here, including ones that only want the owner and
+    discard org_ids (``/me``, ``get_org``, ``org_instances``,
+    ``invite_redeem``'s issuer check). That's deliberate, not just reuse:
+    whether a lookup is allowed to write a permanent negative-cache file
+    (``OwnerRegistry.get_by_did``'s ``cache_negative``) is decided *here*,
+    automatically, from ``DIDRegistry.is_established`` — never as a
+    parameter a caller opts into.
+
+    An earlier version made ``cache_negative`` a caller-supplied
+    parameter and wired it correctly into exactly one call site
+    (``sync()``); every other endpoint that resolves a caller's owner
+    before its own authorization check succeeds — which turned out to be
+    most of them, including ones that don't call this helper's sibling at
+    all, like ``/me`` — kept defaulting to caching negatives regardless.
+    Same pre-auth disk-exhaustion path, seven other doors. A per-call-site
+    opt-in is the wrong shape for a security-relevant default: it only
+    takes one new (or overlooked existing) call site defaulting the wrong
+    way to reopen it. Computing it once, here, closes all of them by
+    construction — a new endpoint gets the correct behavior automatically
+    just by calling this function, with no decision left to get wrong.
+
+    A still-earlier version gated this on merely *having a record*
+    (including PENDING), which register_or_get hands out to any signed
+    request for free — an attacker just paid one extra throwaway request
+    per synthetic DID to satisfy that gate before the one that actually
+    plants a cache file, doubling the cost without bounding it.
+    ``is_established`` requires APPROVED/APPROVER status instead, which
+    only a real admin/approver action (or a real invite token one of them
+    minted) can produce — not self-service, so not spammable.
     """
-    owner = storage.owner_registry.get_by_did(did, cache_negative=cache_negative)
+    owner = storage.owner_registry.get_by_did(
+        did, cache_negative=storage.did_registry.is_established(did)
+    )
     if owner is None:
         return None, []
     org_ids = [o.id for o in storage.org_registry.orgs_for_owner(owner.id)]
@@ -181,22 +202,10 @@ async def sync(
     # Phase B/E: resolve the caller's linked owner and that owner's orgs, if
     # any — a DID with no direct grant for this namespace can still be
     # authorized through its owner's grant, or an org that owner belongs to.
-    #
-    # cache_negative is gated on the DID already being an established
-    # registry entry (has a DIDRegistry record from a prior call, or is
-    # admin). Without this, a caller mints a fresh did:key, signs one
-    # /sync call with it, and plants a permanent negative-cache file under
-    # owners/did_index/ for free, with zero authorization — this is the
-    # one call site reachable by any signed-but-never-approved key before
-    # any admission check runs, so looped it's an unbounded disk-
-    # exhaustion vector against a server exposed to the internet. A
-    # returning DID (one that's already gone through register_or_get at
-    # least once, even just to land PENDING) has already paid the same
-    # one-file cost DIDRegistry always charged for a first contact, so
-    # letting it also earn the did_index/ speedup adds no new attack
-    # surface beyond what already existed.
-    already_established = storage.did_registry.has_record(did)
-    owner_id, org_ids = _resolve_owner_and_orgs(storage, did, cache_negative=already_established)
+    # (_resolve_owner_and_orgs itself decides whether this lookup may cache
+    # a negative result — see its docstring; this is the pre-auth-reachable
+    # call site that made that matter in the first place.)
+    owner_id, org_ids = _resolve_owner_and_orgs(storage, did)
 
     # Register DID for this namespace if new, check authorization
     status, is_new = storage.did_registry.register_or_get(
@@ -286,12 +295,16 @@ async def whoami_me(
 
     Exists so a device can discover its own linked owner without already
     knowing the owner id — the missing piece ``hopper init``'s
-    instance-discovery picker (Phase D) needs.
+    instance-discovery picker (Phase D) needs. Routed through
+    ``_resolve_owner_and_orgs`` (org_ids discarded) rather than calling
+    ``OwnerRegistry.get_by_did`` directly — this endpoint is explicitly
+    reachable by any signed key with no authority at all, exactly the
+    case that resolution function's negative-cache gating exists for.
     """
-    owner = storage.owner_registry.get_by_did(did)
+    owner_id, _ = _resolve_owner_and_orgs(storage, did)
     return MeResponse(
         did=did,
-        owner_id=owner.id if owner else None,
+        owner_id=owner_id,
         is_admin=storage.did_registry.is_admin(did),
     )
 
@@ -739,8 +752,8 @@ async def get_org(
     if org is None:
         raise HTTPException(status_code=404, detail=f"org '{org_id}' not found")
 
-    caller_owner = storage.owner_registry.get_by_did(did)
-    is_member = caller_owner is not None and caller_owner.id in org.member_owner_ids
+    caller_owner_id, _ = _resolve_owner_and_orgs(storage, did)
+    is_member = caller_owner_id is not None and caller_owner_id in org.member_owner_ids
     if not (storage.did_registry.is_admin(did) or is_member):
         raise HTTPException(status_code=403, detail="not authorized to view this org")
     return OrgResponse(success=True, message="found", org=_org_info(org))
@@ -812,8 +825,8 @@ async def org_instances(
     if target_org is None:
         raise HTTPException(status_code=404, detail=f"org '{org_id}' not found")
 
-    caller_owner = storage.owner_registry.get_by_did(did)
-    is_member = caller_owner is not None and caller_owner.id in target_org.member_owner_ids
+    caller_owner_id, _ = _resolve_owner_and_orgs(storage, did)
+    is_member = caller_owner_id is not None and caller_owner_id in target_org.member_owner_ids
     if not (storage.did_registry.is_admin(did) or is_member):
         raise HTTPException(status_code=403, detail="not authorized to view this org")
 
@@ -1030,8 +1043,8 @@ async def invite_redeem(
                     ),
                 )
     elif invite_preview.kind == InviteKind.DEVICE:
-        issuer_owner = storage.owner_registry.get_by_did(issuer)
-        still_linked = issuer_owner is not None and issuer_owner.id == invite_preview.owner_id
+        issuer_owner_id, _ = _resolve_owner_and_orgs(storage, issuer)
+        still_linked = issuer_owner_id is not None and issuer_owner_id == invite_preview.owner_id
         if not reg.is_admin(issuer) and not still_linked:
             raise HTTPException(status_code=403, detail="issuer is no longer linked to this owner")
     elif invite_preview.kind == InviteKind.NEW_OWNER:

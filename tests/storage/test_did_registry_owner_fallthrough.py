@@ -291,37 +291,80 @@ class TestApproveRevokeActorFallthrough:
         assert registry.is_authorized(BOB, "rosetta") is False
 
 
-class TestHasRecord:
-    """has_record gates OwnerRegistry's negative-cache writes (round-4
+class TestIsEstablished:
+    """is_established gates OwnerRegistry's negative-cache writes (round-4
     finding: server.py's sync() must only let a DID earn a permanent
-    did_index/ file once it's an established registry entry, not on its
-    very first, possibly-throwaway contact)."""
+    did_index/ file once it's genuinely established, not on its very
+    first, possibly-throwaway contact).
 
-    def test_admin_has_a_record(self, registry: DIDRegistry) -> None:
+    round-5 tightened this from "has any record at all" (including
+    PENDING) to "has actually been APPROVED/APPROVER somewhere" —
+    PENDING is what register_or_get hands out to any signed request for
+    free, so gating on mere record-existence only doubled an attacker's
+    per-DID cost (one throwaway call to go PENDING, then the real one)
+    rather than bounding it. APPROVED/APPROVER can't be self-granted.
+    """
+
+    def test_admin_is_established(self, registry: DIDRegistry) -> None:
         _bootstrap_admin(registry)
-        assert registry.has_record(ADMIN) is True
+        assert registry.is_established(ADMIN) is True
 
-    def test_never_seen_did_has_no_record(self, registry: DIDRegistry) -> None:
+    def test_never_seen_did_is_not_established(self, registry: DIDRegistry) -> None:
         _bootstrap_admin(registry)
-        assert registry.has_record(ALICE) is False
+        assert registry.is_established(ALICE) is False
 
-    def test_did_registered_pending_now_has_a_record(self, registry: DIDRegistry) -> None:
+    def test_pending_registration_alone_is_not_established(self, registry: DIDRegistry) -> None:
+        """The exact gap the round-5 finding identified: landing PENDING
+        is free for anyone who can sign a request — it must not be
+        enough on its own to earn negative-cache-write privilege."""
         _bootstrap_admin(registry)
         registry.register_or_get(ALICE, "eigan")
 
-        assert registry.has_record(ALICE) is True
+        assert registry.get_status(ALICE, "eigan") == DIDStatus.PENDING
+        assert registry.is_established(ALICE) is False
 
-    def test_did_authorized_only_via_owner_shortcut_still_has_no_record(
+    def test_approved_did_is_established(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+
+        assert registry.is_established(ALICE) is True
+
+    def test_approver_did_is_established(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        assert registry.is_established(ALICE) is True
+
+    def test_approved_on_one_namespace_counts_even_if_pending_on_another(
+        self, registry: DIDRegistry
+    ) -> None:
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "waypoint")  # lands PENDING here
+        registry.approve(ALICE, "eigan", by_did=ADMIN)  # but APPROVED here
+
+        assert registry.is_established(ALICE) is True
+
+    def test_revoked_did_is_no_longer_established(self, registry: DIDRegistry) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+        assert registry.is_established(ALICE) is True
+
+        registry.revoke(ALICE, "eigan", by_did=ADMIN)
+
+        assert registry.is_established(ALICE) is False
+
+    def test_did_authorized_only_via_owner_shortcut_is_not_established(
         self, registry: DIDRegistry
     ) -> None:
         """register_or_get's owner/org shortcut deliberately writes
         nothing for the DID itself (see its own docstring) — so a DID
         that's only ever been resolved through an owner/org grant, never
-        landing PENDING, correctly still reads as 'not established' here.
+        landing an APPROVED status of its own, correctly still reads as
+        'not established' here.
         """
         _bootstrap_admin(registry)
         registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
 
         registry.register_or_get(ALICE, "eigan", owner_id="james")
 
-        assert registry.has_record(ALICE) is False
+        assert registry.is_established(ALICE) is False
