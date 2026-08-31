@@ -224,10 +224,11 @@ class TestListAll:
 
         assert first_call == second_call
 
-    def test_list_all_does_not_include_the_index_file_as_an_owner(
+    def test_list_all_does_not_pick_up_the_did_index_directory(
         self, registry: OwnerRegistry
     ) -> None:
         registry.create("james", "james@eigan.ai")
+        registry.link_did("james", "did:key:zAbc123")  # writes a did_index/*.json file too
 
         owners = registry.list_all()
 
@@ -238,3 +239,61 @@ class TestListAll:
 class TestGet:
     def test_get_unknown_owner_returns_none(self, registry: OwnerRegistry) -> None:
         assert registry.get("nobody") is None
+
+
+class TestGetByDidSelfHealing:
+    """get_by_did's fast path is a cache (did_index/{hash}.json), not the
+    source of truth. These lock down that a stale or missing pointer never
+    produces a wrong answer — only, at worst, one slower lookup."""
+
+    def test_missing_pointer_falls_back_to_scan_and_heals(self, registry: OwnerRegistry) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.link_did("james", "did:key:zAbc123")
+        # Simulate data written before the did_index cache existed.
+        registry._did_index_path("did:key:zAbc123").unlink()
+
+        found = registry.get_by_did("did:key:zAbc123")
+
+        assert found is not None
+        assert found.id == "james"
+        # Healed — the next lookup should hit the fast path.
+        assert registry._did_index_path("did:key:zAbc123").exists()
+
+    def test_stale_pointer_pointing_at_wrong_owner_falls_back_and_heals(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.create("sarah", "sarah@eigan.ai")
+        registry.link_did("sarah", "did:key:zAbc123")
+        # Corrupt the pointer to claim it belongs to james instead.
+        import json
+
+        registry._did_index_path("did:key:zAbc123").write_text(json.dumps({"owner_id": "james"}))
+
+        found = registry.get_by_did("did:key:zAbc123")
+
+        assert found is not None
+        assert found.id == "sarah"  # the real owner, not the stale pointer's claim
+
+    def test_pointer_for_a_did_that_was_unlinked_is_removed_by_scan_fallback(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.link_did("james", "did:key:zAbc123")
+        pointer_path = registry._did_index_path("did:key:zAbc123")
+        assert pointer_path.exists()
+
+        registry.unlink_did("james", "did:key:zAbc123")
+
+        assert not pointer_path.exists()
+        assert registry.get_by_did("did:key:zAbc123") is None
+
+    def test_corrupt_pointer_file_falls_back_to_scan(self, registry: OwnerRegistry) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.link_did("james", "did:key:zAbc123")
+        registry._did_index_path("did:key:zAbc123").write_text("not valid json{{{")
+
+        found = registry.get_by_did("did:key:zAbc123")
+
+        assert found is not None
+        assert found.id == "james"

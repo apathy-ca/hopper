@@ -78,13 +78,9 @@ class TestDiscoveryMocked:
     covers the picker/refusal logic in isolation from real DID/server
     plumbing."""
 
-    def _patch_discovery(
-        self, monkeypatch: pytest.MonkeyPatch, return_value
-    ) -> MagicMock:
+    def _patch_discovery(self, monkeypatch: pytest.MonkeyPatch, return_value) -> MagicMock:
         mock = MagicMock(return_value=return_value)
-        monkeypatch.setattr(
-            "hopper.cli.commands.config._discover_reachable_instances", mock
-        )
+        monkeypatch.setattr("hopper.cli.commands.config._discover_reachable_instances", mock)
         return mock
 
     def test_discovery_none_falls_back_to_directory_name(
@@ -161,9 +157,7 @@ class TestDiscoveryMocked:
     ) -> None:
         self._patch_discovery(monkeypatch, (["eigan", "waypoint"], False, False))
 
-        result = runner.invoke(
-            cli, ["init", "--no-knowledge"], input="1\n", catch_exceptions=False
-        )
+        result = runner.invoke(cli, ["init", "--no-knowledge"], input="1\n", catch_exceptions=False)
 
         assert result.exit_code == 0
         assert _instance_name(project_dir) == "eigan"
@@ -174,9 +168,7 @@ class TestDiscoveryMocked:
         self._patch_discovery(monkeypatch, (["eigan"], False, False))
 
         # Candidate 1 is "eigan"; option 2 is "create new: myproject".
-        result = runner.invoke(
-            cli, ["init", "--no-knowledge"], input="2\n", catch_exceptions=False
-        )
+        result = runner.invoke(cli, ["init", "--no-knowledge"], input="2\n", catch_exceptions=False)
 
         assert result.exit_code == 0
         assert _instance_name(project_dir) == "myproject"
@@ -190,9 +182,7 @@ class TestDiscoveryMocked:
         choice of someone else's data."""
         self._patch_discovery(monkeypatch, (["eigan"], False, False))
 
-        result = runner.invoke(
-            cli, ["init", "--no-knowledge"], input="\n", catch_exceptions=False
-        )
+        result = runner.invoke(cli, ["init", "--no-knowledge"], input="\n", catch_exceptions=False)
 
         assert result.exit_code == 0
         assert _instance_name(project_dir) == "myproject"

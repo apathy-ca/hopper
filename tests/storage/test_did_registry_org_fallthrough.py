@@ -55,9 +55,7 @@ class TestOrgFallthrough:
         _bootstrap_admin(registry)
         registry.approve(org_key("second-org"), "rosetta", by_did=ADMIN)
 
-        assert (
-            registry.is_authorized(ALICE, "rosetta", org_ids=["first-org", "second-org"]) is True
-        )
+        assert registry.is_authorized(ALICE, "rosetta", org_ids=["first-org", "second-org"]) is True
 
     def test_owner_grant_checked_before_org_fallthrough(self, registry: DIDRegistry) -> None:
         """Resolution order: DID direct -> owner -> org. An owner grant

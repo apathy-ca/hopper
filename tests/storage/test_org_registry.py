@@ -140,9 +140,7 @@ class TestListAll:
 
         assert {o.id for o in registry.list_all()} == {"eigan", "rosetta"}
 
-    def test_order_is_deterministic_even_when_created_at_ties(
-        self, registry: OrgRegistry
-    ) -> None:
+    def test_order_is_deterministic_even_when_created_at_ties(self, registry: OrgRegistry) -> None:
         registry.create("zed", "Zed")
         registry.create("amy", "Amy")
 

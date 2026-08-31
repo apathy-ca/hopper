@@ -62,36 +62,43 @@ class UpstreamClient:
         method: str,
         path: str,
         body: dict | None = None,
+        params: dict[str, str] | None = None,
     ) -> httpx.Response:
-        """Make a signed HTTP request."""
-        url = f"{self.server_url}{path}"
+        """Make a signed HTTP request.
 
+        ``params`` (for a query string, GET requests) are handed to httpx
+        directly rather than baked into ``path`` as a hand-built f-string.
+        The signature is computed over ``request.url.raw_path`` — the
+        exact percent-encoded path+query httpx is actually about to put on
+        the wire — instead of over the pre-encoding string. Signing an
+        unescaped value (a space, ``&``, ``#``, non-ASCII) that httpx then
+        percent-encodes differently on send used to produce a signature
+        that legitimately didn't match what the server received, a
+        spurious 401 on an otherwise valid, authorized request.
+        """
         # Serialize body consistently (must match sign_request)
         if body is not None:
             body_bytes = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
         else:
             body_bytes = b""
 
-        # Sign the request
-        auth_header = sign_request(
-            did_key=self.did_key,
-            method=method,
-            path=path,
-            body=body_bytes,
-        )
-
-        headers = {
-            "Authorization": auth_header,
-            "Content-Type": "application/json",
-        }
-
         with httpx.Client(timeout=self.timeout) as client:
-            if method == "GET":
-                response = client.get(url, headers=headers)
-            elif method == "POST":
-                response = client.post(url, headers=headers, content=body_bytes)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
+            request = client.build_request(
+                method,
+                f"{self.server_url}{path}",
+                params=params,
+                content=body_bytes or None,
+            )
+            signed_path = request.url.raw_path.decode("ascii")
+            auth_header = sign_request(
+                did_key=self.did_key,
+                method=method,
+                path=signed_path,
+                body=body_bytes,
+            )
+            request.headers["Authorization"] = auth_header
+            request.headers["Content-Type"] = "application/json"
+            response = client.send(request)
 
         return response
 
@@ -165,8 +172,8 @@ class UpstreamClient:
     def list_dids(self, namespace: str | None = None) -> dict:
         """List all registered DIDs, optionally filtered to a namespace."""
         try:
-            path = f"/admin/dids?namespace={namespace}" if namespace else "/admin/dids"
-            response = self._make_request("GET", path)
+            params = {"namespace": namespace} if namespace else None
+            response = self._make_request("GET", "/admin/dids", params=params)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -181,8 +188,8 @@ class UpstreamClient:
     def list_pending(self, namespace: str | None = None) -> dict:
         """List pending DIDs awaiting approval. Requires admin."""
         try:
-            path = f"/admin/pending?namespace={namespace}" if namespace else "/admin/pending"
-            response = self._make_request("GET", path)
+            params = {"namespace": namespace} if namespace else None
+            response = self._make_request("GET", "/admin/pending", params=params)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -319,8 +326,8 @@ class UpstreamClient:
     def list_invites(self, namespace: str | None = None) -> dict:
         """List invites. Admin sees all; approvers see invites for their namespaces."""
         try:
-            path = f"/invite/list?namespace={namespace}" if namespace else "/invite/list"
-            response = self._make_request("GET", path)
+            params = {"namespace": namespace} if namespace else None
+            response = self._make_request("GET", "/invite/list", params=params)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -458,9 +465,7 @@ class UpstreamClient:
     def create_org(self, org_id: str, name: str = "") -> dict:
         """Create a new org. Admin only."""
         try:
-            response = self._make_request(
-                "POST", "/admin/orgs", body={"id": org_id, "name": name}
-            )
+            response = self._make_request("POST", "/admin/orgs", body={"id": org_id, "name": name})
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -580,16 +585,14 @@ class UpstreamClient:
         DID (Phase B). Self-service for the owner's own DIDs; admin can
         query any owner."""
         try:
-            response = self._make_request("GET", f"/admin/instances?owner={owner_id}")
+            response = self._make_request("GET", "/admin/instances", params={"owner": owner_id})
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(
-                    e.response.json().get("detail", "not authorized")
-                ) from e
+                raise NotAdminError(e.response.json().get("detail", "not authorized")) from e
             if e.response.status_code == 404:
                 raise UpstreamError(e.response.json().get("detail", "owner not found")) from e
             raise UpstreamError(f"Failed to get owner instances: {e.response.status_code}") from e

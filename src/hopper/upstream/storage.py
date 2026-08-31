@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -232,9 +233,7 @@ class DIDRegistry:
         """
         if self._is_directly_authorized(did, namespace):
             return True
-        if owner_id is not None and self._is_directly_authorized(
-            owner_key(owner_id), namespace
-        ):
+        if owner_id is not None and self._is_directly_authorized(owner_key(owner_id), namespace):
             return True
         for org_id in org_ids or []:
             if self._is_directly_authorized(org_key(org_id), namespace):
@@ -372,16 +371,21 @@ class DIDRegistry:
         namespace: str,
         by_did: str,
         role: DIDStatus = DIDStatus.APPROVED,
+        by_owner_id: str | None = None,
+        by_org_ids: list[str] | None = None,
     ) -> tuple[bool, str]:
-        """Approve a DID — or (Phase B) an ``owner:<id>`` key — for a
-        namespace at a given role.
+        """Approve a DID — or (Phase B) an ``owner:<id>`` key, or (Phase E)
+        an ``org:<id>`` key — for a namespace at a given role.
 
         Authority:
         - Admin may set any role, any namespace (including '*').
-        - Approver may set role=APPROVED on their specific namespace only.
+        - Approver may set role=APPROVED on their specific namespace only —
+          including a DID that's only an approver *via* its linked owner
+          or org (``by_owner_id``/``by_org_ids``, resolved by the caller
+          the same way ``is_authorized``'s fallthrough is).
 
-        Approving an owner key grants every DID currently *and future*
-        linked to that owner, without touching any of them individually.
+        Approving an owner or org key grants every DID currently *and
+        future* linked to it, without touching any of them individually.
         """
         if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
             return False, f"invalid role: {role}"
@@ -394,7 +398,7 @@ class DIDRegistry:
                 return False, "only admin can grant approver role"
             if namespace == GLOBAL_NS:
                 return False, "only admin can approve across all namespaces"
-            if not self.is_approver(by_did, namespace):
+            if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
                 return False, f"not authorized to approve for namespace '{namespace}'"
 
         self.set_status(target, namespace, role, by_did)
@@ -402,12 +406,20 @@ class DIDRegistry:
         label = "approver on" if role == DIDStatus.APPROVER else "approved for"
         return True, f"{label} {scope}"
 
-    def revoke(self, target: str, namespace: str, by_did: str) -> tuple[bool, str]:
-        """Revoke a DID's — or (Phase B) an owner's — access to a namespace
-        (or all if namespace == '*').
+    def revoke(
+        self,
+        target: str,
+        namespace: str,
+        by_did: str,
+        by_owner_id: str | None = None,
+        by_org_ids: list[str] | None = None,
+    ) -> tuple[bool, str]:
+        """Revoke a DID's — or (Phase B) an owner's, or (Phase E) an org's —
+        access to a namespace (or all if namespace == '*').
 
-        Admin can revoke anyone. Approver can revoke only APPROVED members of
-        their specific namespace (never another approver or admin).
+        Admin can revoke anyone. Approver (direct, or via owner/org
+        fallthrough — same as ``approve``) can revoke only APPROVED members
+        of their specific namespace (never another approver or admin).
         """
         if self.is_admin(target):
             return False, "cannot revoke admin DID"
@@ -416,7 +428,7 @@ class DIDRegistry:
         if not by_is_admin:
             if namespace == GLOBAL_NS:
                 return False, "only admin can revoke across all namespaces"
-            if not self.is_approver(by_did, namespace):
+            if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
                 return False, f"not authorized to revoke for namespace '{namespace}'"
             target_status = self._registry.get(namespace, {}).get(target)
             if target_status != DIDStatus.APPROVED:
@@ -509,47 +521,88 @@ class Owner:
     linked_dids: list[str] = field(default_factory=list)
 
 
+@contextmanager
+def _file_lock(lock_path: Path):
+    """Cross-process exclusive lock via flock, guarding a read-modify-write
+    critical section against concurrent workers.
+
+    ``hopper server start --workers N>1`` is a supported flag that spawns
+    separate OS processes sharing this ``storage_path`` with no other
+    coordination between them — without this, two concurrent mutations of
+    the same owner/org file race: both read the current state, both mutate
+    their own in-memory copy, second write wins, the first mutation is
+    silently lost even though its caller was told it succeeded.
+
+    POSIX-only (``fcntl``), imported lazily inside this function rather
+    than at module scope — this module is imported by client-side CLI code
+    too (for the pure string helpers like ``owner_key``), and merely
+    importing it should not require ``fcntl`` to exist. Only actually
+    calling a mutating registry method (server-side only, in practice)
+    needs it.
+    """
+    import fcntl
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 @dataclass
 class OwnerRegistry:
-    """Registry of owners — one JSON file per owner, plus an email index.
+    """Registry of owners — one JSON file per owner.
 
     Directory structure:
         storage_path/
         └── owners/
-            ├── index.json        # email -> owner_id
+            ├── .lock                  # flock guard for mutations
+            ├── did_index/
+            │   └── {did_hash}.json    # {"owner_id": ...} — O(1) cache for
+            │                          # get_by_did, self-healing against
+            │                          # the owner file it points to
             └── {owner_id_hash}.json
 
     Phase A only: pure CRUD, no authorization behavior. A DID linking to an
     owner does not yet change what that DID can access — grant resolution
     falling through owner -> DID is Phase B (``DIDRegistry.is_authorized``).
+
+    No separate email index: ``get_by_email`` scans, same as ``get_by_did``
+    originally did — owners are created rarely, this isn't a hot path, and
+    a scan means there is exactly one file written per email/owner
+    mutation (the owner file itself), so there's no second index file that
+    can desync from it on a crash between writes. ``get_by_did`` *is* a hot
+    path — called on every ``/sync`` request, including for the common
+    case of a DID never linked to any owner — so it gets the did_index
+    fast path below instead; that index is a self-healing cache, not a
+    second source of truth, so it doesn't reintroduce the same risk.
     """
 
     storage_path: Path
-    _email_index: dict[str, str] = field(default_factory=dict)  # email -> owner_id
 
     def __post_init__(self) -> None:
         self.owners_dir = self.storage_path / "owners"
         self.owners_dir.mkdir(parents=True, exist_ok=True)
-        self.index_path = self.owners_dir / "index.json"
-        self._load_index()
+        self.did_index_dir = self.owners_dir / "did_index"
+        self.did_index_dir.mkdir(parents=True, exist_ok=True)
+        self.lock_path = self.owners_dir / ".lock"
 
-    def _load_index(self) -> None:
-        if self.index_path.exists():
-            try:
-                with open(self.index_path) as f:
-                    self._email_index = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                self._email_index = {}
-        else:
-            self._email_index = {}
-
-    def _save_index(self) -> None:
-        with open(self.index_path, "w") as f:
-            json.dump(self._email_index, f)
+    def _lock(self):
+        return _file_lock(self.lock_path)
 
     def _owner_path(self, owner_id: str) -> Path:
         owner_hash = hashlib.sha256(owner_id.encode()).hexdigest()[:16]
         return self.owners_dir / f"{owner_hash}.json"
+
+    def _did_index_path(self, did: str) -> Path:
+        did_hash = hashlib.sha256(did.encode()).hexdigest()[:16]
+        return self.did_index_dir / f"{did_hash}.json"
+
+    def _write_did_pointer(self, did: str, owner_id: str) -> None:
+        with open(self._did_index_path(did), "w") as f:
+            json.dump({"owner_id": owner_id}, f)
 
     def _save_owner(self, owner: Owner) -> None:
         with open(self._owner_path(owner.id), "w") as f:
@@ -583,33 +636,51 @@ class OwnerRegistry:
             return None
 
     def get_by_email(self, email: str) -> Owner | None:
-        owner_id = self._email_index.get(email)
-        return self.get(owner_id) if owner_id else None
+        """O(n) scan — not a hot path (see class docstring). Use
+        ``get_by_did`` for the hot-path case, which has a fast index."""
+        for owner in self.list_all():
+            if email in owner.emails:
+                return owner
+        return None
 
     def get_by_did(self, did: str) -> Owner | None:
         """Find the owner a DID is linked to, if any.
 
-        O(n) over owners via directory scan — fine at personal-server scale;
-        revisit (maintain a did -> owner_id index like the email one) if the
-        owner count ever grows large enough to matter.
+        Fast path: a per-DID pointer file written whenever ``link_did``
+        succeeds, checked first — a negative lookup (the common case: a
+        DID never linked to any owner) is one ``stat()`` for a file that
+        doesn't exist, not a scan of every owner on the server.
+
+        The pointer is a cache, not the source of truth: on a hit, the
+        owner record is loaded and the DID's presence in its
+        ``linked_dids`` is verified before trusting it. A stale or missing
+        pointer (a crash between writing the owner file and the pointer,
+        or data from before this cache existed) falls through to a full
+        scan and self-heals — never returns a wrong answer, worst case is
+        one slow lookup.
         """
-        for path in self.owners_dir.glob("*.json"):
-            if path == self.index_path:
-                continue
+        pointer_path = self._did_index_path(did)
+        if pointer_path.exists():
             try:
-                with open(path) as f:
-                    d = json.load(f)
-                if did in d.get("linked_dids", []):
-                    return self.get(d["id"])
+                with open(pointer_path) as f:
+                    owner_id = json.load(f).get("owner_id")
+                owner = self.get(owner_id) if owner_id else None
+                if owner is not None and did in owner.linked_dids:
+                    return owner
             except (json.JSONDecodeError, OSError, KeyError):
-                continue
+                pass
+            # Fall through — pointer existed but didn't verify (stale).
+
+        for owner in self.list_all():
+            if did in owner.linked_dids:
+                self._write_did_pointer(did, owner.id)  # heal for next time
+                return owner
+        pointer_path.unlink(missing_ok=True)  # genuinely unlinked; drop any stale pointer
         return None
 
     def list_all(self) -> list[Owner]:
         owners = []
         for path in self.owners_dir.glob("*.json"):
-            if path == self.index_path:
-                continue
             try:
                 with open(path) as f:
                     d = json.load(f)
@@ -625,36 +696,34 @@ class OwnerRegistry:
 
     def create(self, owner_id: str, primary_email: str) -> tuple[Owner | None, str]:
         """Create a new owner. Fails if the id or email is already taken."""
-        if self._owner_path(owner_id).exists():
-            return None, f"owner '{owner_id}' already exists"
-        if primary_email in self._email_index:
-            existing = self._email_index[primary_email]
-            return None, f"email '{primary_email}' already linked to owner '{existing}'"
+        with self._lock():
+            if self._owner_path(owner_id).exists():
+                return None, f"owner '{owner_id}' already exists"
+            existing = self.get_by_email(primary_email)
+            if existing is not None:
+                return None, f"email '{primary_email}' already linked to owner '{existing.id}'"
 
-        now = int(time.time() * 1000)
-        owner = Owner(
-            id=owner_id, created_at=now, primary_email=primary_email, emails=[primary_email]
-        )
-        self._save_owner(owner)
-        self._email_index[primary_email] = owner_id
-        self._save_index()
-        return owner, "created"
+            now = int(time.time() * 1000)
+            owner = Owner(
+                id=owner_id, created_at=now, primary_email=primary_email, emails=[primary_email]
+            )
+            self._save_owner(owner)
+            return owner, "created"
 
     def add_email(self, owner_id: str, email: str) -> tuple[bool, str]:
-        owner = self.get(owner_id)
-        if owner is None:
-            return False, f"owner '{owner_id}' not found"
-        if email in self._email_index:
-            existing = self._email_index[email]
-            if existing == owner_id:
-                return False, f"email already linked to '{owner_id}'"
-            return False, f"email already linked to a different owner '{existing}'"
+        with self._lock():
+            owner = self.get(owner_id)
+            if owner is None:
+                return False, f"owner '{owner_id}' not found"
+            existing = self.get_by_email(email)
+            if existing is not None:
+                if existing.id == owner_id:
+                    return False, f"email already linked to '{owner_id}'"
+                return False, f"email already linked to a different owner '{existing.id}'"
 
-        owner.emails.append(email)
-        self._save_owner(owner)
-        self._email_index[email] = owner_id
-        self._save_index()
-        return True, f"added {email} to '{owner_id}'"
+            owner.emails.append(email)
+            self._save_owner(owner)
+            return True, f"added {email} to '{owner_id}'"
 
     def link_did(self, owner_id: str, did: str) -> tuple[bool, str]:
         """Link a DID to an owner.
@@ -663,29 +732,33 @@ class OwnerRegistry:
         silently reassigning it — matches the "conflicting owner claims"
         leaning in the design doc (admin must explicitly unlink first).
         """
-        owner = self.get(owner_id)
-        if owner is None:
-            return False, f"owner '{owner_id}' not found"
-        existing = self.get_by_did(did)
-        if existing is not None and existing.id != owner_id:
-            return False, f"DID already linked to a different owner '{existing.id}'"
-        if did in owner.linked_dids:
-            return False, f"DID already linked to '{owner_id}'"
+        with self._lock():
+            owner = self.get(owner_id)
+            if owner is None:
+                return False, f"owner '{owner_id}' not found"
+            existing = self.get_by_did(did)
+            if existing is not None and existing.id != owner_id:
+                return False, f"DID already linked to a different owner '{existing.id}'"
+            if did in owner.linked_dids:
+                return False, f"DID already linked to '{owner_id}'"
 
-        owner.linked_dids.append(did)
-        self._save_owner(owner)
-        return True, f"linked {did} to '{owner_id}'"
+            owner.linked_dids.append(did)
+            self._save_owner(owner)
+            self._write_did_pointer(did, owner_id)
+            return True, f"linked {did} to '{owner_id}'"
 
     def unlink_did(self, owner_id: str, did: str) -> tuple[bool, str]:
-        owner = self.get(owner_id)
-        if owner is None:
-            return False, f"owner '{owner_id}' not found"
-        if did not in owner.linked_dids:
-            return False, f"DID not linked to '{owner_id}'"
+        with self._lock():
+            owner = self.get(owner_id)
+            if owner is None:
+                return False, f"owner '{owner_id}' not found"
+            if did not in owner.linked_dids:
+                return False, f"DID not linked to '{owner_id}'"
 
-        owner.linked_dids.remove(did)
-        self._save_owner(owner)
-        return True, f"unlinked {did} from '{owner_id}'"
+            owner.linked_dids.remove(did)
+            self._save_owner(owner)
+            self._did_index_path(did).unlink(missing_ok=True)
+            return True, f"unlinked {did} from '{owner_id}'"
 
 
 ORG_KEY_PREFIX = "org:"
@@ -725,7 +798,12 @@ class OrgRegistry:
     Directory structure:
         storage_path/
         └── orgs/
+            ├── .lock                  # flock guard for mutations
             └── {org_id_hash}.json
+
+    Same multi-worker race as OwnerRegistry (see ``_file_lock``'s
+    docstring) applies here too — every mutating method holds the lock for
+    its full read-modify-write section.
     """
 
     storage_path: Path
@@ -733,6 +811,10 @@ class OrgRegistry:
     def __post_init__(self) -> None:
         self.orgs_dir = self.storage_path / "orgs"
         self.orgs_dir.mkdir(parents=True, exist_ok=True)
+        self.lock_path = self.orgs_dir / ".lock"
+
+    def _lock(self):
+        return _file_lock(self.lock_path)
 
     def _org_path(self, org_id: str) -> Path:
         org_hash = hashlib.sha256(org_id.encode()).hexdigest()[:16]
@@ -786,32 +868,35 @@ class OrgRegistry:
         return [o for o in self.list_all() if owner_id in o.member_owner_ids]
 
     def create(self, org_id: str, name: str) -> tuple[Org | None, str]:
-        if self._org_path(org_id).exists():
-            return None, f"org '{org_id}' already exists"
-        now = int(time.time() * 1000)
-        org = Org(id=org_id, created_at=now, name=name)
-        self._save_org(org)
-        return org, "created"
+        with self._lock():
+            if self._org_path(org_id).exists():
+                return None, f"org '{org_id}' already exists"
+            now = int(time.time() * 1000)
+            org = Org(id=org_id, created_at=now, name=name)
+            self._save_org(org)
+            return org, "created"
 
     def add_member(self, org_id: str, owner_id: str) -> tuple[bool, str]:
-        org = self.get(org_id)
-        if org is None:
-            return False, f"org '{org_id}' not found"
-        if owner_id in org.member_owner_ids:
-            return False, f"owner '{owner_id}' already a member of '{org_id}'"
-        org.member_owner_ids.append(owner_id)
-        self._save_org(org)
-        return True, f"added {owner_id} to '{org_id}'"
+        with self._lock():
+            org = self.get(org_id)
+            if org is None:
+                return False, f"org '{org_id}' not found"
+            if owner_id in org.member_owner_ids:
+                return False, f"owner '{owner_id}' already a member of '{org_id}'"
+            org.member_owner_ids.append(owner_id)
+            self._save_org(org)
+            return True, f"added {owner_id} to '{org_id}'"
 
     def remove_member(self, org_id: str, owner_id: str) -> tuple[bool, str]:
-        org = self.get(org_id)
-        if org is None:
-            return False, f"org '{org_id}' not found"
-        if owner_id not in org.member_owner_ids:
-            return False, f"owner '{owner_id}' not a member of '{org_id}'"
-        org.member_owner_ids.remove(owner_id)
-        self._save_org(org)
-        return True, f"removed {owner_id} from '{org_id}'"
+        with self._lock():
+            org = self.get(org_id)
+            if org is None:
+                return False, f"org '{org_id}' not found"
+            if owner_id not in org.member_owner_ids:
+                return False, f"owner '{owner_id}' not a member of '{org_id}'"
+            org.member_owner_ids.remove(owner_id)
+            self._save_org(org)
+            return True, f"removed {owner_id} from '{org_id}'"
 
 
 class InviteKind(str, Enum):

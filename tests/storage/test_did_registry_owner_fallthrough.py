@@ -74,9 +74,7 @@ class TestOwnerFallthrough:
     """The actual Phase B behavior: a DID with no direct grant inherits
     through its linked owner."""
 
-    def test_owner_grant_authorizes_a_did_with_no_direct_grant(
-        self, registry: DIDRegistry
-    ) -> None:
+    def test_owner_grant_authorizes_a_did_with_no_direct_grant(self, registry: DIDRegistry) -> None:
         _bootstrap_admin(registry)
         registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
 
@@ -240,3 +238,54 @@ def test_owner_registry_and_did_registry_compose_end_to_end(tmp_path: Path) -> N
     owner = owner_registry.get_by_did(ALICE)
     assert owner is not None
     assert did_registry.is_authorized(ALICE, "eigan", owner_id=owner.id) is True
+
+
+class TestApproveRevokeActorFallthrough:
+    """Regression coverage for auditor finding #1 on PR
+    owner-identity-instance-discovery: approve()/revoke() only checked the
+    *caller's own DID* for approver authority, never its linked owner/org —
+    so a DID whose owner (or org) held an APPROVER grant on a namespace
+    still got rejected trying to approve/revoke on it. The headline
+    capability ("any DID linked to an approver-owner can self-service")
+    was silently not working until by_owner_id/by_org_ids were threaded
+    into these two methods specifically (is_authorized/is_approver already
+    had the fallthrough — these were the call sites that didn't use it)."""
+
+    def test_approve_succeeds_for_a_did_that_is_only_an_approver_via_its_owner(
+        self, registry: DIDRegistry
+    ) -> None:
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        # ALICE has no direct grant at all — only reachable via owner_id.
+        success, message = registry.approve(BOB, "eigan", by_did=ALICE, by_owner_id="james")
+
+        assert success is True
+        assert registry.is_authorized(BOB, "eigan") is True
+
+    def test_approve_still_rejected_without_the_owner_id_hint(self, registry: DIDRegistry) -> None:
+        """Same setup as above, but the caller doesn't pass by_owner_id —
+        proves the fallthrough is opt-in via the parameter, not a global
+        DID->owner lookup happening implicitly inside approve()."""
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+
+        success, message = registry.approve(BOB, "eigan", by_did=ALICE)
+
+        assert success is False
+        assert "not authorized" in message
+
+    def test_revoke_succeeds_for_a_did_that_is_only_an_approver_via_its_org(
+        self, registry: DIDRegistry
+    ) -> None:
+        from hopper.upstream.storage import org_key
+
+        _bootstrap_admin(registry)
+        registry.approve(org_key("eigan-corp"), "rosetta", by_did=ADMIN, role=DIDStatus.APPROVER)
+        registry.approve(BOB, "rosetta", by_did=ADMIN)  # something to revoke
+        assert registry.is_authorized(BOB, "rosetta") is True
+
+        success, message = registry.revoke(BOB, "rosetta", by_did=ALICE, by_org_ids=["eigan-corp"])
+
+        assert success is True
+        assert registry.is_authorized(BOB, "rosetta") is False

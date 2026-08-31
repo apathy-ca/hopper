@@ -16,6 +16,8 @@ from .did import verify_signature
 from .protocol import SyncConflict, SyncRequest, SyncResponse
 from .storage import (
     GLOBAL_NS,
+    ORG_KEY_PREFIX,
+    OWNER_KEY_PREFIX,
     DIDRecord,
     DIDStatus,
     Invite,
@@ -23,6 +25,8 @@ from .storage import (
     Org,
     Owner,
     UpstreamStorage,
+    is_org_key,
+    is_owner_key,
     org_key,
     owner_key,
 )
@@ -127,6 +131,20 @@ async def verify_did_auth(
     return did
 
 
+def _resolve_owner_and_orgs(storage: UpstreamStorage, did: str) -> tuple[str | None, list[str]]:
+    """(owner_id, org_ids) for a DID's grant fallthrough — the DID's linked
+    owner, if any, and every org that owner is a member of. Used at every
+    authority call site (sync, approve, revoke, invite create/redeem/list)
+    so a DID that's only authorized *via* an owner or org grant — not
+    directly — is actually recognized as authorized everywhere, not just
+    in the sync path this was first wired into."""
+    owner = storage.owner_registry.get_by_did(did)
+    if owner is None:
+        return None, []
+    org_ids = [o.id for o in storage.org_registry.orgs_for_owner(owner.id)]
+    return owner.id, org_ids
+
+
 @router.post("/sync")
 async def sync(
     request: Request,
@@ -152,9 +170,7 @@ async def sync(
     # Phase B/E: resolve the caller's linked owner and that owner's orgs, if
     # any — a DID with no direct grant for this namespace can still be
     # authorized through its owner's grant, or an org that owner belongs to.
-    owner = storage.owner_registry.get_by_did(did)
-    owner_id = owner.id if owner else None
-    org_ids = [o.id for o in storage.org_registry.orgs_for_owner(owner_id)] if owner_id else []
+    owner_id, org_ids = _resolve_owner_and_orgs(storage, did)
 
     # Register DID for this namespace if new, check authorization
     status, is_new = storage.did_registry.register_or_get(
@@ -163,9 +179,7 @@ async def sync(
 
     if is_new and status == DIDStatus.ADMIN:
         pass  # First DID — global admin
-    elif not storage.did_registry.is_authorized(
-        did, namespace, owner_id=owner_id, org_ids=org_ids
-    ):
+    elif not storage.did_registry.is_authorized(did, namespace, owner_id=owner_id, org_ids=org_ids):
         raise HTTPException(
             status_code=403,
             detail=f"DID not approved for namespace '{namespace}'. Contact admin: {did}",
@@ -296,6 +310,27 @@ class ApproveRequest(BaseModel):
     role: str = "approved"  # "approved" or "approver"
 
 
+def _check_grant_target_exists(storage: UpstreamStorage, target: str) -> str | None:
+    """None if ``target`` is fine to grant/revoke; an error message if it's
+    an ``owner:<id>``/``org:<id>`` key naming something that doesn't exist.
+
+    Without this, approving a typo'd id (``owner:jhenrry`` for
+    ``jhenry``) succeeds silently and plants a dead grant nobody notices —
+    a plain DID has no equivalent existence check (any string is a valid,
+    if unapproved-yet, DID), so this only applies to the two key kinds
+    that *do* have a real registry to check against.
+    """
+    if is_owner_key(target):
+        owner_id = target[len(OWNER_KEY_PREFIX) :]
+        if storage.owner_registry.get(owner_id) is None:
+            return f"owner '{owner_id}' not found"
+    elif is_org_key(target):
+        org_id = target[len(ORG_KEY_PREFIX) :]
+        if storage.org_registry.get(org_id) is None:
+            return f"org '{org_id}' not found"
+    return None
+
+
 @router.post("/admin/approve")
 async def approve_did(
     request: Request,
@@ -304,8 +339,9 @@ async def approve_did(
 ) -> AdminResponse:
     """Approve a DID for a namespace.
 
-    Admin may set any role for any namespace. Approvers may set role=approved
-    on their own namespace only.
+    Admin may set any role for any namespace. Approvers — direct, or via a
+    linked owner/org's approver grant — may set role=approved on their own
+    namespace only.
     """
     body = await request.body()
     try:
@@ -318,8 +354,18 @@ async def approve_did(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}") from e
 
+    not_found = _check_grant_target_exists(storage, req.did)
+    if not_found:
+        raise HTTPException(status_code=404, detail=not_found)
+
+    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
     success, message = storage.did_registry.approve(
-        req.did, namespace=req.namespace, by_did=did, role=role
+        req.did,
+        namespace=req.namespace,
+        by_did=did,
+        role=role,
+        by_owner_id=by_owner_id,
+        by_org_ids=by_org_ids,
     )
     if not success:
         raise HTTPException(status_code=403, detail=message)
@@ -339,7 +385,14 @@ async def revoke_did(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
-    success, message = storage.did_registry.revoke(req.did, namespace=req.namespace, by_did=did)
+    not_found = _check_grant_target_exists(storage, req.did)
+    if not_found:
+        raise HTTPException(status_code=404, detail=not_found)
+
+    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
+    success, message = storage.did_registry.revoke(
+        req.did, namespace=req.namespace, by_did=did, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+    )
     if not success:
         raise HTTPException(status_code=403, detail=message)
     return AdminResponse(success=True, message=f"Revoked {req.did}: {message}")
@@ -553,9 +606,7 @@ async def owner_instances(
 
     is_self = did in target.linked_dids
     if not (storage.did_registry.is_admin(did) or is_self):
-        raise HTTPException(
-            status_code=403, detail="not authorized to view this owner's instances"
-        )
+        raise HTTPException(status_code=403, detail="not authorized to view this owner's instances")
 
     is_admin, global_access, instances = _owner_reach(storage, target)
     return OwnerInstancesResponse(
@@ -821,6 +872,7 @@ async def invite_create(
 
     reg = storage.did_registry
     is_admin = reg.is_admin(did)
+    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
 
     if kind == InviteKind.NAMESPACE:
         try:
@@ -831,14 +883,10 @@ async def invite_create(
             raise HTTPException(status_code=400, detail="role must be approved or approver")
         if not is_admin:
             if role == DIDStatus.APPROVER:
-                raise HTTPException(
-                    status_code=403, detail="only admin can issue approver invites"
-                )
+                raise HTTPException(status_code=403, detail="only admin can issue approver invites")
             if req.namespace == GLOBAL_NS:
-                raise HTTPException(
-                    status_code=403, detail="only admin can issue global invites"
-                )
-            if not reg.is_approver(did, req.namespace):
+                raise HTTPException(status_code=403, detail="only admin can issue global invites")
+            if not reg.is_approver(did, req.namespace, owner_id=by_owner_id, org_ids=by_org_ids):
                 raise HTTPException(
                     status_code=403,
                     detail=f"not authorized to invite for namespace '{req.namespace}'",
@@ -873,9 +921,7 @@ async def invite_create(
 
     elif kind == InviteKind.NEW_OWNER:
         if not is_admin:
-            raise HTTPException(
-                status_code=403, detail="only admin can issue a new-owner invite"
-            )
+            raise HTTPException(status_code=403, detail="only admin can issue a new-owner invite")
         if not req.owner_id or not req.email:
             raise HTTPException(
                 status_code=400, detail="owner_id and email required for a new-owner invite"
@@ -929,7 +975,10 @@ async def invite_redeem(
                 raise HTTPException(
                     status_code=403, detail="issuer no longer has approver authority"
                 )
-            if not reg.is_approver(issuer, invite_preview.namespace):
+            issuer_owner_id, issuer_org_ids = _resolve_owner_and_orgs(storage, issuer)
+            if not reg.is_approver(
+                issuer, invite_preview.namespace, owner_id=issuer_owner_id, org_ids=issuer_org_ids
+            ):
                 raise HTTPException(
                     status_code=403,
                     detail=(
@@ -941,9 +990,7 @@ async def invite_redeem(
         issuer_owner = storage.owner_registry.get_by_did(issuer)
         still_linked = issuer_owner is not None and issuer_owner.id == invite_preview.owner_id
         if not reg.is_admin(issuer) and not still_linked:
-            raise HTTPException(
-                status_code=403, detail="issuer is no longer linked to this owner"
-            )
+            raise HTTPException(status_code=403, detail="issuer is no longer linked to this owner")
     elif invite_preview.kind == InviteKind.NEW_OWNER:
         if not reg.is_admin(issuer):
             raise HTTPException(status_code=403, detail="issuer is no longer admin")
@@ -951,44 +998,75 @@ async def invite_redeem(
     if reg.is_admin(did):
         raise HTTPException(status_code=400, detail="admin does not need to redeem invites")
 
-    invite, message = storage.invites.redeem(req.token, by_did=did)
-    if invite is None:
-        raise HTTPException(status_code=403, detail=message)
+    # Validate up front — expiry, max-uses, already-redeemed-by-this-DID —
+    # without yet consuming a use. The use is only consumed *after* the
+    # kind-specific mutation below actually succeeds (mutate-then-redeem,
+    # not redeem-then-mutate): otherwise a downstream failure (e.g.
+    # NEW_OWNER's link_did losing a race to a concurrent redemption)
+    # permanently burns a token — often max_uses=1 — for nothing granted,
+    # with no rollback and no re-issue path short of minting a fresh one.
+    ok, reason = invite_preview.is_valid()
+    if not ok:
+        raise HTTPException(status_code=403, detail=reason)
+    if did in invite_preview.redeemed_by:
+        raise HTTPException(status_code=403, detail="already redeemed by this DID")
 
-    if invite.kind == InviteKind.NAMESPACE:
-        # Register the DID first (creates record if new), then apply the role.
-        reg.register_or_get(did, invite.namespace)
-        reg.set_status(did, invite.namespace, invite.role, by_did=invite.issued_by)
+    if invite_preview.kind == InviteKind.NAMESPACE:
+        # register_or_get/set_status are setters with no failure mode, so
+        # ordering here is low-stakes either way — kept consistent with
+        # the other two branches' mutate-then-redeem shape regardless.
+        reg.register_or_get(did, invite_preview.namespace)
+        reg.set_status(
+            did, invite_preview.namespace, invite_preview.role, by_did=invite_preview.issued_by
+        )
+        redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
+        if redeemed is None:
+            raise HTTPException(status_code=403, detail=redeem_message)
         return AdminResponse(
             success=True,
-            message=f"redeemed: {invite.role.value} on '{invite.namespace}'",
-            namespace=invite.namespace,
+            message=f"redeemed: {redeemed.role.value} on '{redeemed.namespace}'",
+            namespace=redeemed.namespace,
         )
 
-    if invite.kind == InviteKind.DEVICE:
-        success, link_message = storage.owner_registry.link_did(invite.owner_id, did)
-        if not success:
+    if invite_preview.kind == InviteKind.DEVICE:
+        link_ok, link_message = storage.owner_registry.link_did(invite_preview.owner_id, did)
+        if not link_ok:
             raise HTTPException(status_code=409, detail=link_message)
+        redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
+        if redeemed is None:
+            raise HTTPException(status_code=403, detail=redeem_message)
         return AdminResponse(
             success=True,
-            message=f"redeemed: linked to owner '{invite.owner_id}'",
-            owner_id=invite.owner_id,
+            message=f"redeemed: linked to owner '{redeemed.owner_id}'",
+            owner_id=redeemed.owner_id,
         )
 
-    if invite.kind == InviteKind.NEW_OWNER:
+    if invite_preview.kind == InviteKind.NEW_OWNER:
         owner, create_message = storage.owner_registry.create(
-            invite.owner_id, invite.new_owner_email
+            invite_preview.owner_id, invite_preview.new_owner_email
         )
         if owner is None:
             raise HTTPException(status_code=409, detail=create_message)
-        storage.owner_registry.link_did(invite.owner_id, did)
+        # Checked, unlike before: if this fails (e.g. the redeeming DID was
+        # already linked to a different owner by the time we get here),
+        # the client must see that its device isn't actually linked rather
+        # than a false "success". The just-created owner is left in place
+        # rather than rolled back — a rare, admin-recoverable leftover
+        # (link-did it manually, or ignore it) beats adding delete-owner
+        # machinery for an edge case this narrow.
+        link_ok, link_message = storage.owner_registry.link_did(invite_preview.owner_id, did)
+        if not link_ok:
+            raise HTTPException(status_code=409, detail=link_message)
+        redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
+        if redeemed is None:
+            raise HTTPException(status_code=403, detail=redeem_message)
         return AdminResponse(
             success=True,
-            message=f"redeemed: created owner '{invite.owner_id}' and linked this device",
-            owner_id=invite.owner_id,
+            message=f"redeemed: created owner '{redeemed.owner_id}' and linked this device",
+            owner_id=redeemed.owner_id,
         )
 
-    raise HTTPException(status_code=400, detail=f"unhandled invite kind: {invite.kind}")
+    raise HTTPException(status_code=400, detail=f"unhandled invite kind: {invite_preview.kind}")
 
 
 @router.get("/invite/list")
@@ -1004,11 +1082,14 @@ async def invite_list(
     if reg.is_admin(did):
         visible = all_invites
     else:
-        # Approver only sees invites for namespaces they can approve.
+        # Approver — direct, or via a linked owner/org's approver grant —
+        # only sees invites for namespaces they can approve.
+        by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
         visible = [
             inv
             for inv in all_invites
-            if reg.is_approver(did, inv.namespace) or inv.issued_by == did
+            if reg.is_approver(did, inv.namespace, owner_id=by_owner_id, org_ids=by_org_ids)
+            or inv.issued_by == did
         ]
     return InviteListResponse(invites=[_invite_info(i) for i in visible])
 

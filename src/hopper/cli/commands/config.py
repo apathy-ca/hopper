@@ -192,9 +192,7 @@ def _pick_instance_name(candidates: list[str], default_new: str, has_global: boo
     return default_new
 
 
-def _claim_invite_during_init(
-    ctx: Context, claim_token: str, upstream_server: str | None
-) -> None:
+def _claim_invite_during_init(ctx: Context, claim_token: str, upstream_server: str | None) -> None:
     """Redeem a device/owner invite as part of 'hopper init', generating a
     DID key first if this machine doesn't have one yet. Mirrors 'hopper
     upstream init' + 'hopper upstream redeem' combined into one step."""
@@ -303,9 +301,7 @@ def _init_local_mode(
                 if non_interactive:
                     _refuse_non_interactive_instance_default(candidates, has_global)
                 else:
-                    instance_name = _pick_instance_name(
-                        candidates, Path.cwd().name, has_global
-                    )
+                    instance_name = _pick_instance_name(candidates, Path.cwd().name, has_global)
 
     # Initialize storage structure
     config = StorageConfig.local(storage_path, instance_name=instance_name or Path.cwd().name)

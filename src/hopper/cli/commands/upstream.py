@@ -919,9 +919,7 @@ def owner_revoke(
     help="Path to admin key, or any DID key already linked to this owner",
 )
 @click.pass_obj
-def owner_instances_cmd(
-    ctx: Context, owner_id: str, server: str | None, key: str | None
-) -> None:
+def owner_instances_cmd(ctx: Context, owner_id: str, server: str | None, key: str | None) -> None:
     """Every namespace this owner can reach, directly or via any linked DID.
 
     Self-service — any of the owner's own linked DIDs can run this, not

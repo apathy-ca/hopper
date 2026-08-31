@@ -43,9 +43,7 @@ class TestNamespaceInviteUnchanged:
         assert invite.new_owner_email == ""
 
     def test_get_round_trips_namespace_invite(self, store: InviteStore) -> None:
-        token, _ = store.create(
-            issued_by="did:key:zAdmin", expires_at=None, namespace="eigan"
-        )
+        token, _ = store.create(issued_by="did:key:zAdmin", expires_at=None, namespace="eigan")
 
         fetched = store.get(token)
 
