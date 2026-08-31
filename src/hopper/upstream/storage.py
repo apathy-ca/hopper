@@ -94,7 +94,11 @@ class DIDRegistry:
         self.dids_dir = self.storage_path / "dids"
         self.dids_dir.mkdir(parents=True, exist_ok=True)
         self.registry_path = self.dids_dir / "registry.json"
+        self.lock_path = self.dids_dir / ".lock"
         self._load_registry()
+
+    def _lock(self):
+        return _file_lock(self.lock_path)
 
     def _load_registry(self) -> None:
         if not self.registry_path.exists():
@@ -313,34 +317,59 @@ class DIDRegistry:
         sync rather than leaving an orphaned direct approval behind. This
         also avoids registering a misleading PENDING entry for a device
         that already works.
+
+        The checks above this docstring's original body ran against this
+        process's in-memory ``_registry`` unconditionally; only the
+        actually-mutating paths below acquire the lock and reload from
+        disk first, then re-check everything fresh before writing
+        (double-checked locking) — this is the hottest endpoint in the
+        system, and most calls hit the pure-read fast path (a DID that's
+        already registered), so unconditionally locking every call would
+        undo the point of the did_index fast path in ``OwnerRegistry``.
         """
         if self.is_admin(did):
             return DIDStatus.ADMIN, False
         existing = self.get_status(did, namespace)
         if existing is not None:
             return existing, False
-
-        now = int(time.time() * 1000)
-        if self._admin_did is None:
-            self._admin_did = did
-            self._save_registry()
-            record = DIDRecord(did=did, created_at=now)
-            self._save_record(record)
-            return DIDStatus.ADMIN, True
-
         if owner_id is not None and self._is_directly_authorized(owner_key(owner_id), namespace):
             return DIDStatus.APPROVED, False
         for org_id in org_ids or []:
             if self._is_directly_authorized(org_key(org_id), namespace):
                 return DIDStatus.APPROVED, False
 
-        # Register as pending for this namespace
-        self._registry.setdefault(namespace, {})[did] = DIDStatus.PENDING
-        self._save_registry()
-        record = self._load_record(did) or DIDRecord(did=did, created_at=now)
-        record.namespaces[namespace] = NamespaceApproval(status=DIDStatus.PENDING)
-        self._save_record(record)
-        return DIDStatus.PENDING, True
+        with self._lock():
+            self._load_registry()  # refresh — another process may have just written
+
+            if self.is_admin(did):
+                return DIDStatus.ADMIN, False
+            existing = self.get_status(did, namespace)
+            if existing is not None:
+                return existing, False
+
+            now = int(time.time() * 1000)
+            if self._admin_did is None:
+                self._admin_did = did
+                self._save_registry()
+                record = DIDRecord(did=did, created_at=now)
+                self._save_record(record)
+                return DIDStatus.ADMIN, True
+
+            if owner_id is not None and self._is_directly_authorized(
+                owner_key(owner_id), namespace
+            ):
+                return DIDStatus.APPROVED, False
+            for org_id in org_ids or []:
+                if self._is_directly_authorized(org_key(org_id), namespace):
+                    return DIDStatus.APPROVED, False
+
+            # Register as pending for this namespace
+            self._registry.setdefault(namespace, {})[did] = DIDStatus.PENDING
+            self._save_registry()
+            record = self._load_record(did) or DIDRecord(did=did, created_at=now)
+            record.namespaces[namespace] = NamespaceApproval(status=DIDStatus.PENDING)
+            self._save_record(record)
+            return DIDStatus.PENDING, True
 
     def set_status(self, target: str, namespace: str, status: DIDStatus, by_did: str) -> None:
         """Write a status transition to the namespace registry.
@@ -351,19 +380,63 @@ class DIDRegistry:
         per-DID record to update — the grant lives only in the namespace
         registry; ``OwnerRegistry``/``OrgRegistry`` (sibling stores) hold
         that identity's own data.
+
+        Always mutates, so always locks and reloads first — unlike
+        ``register_or_get``, there's no pure-read fast path to preserve
+        here. This closes the *lost-write* race (two concurrent workers
+        both mutating ``_registry`` from their own stale in-memory copy,
+        second save silently discarding the first); it does not make the
+        *authority check* that ran before this was called (in
+        ``approve``/``revoke``) immune to reading stale data — that would
+        need every read path (``is_authorized`` et al.) to reload on every
+        call too, on the hottest path in the system, for a narrower race
+        than the lost-write one. Out of scope here; the lost-write fix is
+        what was asked for.
         """
-        now = int(time.time() * 1000)
-        self._registry.setdefault(namespace, {})[target] = status
-        self._save_registry()
+        with self._lock():
+            self._load_registry()
+            now = int(time.time() * 1000)
+            self._registry.setdefault(namespace, {})[target] = status
+            self._save_registry()
 
-        if is_owner_key(target) or is_org_key(target):
-            return
+            if is_owner_key(target) or is_org_key(target):
+                return
 
-        record = self._load_record(target) or DIDRecord(did=target, created_at=now)
-        record.namespaces[namespace] = NamespaceApproval(
-            status=status, approved_by=by_did, approved_at=now
-        )
-        self._save_record(record)
+            record = self._load_record(target) or DIDRecord(did=target, created_at=now)
+            record.namespaces[namespace] = NamespaceApproval(
+                status=status, approved_by=by_did, approved_at=now
+            )
+            self._save_record(record)
+
+    def can_approve(
+        self,
+        by_did: str,
+        namespace: str,
+        role: DIDStatus = DIDStatus.APPROVED,
+        by_owner_id: str | None = None,
+        by_org_ids: list[str] | None = None,
+    ) -> tuple[bool, str]:
+        """Authority-only check for ``approve()`` — no mutation, and no
+        opinion on whether the target itself is valid.
+
+        Exposed separately so a caller (the ``/admin/approve`` endpoint)
+        can verify authority *before* checking whether an ``owner:<id>``/
+        ``org:<id>`` target exists — checking existence first turns the
+        404-vs-403 split into an existence oracle: an unauthorized caller
+        could learn whether an id exists just from the response code,
+        with zero approve authority of its own.
+        """
+        if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
+            return False, f"invalid role: {role}"
+        if self.is_admin(by_did):
+            return True, ""
+        if role == DIDStatus.APPROVER:
+            return False, "only admin can grant approver role"
+        if namespace == GLOBAL_NS:
+            return False, "only admin can approve across all namespaces"
+        if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
+            return False, f"not authorized to approve for namespace '{namespace}'"
+        return True, ""
 
     def approve(
         self,
@@ -377,34 +450,46 @@ class DIDRegistry:
         """Approve a DID — or (Phase B) an ``owner:<id>`` key, or (Phase E)
         an ``org:<id>`` key — for a namespace at a given role.
 
-        Authority:
-        - Admin may set any role, any namespace (including '*').
-        - Approver may set role=APPROVED on their specific namespace only —
-          including a DID that's only an approver *via* its linked owner
-          or org (``by_owner_id``/``by_org_ids``, resolved by the caller
-          the same way ``is_authorized``'s fallthrough is).
+        Authority — see ``can_approve`` (called internally here too, so
+        this stays safe to call directly without a separate pre-check).
 
         Approving an owner or org key grants every DID currently *and
         future* linked to it, without touching any of them individually.
         """
-        if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
-            return False, f"invalid role: {role}"
+        ok, reason = self.can_approve(
+            by_did, namespace, role, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+        )
+        if not ok:
+            return False, reason
         if self.is_admin(target):
             return False, "cannot modify admin DID"
-
-        by_is_admin = self.is_admin(by_did)
-        if not by_is_admin:
-            if role == DIDStatus.APPROVER:
-                return False, "only admin can grant approver role"
-            if namespace == GLOBAL_NS:
-                return False, "only admin can approve across all namespaces"
-            if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
-                return False, f"not authorized to approve for namespace '{namespace}'"
 
         self.set_status(target, namespace, role, by_did)
         scope = "all namespaces" if namespace == GLOBAL_NS else namespace
         label = "approver on" if role == DIDStatus.APPROVER else "approved for"
         return True, f"{label} {scope}"
+
+    def can_revoke(
+        self,
+        by_did: str,
+        namespace: str,
+        by_owner_id: str | None = None,
+        by_org_ids: list[str] | None = None,
+    ) -> tuple[bool, str]:
+        """Authority-only check for ``revoke()`` — see ``can_approve``'s
+        docstring for why this is split out (existence-oracle avoidance).
+        Does not check the target's current grant status — that rule
+        ("approvers can only revoke APPROVED members") needs the target to
+        already be known to exist, so it stays in ``revoke()`` itself,
+        after the endpoint's existence check.
+        """
+        if self.is_admin(by_did):
+            return True, ""
+        if namespace == GLOBAL_NS:
+            return False, "only admin can revoke across all namespaces"
+        if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
+            return False, f"not authorized to revoke for namespace '{namespace}'"
+        return True, ""
 
     def revoke(
         self,
@@ -426,25 +511,33 @@ class DIDRegistry:
 
         by_is_admin = self.is_admin(by_did)
         if not by_is_admin:
-            if namespace == GLOBAL_NS:
-                return False, "only admin can revoke across all namespaces"
-            if not self.is_approver(by_did, namespace, owner_id=by_owner_id, org_ids=by_org_ids):
-                return False, f"not authorized to revoke for namespace '{namespace}'"
-            target_status = self._registry.get(namespace, {}).get(target)
-            if target_status != DIDStatus.APPROVED:
-                return False, "approvers can only revoke APPROVED members"
+            ok, reason = self.can_revoke(
+                by_did, namespace, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+            )
+            if not ok:
+                return False, reason
 
-        self._registry.get(namespace, {}).pop(target, None)
-        if not self._registry.get(namespace):
-            self._registry.pop(namespace, None)
-        self._save_registry()
+        # Locked + reloaded from here on, same reasoning as set_status: this
+        # always mutates, so there's no pure-read fast path to protect.
+        with self._lock():
+            self._load_registry()
 
-        if not (is_owner_key(target) or is_org_key(target)):
-            record = self._load_record(target)
-            if record:
-                record.namespaces.pop(namespace, None)
-                self._save_record(record)
-        return True, f"revoked from {'all namespaces' if namespace == GLOBAL_NS else namespace}"
+            if not by_is_admin:
+                target_status = self._registry.get(namespace, {}).get(target)
+                if target_status != DIDStatus.APPROVED:
+                    return False, "approvers can only revoke APPROVED members"
+
+            self._registry.get(namespace, {}).pop(target, None)
+            if not self._registry.get(namespace):
+                self._registry.pop(namespace, None)
+            self._save_registry()
+
+            if not (is_owner_key(target) or is_org_key(target)):
+                record = self._load_record(target)
+                if record:
+                    record.namespaces.pop(namespace, None)
+                    self._save_record(record)
+            return True, f"revoked from {'all namespaces' if namespace == GLOBAL_NS else namespace}"
 
     def list_all(self, namespace: str | None = None) -> list[DIDRecord]:
         """List all DID records, optionally filtered to a namespace."""
@@ -643,6 +736,42 @@ class OwnerRegistry:
                 return owner
         return None
 
+    def _get_by_did_fast(self, did: str) -> Owner | None:
+        """Pointer-cache check only — no scan, no locking. Safe to call
+        from anywhere, including from within a method that already holds
+        ``self._lock()`` (``fcntl.flock`` is per-open-file-description,
+        not reentrant within a process across separate ``open()`` calls on
+        the same path — a second, unconditional lock acquisition from
+        inside an already-locked section would deadlock against itself).
+        """
+        pointer_path = self._did_index_path(did)
+        if not pointer_path.exists():
+            return None
+        try:
+            with open(pointer_path) as f:
+                owner_id = json.load(f).get("owner_id")
+            owner = self.get(owner_id) if owner_id else None
+            if owner is not None and did in owner.linked_dids:
+                return owner
+        except (json.JSONDecodeError, OSError, KeyError):
+            pass
+        return None
+
+    def _scan_and_heal_by_did(self, did: str) -> Owner | None:
+        """Full scan + pointer self-heal. Caller must already hold
+        ``self._lock()`` — every current caller does (``get_by_did`` wraps
+        this in its own lock; ``link_did``/``unlink_did`` call it directly
+        since they're already inside their own locked section, per
+        ``_get_by_did_fast``'s docstring on why this can't just call
+        ``get_by_did`` and let it re-lock)."""
+        pointer_path = self._did_index_path(did)
+        for owner in self.list_all():
+            if did in owner.linked_dids:
+                self._write_did_pointer(did, owner.id)  # heal for next time
+                return owner
+        pointer_path.unlink(missing_ok=True)  # genuinely unlinked; drop stale pointer
+        return None
+
     def get_by_did(self, did: str) -> Owner | None:
         """Find the owner a DID is linked to, if any.
 
@@ -658,25 +787,22 @@ class OwnerRegistry:
         or data from before this cache existed) falls through to a full
         scan and self-heals — never returns a wrong answer, worst case is
         one slow lookup.
-        """
-        pointer_path = self._did_index_path(did)
-        if pointer_path.exists():
-            try:
-                with open(pointer_path) as f:
-                    owner_id = json.load(f).get("owner_id")
-                owner = self.get(owner_id) if owner_id else None
-                if owner is not None and did in owner.linked_dids:
-                    return owner
-            except (json.JSONDecodeError, OSError, KeyError):
-                pass
-            # Fall through — pointer existed but didn't verify (stale).
 
-        for owner in self.list_all():
-            if did in owner.linked_dids:
-                self._write_did_pointer(did, owner.id)  # heal for next time
-                return owner
-        pointer_path.unlink(missing_ok=True)  # genuinely unlinked; drop any stale pointer
-        return None
+        The fallback scan-and-heal runs under the same lock link_did/
+        unlink_did use. Without it, a concurrent unlocked scan could read
+        an owner file mid-relink (unlink_did(old) then link_did(new) are
+        two separate locked calls, so there's a window between them) and
+        heal the pointer to a momentarily-true-but-about-to-be-wrong
+        answer — self-heals again on the *next* lookup either way, but an
+        in-flight request in that window could get authorized against the
+        wrong owner. The fast path above stays unlocked (it's the hot
+        path and a stale hit still gets verified before being trusted).
+        """
+        fast = self._get_by_did_fast(did)
+        if fast is not None:
+            return fast
+        with self._lock():
+            return self._scan_and_heal_by_did(did)
 
     def list_all(self) -> list[Owner]:
         owners = []
@@ -684,9 +810,19 @@ class OwnerRegistry:
             try:
                 with open(path) as f:
                     d = json.load(f)
-                owner = self.get(d["id"])
-                if owner:
-                    owners.append(owner)
+                # Built directly from the already-read dict — this scan is
+                # on the /sync hot path via get_by_did's fallback, so a
+                # second open()+json.load() per file (self.get(d["id"]),
+                # as this used to do) doubled the disk I/O for no reason.
+                owners.append(
+                    Owner(
+                        id=d["id"],
+                        created_at=d["created_at"],
+                        primary_email=d.get("primary_email"),
+                        emails=d.get("emails", []),
+                        linked_dids=d.get("linked_dids", []),
+                    )
+                )
             except (json.JSONDecodeError, OSError, KeyError):
                 continue
         # created_at is millisecond resolution — two owners created in the
@@ -736,7 +872,10 @@ class OwnerRegistry:
             owner = self.get(owner_id)
             if owner is None:
                 return False, f"owner '{owner_id}' not found"
-            existing = self.get_by_did(did)
+            # Not self.get_by_did(did) — that would try to re-acquire this
+            # same lock and deadlock. Already inside the lock, so do its
+            # fast-path-then-scan directly instead.
+            existing = self._get_by_did_fast(did) or self._scan_and_heal_by_did(did)
             if existing is not None and existing.id != owner_id:
                 return False, f"DID already linked to a different owner '{existing.id}'"
             if did in owner.linked_dids:
@@ -855,9 +994,14 @@ class OrgRegistry:
             try:
                 with open(path) as f:
                     d = json.load(f)
-                org = self.get(d["id"])
-                if org:
-                    orgs.append(org)
+                orgs.append(
+                    Org(
+                        id=d["id"],
+                        created_at=d["created_at"],
+                        name=d.get("name", ""),
+                        member_owner_ids=d.get("member_owner_ids", []),
+                    )
+                )
             except (json.JSONDecodeError, OSError, KeyError):
                 continue
         # Deterministic even when created_at ties (see OwnerRegistry.list_all).
@@ -964,6 +1108,10 @@ class InviteStore:
     def __post_init__(self) -> None:
         self.invites_dir = self.storage_path / "invites"
         self.invites_dir.mkdir(parents=True, exist_ok=True)
+        self.lock_path = self.invites_dir / ".lock"
+
+    def _lock(self):
+        return _file_lock(self.lock_path)
 
     @staticmethod
     def _hash(token: str) -> str:
@@ -1060,19 +1208,48 @@ class InviteStore:
         return self._load_path(self._path(self._hash(token)))
 
     def redeem(self, token: str, by_did: str) -> tuple[Invite | None, str]:
-        """Atomically redeem an invite. Returns (invite, message)."""
-        invite = self.get(token)
-        if invite is None:
-            return None, "invite not found"
-        ok, reason = invite.is_valid()
-        if not ok:
-            return None, reason
-        if by_did in invite.redeemed_by:
-            return None, "already redeemed by this DID"
-        invite.uses += 1
-        invite.redeemed_by.append(by_did)
-        self._save(invite)
-        return invite, "redeemed"
+        """Atomically redeem an invite. Returns (invite, message).
+
+        Locked: without it, two concurrent redemptions of the same (often
+        max_uses=1) token can both read uses=0, both pass validation, and
+        both write — second write wins, silently granting a single-use
+        invite to two different identities with neither aware the other
+        happened. Call this *before* attempting the caller's actual
+        kind-specific grant (link_did, owner create, ...), and if that
+        grant then fails, call ``unredeem`` to give the slot back rather
+        than leaving the token burned for nothing.
+        """
+        with self._lock():
+            invite = self.get(token)
+            if invite is None:
+                return None, "invite not found"
+            ok, reason = invite.is_valid()
+            if not ok:
+                return None, reason
+            if by_did in invite.redeemed_by:
+                return None, "already redeemed by this DID"
+            invite.uses += 1
+            invite.redeemed_by.append(by_did)
+            self._save(invite)
+            return invite, "redeemed"
+
+    def unredeem(self, token: str, by_did: str) -> None:
+        """Roll back a ``redeem()`` whose caller's actual grant
+        subsequently failed to apply (e.g. DEVICE's ``link_did`` losing a
+        race after this already reserved the slot) — gives the consumed
+        use back instead of leaving an often-single-use token permanently
+        burned for a grant that never happened. Best-effort: if the
+        invite is gone or wasn't recorded as redeemed by this DID, this is
+        a silent no-op rather than an error, since the caller is already
+        in an error-handling path of its own.
+        """
+        with self._lock():
+            invite = self.get(token)
+            if invite is None or by_did not in invite.redeemed_by:
+                return
+            invite.redeemed_by.remove(by_did)
+            invite.uses = max(0, invite.uses - 1)
+            self._save(invite)
 
     def list_all(self, namespace: str | None = None) -> list[Invite]:
         invites = []

@@ -68,13 +68,23 @@ class UpstreamClient:
 
         ``params`` (for a query string, GET requests) are handed to httpx
         directly rather than baked into ``path`` as a hand-built f-string.
-        The signature is computed over ``request.url.raw_path`` — the
-        exact percent-encoded path+query httpx is actually about to put on
-        the wire — instead of over the pre-encoding string. Signing an
-        unescaped value (a space, ``&``, ``#``, non-ASCII) that httpx then
-        percent-encodes differently on send used to produce a signature
-        that legitimately didn't match what the server received, a
-        spurious 401 on an otherwise valid, authorized request.
+
+        The signature is computed to match exactly what the server's
+        ``verify_did_auth`` reconstructs — Starlette decodes a request's
+        ``url.path`` but leaves ``url.query`` percent-encoded (confirmed
+        live: ``GET /a%20b?x=c%20d`` arrives server-side as
+        ``path="/a b"``, ``query="x=c%20d"``, an asymmetry that's
+        Starlette's behavior, not a choice made here). httpx's own
+        ``request.url.path``/``.query`` have that identical split, so
+        signing ``path + "?" + query`` from httpx's parsed request mirrors
+        the server's reconstruction byte for byte — regardless of whether
+        the varying part sits in the URL path (``get_owner``/``get_org``)
+        or the query string (``params=`` above). An earlier version of
+        this signed ``request.url.raw_path`` (fully percent-encoded)
+        instead, which happened to match for query-only cases but broke
+        any path segment containing a character needing encoding — the
+        server's decoded ``.path`` and the client's encoded ``raw_path``
+        segment could never agree.
         """
         # Serialize body consistently (must match sign_request)
         if body is not None:
@@ -89,7 +99,9 @@ class UpstreamClient:
                 params=params,
                 content=body_bytes or None,
             )
-            signed_path = request.url.raw_path.decode("ascii")
+            signed_path = request.url.path
+            if request.url.query:
+                signed_path = f"{signed_path}?{request.url.query.decode('ascii')}"
             auth_header = sign_request(
                 did_key=self.did_key,
                 method=method,

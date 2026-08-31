@@ -354,11 +354,20 @@ async def approve_did(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid role: {req.role}") from e
 
+    # Authority before existence — checking existence first would let an
+    # unauthorized caller learn whether an owner/org id exists just from
+    # 404-vs-403, with zero approve authority of its own.
+    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
+    can, reason = storage.did_registry.can_approve(
+        did, req.namespace, role, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+    )
+    if not can:
+        raise HTTPException(status_code=403, detail=reason)
+
     not_found = _check_grant_target_exists(storage, req.did)
     if not_found:
         raise HTTPException(status_code=404, detail=not_found)
 
-    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
     success, message = storage.did_registry.approve(
         req.did,
         namespace=req.namespace,
@@ -385,11 +394,19 @@ async def revoke_did(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
+    # Authority before existence — same existence-oracle reasoning as
+    # approve_did above.
+    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
+    can, reason = storage.did_registry.can_revoke(
+        did, req.namespace, by_owner_id=by_owner_id, by_org_ids=by_org_ids
+    )
+    if not can:
+        raise HTTPException(status_code=403, detail=reason)
+
     not_found = _check_grant_target_exists(storage, req.did)
     if not_found:
         raise HTTPException(status_code=404, detail=not_found)
 
-    by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
     success, message = storage.did_registry.revoke(
         req.did, namespace=req.namespace, by_did=did, by_owner_id=by_owner_id, by_org_ids=by_org_ids
     )
@@ -998,54 +1015,44 @@ async def invite_redeem(
     if reg.is_admin(did):
         raise HTTPException(status_code=400, detail="admin does not need to redeem invites")
 
-    # Validate up front — expiry, max-uses, already-redeemed-by-this-DID —
-    # without yet consuming a use. The use is only consumed *after* the
-    # kind-specific mutation below actually succeeds (mutate-then-redeem,
-    # not redeem-then-mutate): otherwise a downstream failure (e.g.
-    # NEW_OWNER's link_did losing a race to a concurrent redemption)
-    # permanently burns a token — often max_uses=1 — for nothing granted,
-    # with no rollback and no re-issue path short of minting a fresh one.
-    ok, reason = invite_preview.is_valid()
-    if not ok:
-        raise HTTPException(status_code=403, detail=reason)
-    if did in invite_preview.redeemed_by:
-        raise HTTPException(status_code=403, detail="already redeemed by this DID")
+    # Reserve the slot FIRST, atomically (redeem() is locked — see its
+    # docstring): a losing racer in a concurrent redemption of the same
+    # max_uses=1 token is rejected right here and never reaches any
+    # mutation below, closing both the "two racers both get granted" case
+    # and, together with the rollback-on-failure below, the "mutation
+    # fails but the invite is already burned" case.
+    redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
+    if redeemed is None:
+        raise HTTPException(status_code=403, detail=redeem_message)
 
-    if invite_preview.kind == InviteKind.NAMESPACE:
-        # register_or_get/set_status are setters with no failure mode, so
-        # ordering here is low-stakes either way — kept consistent with
-        # the other two branches' mutate-then-redeem shape regardless.
-        reg.register_or_get(did, invite_preview.namespace)
-        reg.set_status(
-            did, invite_preview.namespace, invite_preview.role, by_did=invite_preview.issued_by
-        )
-        redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
-        if redeemed is None:
-            raise HTTPException(status_code=403, detail=redeem_message)
+    if redeemed.kind == InviteKind.NAMESPACE:
+        # register_or_get/set_status are setters with no failure mode —
+        # nothing to roll back here even in principle.
+        reg.register_or_get(did, redeemed.namespace)
+        reg.set_status(did, redeemed.namespace, redeemed.role, by_did=redeemed.issued_by)
         return AdminResponse(
             success=True,
             message=f"redeemed: {redeemed.role.value} on '{redeemed.namespace}'",
             namespace=redeemed.namespace,
         )
 
-    if invite_preview.kind == InviteKind.DEVICE:
-        link_ok, link_message = storage.owner_registry.link_did(invite_preview.owner_id, did)
+    if redeemed.kind == InviteKind.DEVICE:
+        link_ok, link_message = storage.owner_registry.link_did(redeemed.owner_id, did)
         if not link_ok:
+            storage.invites.unredeem(req.token, by_did=did)
             raise HTTPException(status_code=409, detail=link_message)
-        redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
-        if redeemed is None:
-            raise HTTPException(status_code=403, detail=redeem_message)
         return AdminResponse(
             success=True,
             message=f"redeemed: linked to owner '{redeemed.owner_id}'",
             owner_id=redeemed.owner_id,
         )
 
-    if invite_preview.kind == InviteKind.NEW_OWNER:
+    if redeemed.kind == InviteKind.NEW_OWNER:
         owner, create_message = storage.owner_registry.create(
-            invite_preview.owner_id, invite_preview.new_owner_email
+            redeemed.owner_id, redeemed.new_owner_email
         )
         if owner is None:
+            storage.invites.unredeem(req.token, by_did=did)
             raise HTTPException(status_code=409, detail=create_message)
         # Checked, unlike before: if this fails (e.g. the redeeming DID was
         # already linked to a different owner by the time we get here),
@@ -1053,20 +1060,20 @@ async def invite_redeem(
         # than a false "success". The just-created owner is left in place
         # rather than rolled back — a rare, admin-recoverable leftover
         # (link-did it manually, or ignore it) beats adding delete-owner
-        # machinery for an edge case this narrow.
-        link_ok, link_message = storage.owner_registry.link_did(invite_preview.owner_id, did)
+        # machinery for an edge case this narrow; the invite slot itself
+        # *is* given back, so the token remains usable.
+        link_ok, link_message = storage.owner_registry.link_did(redeemed.owner_id, did)
         if not link_ok:
+            storage.invites.unredeem(req.token, by_did=did)
             raise HTTPException(status_code=409, detail=link_message)
-        redeemed, redeem_message = storage.invites.redeem(req.token, by_did=did)
-        if redeemed is None:
-            raise HTTPException(status_code=403, detail=redeem_message)
         return AdminResponse(
             success=True,
             message=f"redeemed: created owner '{redeemed.owner_id}' and linked this device",
             owner_id=redeemed.owner_id,
         )
 
-    raise HTTPException(status_code=400, detail=f"unhandled invite kind: {invite_preview.kind}")
+    storage.invites.unredeem(req.token, by_did=did)
+    raise HTTPException(status_code=400, detail=f"unhandled invite kind: {redeemed.kind}")
 
 
 @router.get("/invite/list")
@@ -1123,7 +1130,10 @@ async def invite_revoke(
         raise HTTPException(status_code=500, detail="invite record corrupt")
 
     if not reg.is_admin(did):
-        if invite.issued_by != did and not reg.is_approver(did, invite.namespace):
+        by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
+        if invite.issued_by != did and not reg.is_approver(
+            did, invite.namespace, owner_id=by_owner_id, org_ids=by_org_ids
+        ):
             raise HTTPException(status_code=403, detail="not authorized to revoke this invite")
 
     success, message = storage.invites.revoke(req.token_hash_prefix)
