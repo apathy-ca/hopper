@@ -693,7 +693,11 @@ class OwnerRegistry:
         did_hash = hashlib.sha256(did.encode()).hexdigest()[:16]
         return self.did_index_dir / f"{did_hash}.json"
 
-    def _write_did_pointer(self, did: str, owner_id: str) -> None:
+    def _write_did_pointer(self, did: str, owner_id: str | None) -> None:
+        """``owner_id=None`` writes an explicit *negative* cache entry —
+        "as of this write, this DID is confirmed linked to no one" — not a
+        missing/absent pointer. See ``_get_by_did_fast``'s docstring for
+        why the distinction matters."""
         with open(self._did_index_path(did), "w") as f:
             json.dump({"owner_id": owner_id}, f)
 
@@ -736,57 +740,74 @@ class OwnerRegistry:
                 return owner
         return None
 
-    def _get_by_did_fast(self, did: str) -> Owner | None:
+    def _get_by_did_fast(self, did: str) -> tuple[bool, Owner | None]:
         """Pointer-cache check only — no scan, no locking. Safe to call
         from anywhere, including from within a method that already holds
         ``self._lock()`` (``fcntl.flock`` is per-open-file-description,
         not reentrant within a process across separate ``open()`` calls on
         the same path — a second, unconditional lock acquisition from
         inside an already-locked section would deadlock against itself).
+
+        Returns ``(cache_hit, owner)``. ``cache_hit=True`` means no scan is
+        needed — either a verified positive hit (``owner`` set) or an
+        explicit negative cache entry (``owner=None``, meaning "confirmed
+        unlinked as of the last lookup/link/unlink"). ``cache_hit=False``
+        means there's no usable entry — never looked up before, or a
+        stale positive pointer that failed verification — and the caller
+        must fall through to a scan.
         """
         pointer_path = self._did_index_path(did)
         if not pointer_path.exists():
-            return None
+            return False, None
         try:
             with open(pointer_path) as f:
                 owner_id = json.load(f).get("owner_id")
-            owner = self.get(owner_id) if owner_id else None
+            if owner_id is None:
+                return True, None  # confirmed negative cache entry
+            owner = self.get(owner_id)
             if owner is not None and did in owner.linked_dids:
-                return owner
+                return True, owner
         except (json.JSONDecodeError, OSError, KeyError):
             pass
-        return None
+        return False, None  # stale positive pointer; needs a rescan
 
     def _scan_and_heal_by_did(self, did: str) -> Owner | None:
-        """Full scan + pointer self-heal. Caller must already hold
-        ``self._lock()`` — every current caller does (``get_by_did`` wraps
-        this in its own lock; ``link_did``/``unlink_did`` call it directly
-        since they're already inside their own locked section, per
+        """Full scan + pointer self-heal (positive *or* negative — a DID
+        confirmed unlinked gets a negative cache entry too, so a repeat
+        lookup for the same still-unlinked DID doesn't re-scan; see
+        ``_get_by_did_fast``). Caller must already hold ``self._lock()`` —
+        every current caller does (``get_by_did`` wraps this in its own
+        lock; ``link_did``/``unlink_did`` call it directly since they're
+        already inside their own locked section, per
         ``_get_by_did_fast``'s docstring on why this can't just call
         ``get_by_did`` and let it re-lock)."""
-        pointer_path = self._did_index_path(did)
         for owner in self.list_all():
             if did in owner.linked_dids:
                 self._write_did_pointer(did, owner.id)  # heal for next time
                 return owner
-        pointer_path.unlink(missing_ok=True)  # genuinely unlinked; drop stale pointer
+        self._write_did_pointer(did, None)  # cache the negative result too
         return None
 
     def get_by_did(self, did: str) -> Owner | None:
         """Find the owner a DID is linked to, if any.
 
-        Fast path: a per-DID pointer file written whenever ``link_did``
-        succeeds, checked first — a negative lookup (the common case: a
-        DID never linked to any owner) is one ``stat()`` for a file that
-        doesn't exist, not a scan of every owner on the server.
+        Fast path: a per-DID pointer file, checked first, that caches
+        *both* outcomes — which owner a DID is linked to, and the
+        confirmed-unlinked case too (``owner_id: null``). A negative
+        lookup is one file read either way: a DID that's never been
+        looked up at all still costs one scan on its first-ever call (as
+        `/sync` traffic, that's genuinely unavoidable — nothing on this
+        server has ever seen the DID before), but every *subsequent* call
+        for that same still-unlinked DID is O(1) instead of re-scanning
+        every owner file again — which matters, since the majority of
+        real `/sync` traffic is a DID calling in repeatedly, not once.
 
-        The pointer is a cache, not the source of truth: on a hit, the
-        owner record is loaded and the DID's presence in its
+        The pointer is a cache, not the source of truth: on a positive
+        hit, the owner record is loaded and the DID's presence in its
         ``linked_dids`` is verified before trusting it. A stale or missing
-        pointer (a crash between writing the owner file and the pointer,
-        or data from before this cache existed) falls through to a full
-        scan and self-heals — never returns a wrong answer, worst case is
-        one slow lookup.
+        pointer (a crash mid-write, or data from before this cache
+        existed) falls through to a full scan and self-heals — never
+        returns a wrong answer, worst case is one slow lookup.
 
         The fallback scan-and-heal runs under the same lock link_did/
         unlink_did use. Without it, a concurrent unlocked scan could read
@@ -798,9 +819,9 @@ class OwnerRegistry:
         wrong owner. The fast path above stays unlocked (it's the hot
         path and a stale hit still gets verified before being trusted).
         """
-        fast = self._get_by_did_fast(did)
-        if fast is not None:
-            return fast
+        cache_hit, owner = self._get_by_did_fast(did)
+        if cache_hit:
+            return owner
         with self._lock():
             return self._scan_and_heal_by_did(did)
 
@@ -875,7 +896,9 @@ class OwnerRegistry:
             # Not self.get_by_did(did) — that would try to re-acquire this
             # same lock and deadlock. Already inside the lock, so do its
             # fast-path-then-scan directly instead.
-            existing = self._get_by_did_fast(did) or self._scan_and_heal_by_did(did)
+            cache_hit, existing = self._get_by_did_fast(did)
+            if not cache_hit:
+                existing = self._scan_and_heal_by_did(did)
             if existing is not None and existing.id != owner_id:
                 return False, f"DID already linked to a different owner '{existing.id}'"
             if did in owner.linked_dids:
@@ -896,7 +919,11 @@ class OwnerRegistry:
 
             owner.linked_dids.remove(did)
             self._save_owner(owner)
-            self._did_index_path(did).unlink(missing_ok=True)
+            # Negative cache entry, not a delete — the DID is now
+            # confirmed unlinked, so the *next* lookup should be the fast
+            # path too, not fall through to a scan just because there's no
+            # pointer file at all (see get_by_did's docstring).
+            self._write_did_pointer(did, None)
             return True, f"unlinked {did} from '{owner_id}'"
 
 
@@ -1260,16 +1287,28 @@ class InviteStore:
         return sorted(invites, key=lambda i: i.created_at, reverse=True)
 
     def revoke(self, token_hash_prefix: str) -> tuple[bool, str]:
-        """Revoke by full hash or unique prefix."""
-        matches = [
-            p for p in self.invites_dir.glob("*.json") if p.stem.startswith(token_hash_prefix)
-        ]
-        if not matches:
-            return False, "no matching invite"
-        if len(matches) > 1:
-            return False, f"ambiguous prefix: {len(matches)} matches"
-        matches[0].unlink()
-        return True, "revoked"
+        """Revoke by full hash or unique prefix.
+
+        Locked, matching redeem()/unredeem(): unlocked, a concurrent
+        redeem() could read the file, compute its new uses/redeemed_by,
+        and self._save() (which reopens for write, recreating the file)
+        *after* this had already unlink()'d it — both calls report
+        success, and the "revoked" invite ends up back on disk with the
+        concurrent redemption recorded, so the grant that revocation was
+        supposed to prevent goes through anyway. Revocation is the
+        mechanism for killing a leaked token, so this race matters even
+        though it's the least-hot of InviteStore's operations.
+        """
+        with self._lock():
+            matches = [
+                p for p in self.invites_dir.glob("*.json") if p.stem.startswith(token_hash_prefix)
+            ]
+            if not matches:
+                return False, "no matching invite"
+            if len(matches) > 1:
+                return False, f"ambiguous prefix: {len(matches)} matches"
+            matches[0].unlink()
+            return True, "revoked"
 
 
 @dataclass

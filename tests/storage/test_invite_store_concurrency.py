@@ -144,3 +144,67 @@ class TestUnredeem:
     def test_unredeem_on_a_nonexistent_token_does_not_raise(self, tmp_path: Path) -> None:
         store = InviteStore(tmp_path)
         store.unredeem("hinv_does_not_exist", by_did="did:key:zAlice")  # must not raise
+
+
+def _revoke_repeatedly(storage_path: str, token_hash_prefix: str, results_path: str) -> None:
+    store = InviteStore(Path(storage_path))
+    success, message = store.revoke(token_hash_prefix)
+    with open(results_path, "a") as f:
+        f.write(f"revoke:{success}\n")
+
+
+def _redeem_repeatedly(storage_path: str, token: str, worker_index: int, results_path: str) -> None:
+    store = InviteStore(Path(storage_path))
+    invite, message = store.redeem(token, by_did=f"did:key:zRacer{worker_index}")
+    with open(results_path, "a") as f:
+        f.write(f"redeem:{invite is not None}\n")
+
+
+def test_concurrent_revoke_and_redeem_never_leaves_a_grant_after_a_reported_revoke(
+    tmp_path: Path,
+) -> None:
+    """The exact bad outcome the unlocked revoke() could produce: revoke()
+    unlink()s the file while a concurrent redeem() has already read the
+    old (pre-delete) state and then re-creates the file via _save() with
+    the attacker's redemption recorded — both calls report success, and
+    the 'revoked' invite is still redeemable. With both locked through the
+    same InviteStore.invites_dir/.lock, whichever call actually wins the
+    race, the end state must be self-consistent: either the file is gone
+    (revoke fully won) or it exists holding exactly the redemptions that
+    happened-before the revoke — never a resurrected file after a
+    revoke() that reported success.
+    """
+    store = InviteStore(tmp_path)
+    token, invite = store.create(
+        issued_by="did:key:zAdmin", expires_at=None, max_uses=8, namespace="eigan"
+    )
+    token_hash_prefix = invite.token_hash[:16]
+
+    results_path = tmp_path / "results.txt"
+    results_path.write_text("")
+
+    processes = [
+        multiprocessing.Process(
+            target=_redeem_repeatedly, args=(str(tmp_path), token, i, str(results_path))
+        )
+        for i in range(N_WORKERS)
+    ]
+    processes.append(
+        multiprocessing.Process(
+            target=_revoke_repeatedly, args=(str(tmp_path), token_hash_prefix, str(results_path))
+        )
+    )
+    for p in processes:
+        p.start()
+    for p in processes:
+        p.join(timeout=30)
+        assert p.exitcode == 0
+
+    lines = results_path.read_text().strip().splitlines()
+    revoke_succeeded = any(line == "revoke:True" for line in lines)
+    final = store.get(token)
+
+    if revoke_succeeded:
+        # A revoke that reports success must actually mean the invite is
+        # gone — not silently resurrected by a racing redeem.
+        assert final is None, "revoke() reported success but the invite still exists"

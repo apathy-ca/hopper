@@ -275,9 +275,13 @@ class TestGetByDidSelfHealing:
         assert found is not None
         assert found.id == "sarah"  # the real owner, not the stale pointer's claim
 
-    def test_pointer_for_a_did_that_was_unlinked_is_removed_by_scan_fallback(
+    def test_unlink_leaves_a_negative_cache_entry_not_no_pointer_at_all(
         self, registry: OwnerRegistry
     ) -> None:
+        """unlink_did writes owner_id=None rather than deleting the
+        pointer file, so the *next* lookup for this DID is still the fast
+        path (a confirmed-negative cache hit) instead of falling through
+        to a scan just because nothing exists at that path."""
         registry.create("james", "james@eigan.ai")
         registry.link_did("james", "did:key:zAbc123")
         pointer_path = registry._did_index_path("did:key:zAbc123")
@@ -285,7 +289,10 @@ class TestGetByDidSelfHealing:
 
         registry.unlink_did("james", "did:key:zAbc123")
 
-        assert not pointer_path.exists()
+        assert pointer_path.exists()  # still there — now a negative marker
+        cache_hit, owner = registry._get_by_did_fast("did:key:zAbc123")
+        assert cache_hit is True
+        assert owner is None
         assert registry.get_by_did("did:key:zAbc123") is None
 
     def test_corrupt_pointer_file_falls_back_to_scan(self, registry: OwnerRegistry) -> None:
@@ -295,5 +302,59 @@ class TestGetByDidSelfHealing:
 
         found = registry.get_by_did("did:key:zAbc123")
 
+        assert found is not None
+        assert found.id == "james"
+
+
+class TestNegativeCaching:
+    """Regression coverage for auditor finding #5 (round 2/3): get_by_did
+    for a DID that's never been linked to anyone used to fall through to a
+    full owner scan on *every single call* — the common case for /sync
+    traffic from a device that's never been linked. Now the first lookup
+    scans and caches a negative result; every subsequent lookup for that
+    same DID is a fast-path hit, no scan."""
+
+    def test_first_lookup_of_a_never_linked_did_scans_and_caches_negative(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+
+        cache_hit_before, _ = registry._get_by_did_fast("did:key:zNeverLinked")
+        assert cache_hit_before is False  # nothing cached yet — must scan
+
+        found = registry.get_by_did("did:key:zNeverLinked")
+
+        assert found is None
+        cache_hit_after, owner_after = registry._get_by_did_fast("did:key:zNeverLinked")
+        assert cache_hit_after is True  # now cached — no scan needed next time
+        assert owner_after is None
+
+    def test_repeat_lookups_of_a_never_linked_did_never_scan_again(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zNeverLinked")  # first call: scans, caches negative
+
+        # Delete every owner file to prove a second scan would find
+        # nothing meaningfully different anyway, then confirm the fast
+        # path alone (no scan) still correctly returns None.
+        for owner_file in registry.owners_dir.glob("*.json"):
+            owner_file.unlink()
+
+        cache_hit, owner = registry._get_by_did_fast("did:key:zNeverLinked")
+        assert cache_hit is True
+        assert owner is None
+        assert registry.get_by_did("did:key:zNeverLinked") is None
+
+    def test_linking_a_previously_negative_cached_did_overwrites_the_cache(
+        self, registry: OwnerRegistry
+    ) -> None:
+        registry.create("james", "james@eigan.ai")
+        registry.get_by_did("did:key:zAbc123")  # caches negative
+        assert registry.get_by_did("did:key:zAbc123") is None
+
+        registry.link_did("james", "did:key:zAbc123")
+
+        found = registry.get_by_did("did:key:zAbc123")
         assert found is not None
         assert found.id == "james"
