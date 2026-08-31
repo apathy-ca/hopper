@@ -30,6 +30,23 @@ class DIDStatus(str, Enum):
 
 GLOBAL_NS = "*"  # Sentinel: approved for all namespaces
 
+OWNER_KEY_PREFIX = "owner:"  # Sentinel prefix: a registry key naming an owner, not a DID
+
+
+def owner_key(owner_id: str) -> str:
+    """Registry key representing an owner's grant, distinct from a DID's.
+
+    Reuses the same flat ``namespace -> {key: status}`` registry a DID's
+    grant lives in — an owner grant is just another key in that dict, the
+    same trick ``GLOBAL_NS`` already uses at the namespace level. No second
+    grants table.
+    """
+    return f"{OWNER_KEY_PREFIX}{owner_id}"
+
+
+def is_owner_key(key: str) -> bool:
+    return key.startswith(OWNER_KEY_PREFIX)
+
 
 @dataclass
 class NamespaceApproval:
@@ -186,25 +203,91 @@ class DIDRegistry:
     def is_admin(self, did: str) -> bool:
         return self._admin_did == did
 
-    def is_authorized(self, did: str, namespace: str) -> bool:
-        """Check if DID is authorized for a namespace."""
-        if self.is_admin(did):
+    def _is_directly_authorized(self, key: str, namespace: str) -> bool:
+        """Original DID-only authorization check — also reused for owner
+        keys, since an owner grant lives in the exact same registry shape."""
+        if self.is_admin(key):
             return True
         authorized = {DIDStatus.APPROVED, DIDStatus.APPROVER}
         # Global approval
-        if did in self._registry.get(GLOBAL_NS, {}):
-            return self._registry[GLOBAL_NS][did] in authorized
+        if key in self._registry.get(GLOBAL_NS, {}):
+            return self._registry[GLOBAL_NS][key] in authorized
         # Namespace-specific approval
-        return self._registry.get(namespace, {}).get(did) in authorized
+        return self._registry.get(namespace, {}).get(key) in authorized
 
-    def is_approver(self, did: str, namespace: str) -> bool:
-        """Check if DID can approve/invite others for a namespace."""
-        if self.is_admin(did):
+    def is_authorized(
+        self,
+        did: str,
+        namespace: str,
+        owner_id: str | None = None,
+        org_ids: list[str] | None = None,
+    ) -> bool:
+        """Check if DID is authorized for a namespace.
+
+        Resolution order: the DID's own direct grant first (unchanged
+        behavior); then its linked owner's grant (Phase B); then any org
+        that owner is a member of (Phase E). Callers resolve owner_id via
+        ``OwnerRegistry.get_by_did`` and org_ids via
+        ``OrgRegistry.orgs_for_owner``.
+        """
+        if self._is_directly_authorized(did, namespace):
             return True
-        # Global approver via '*'
-        if self._registry.get(GLOBAL_NS, {}).get(did) == DIDStatus.APPROVER:
+        if owner_id is not None and self._is_directly_authorized(
+            owner_key(owner_id), namespace
+        ):
             return True
-        return self._registry.get(namespace, {}).get(did) == DIDStatus.APPROVER
+        for org_id in org_ids or []:
+            if self._is_directly_authorized(org_key(org_id), namespace):
+                return True
+        return False
+
+    def _is_directly_approver(self, key: str, namespace: str) -> bool:
+        """Original DID-only approver check — also reused for owner keys."""
+        if self.is_admin(key):
+            return True
+        if self._registry.get(GLOBAL_NS, {}).get(key) == DIDStatus.APPROVER:
+            return True
+        return self._registry.get(namespace, {}).get(key) == DIDStatus.APPROVER
+
+    def is_approver(
+        self,
+        did: str,
+        namespace: str,
+        owner_id: str | None = None,
+        org_ids: list[str] | None = None,
+    ) -> bool:
+        """Check if DID can approve/invite others for a namespace.
+
+        Same owner/org fallthrough as ``is_authorized``.
+        """
+        if self._is_directly_approver(did, namespace):
+            return True
+        if owner_id is not None and self._is_directly_approver(owner_key(owner_id), namespace):
+            return True
+        for org_id in org_ids or []:
+            if self._is_directly_approver(org_key(org_id), namespace):
+                return True
+        return False
+
+    def namespaces_for_keys(self, keys: set[str]) -> tuple[bool, list[str]]:
+        """Every namespace any of the given registry keys (DIDs or owner
+        keys) holds an approved/approver grant in.
+
+        Returns ``(has_global_grant, explicit_namespaces)``. A key holding
+        the ``"*"`` global grant can reach every namespace — present and
+        future — which can't be enumerated; that's surfaced as a flag
+        instead of pretending to list "all of them."
+        """
+        authorized = {DIDStatus.APPROVED, DIDStatus.APPROVER}
+        has_global = any(self._registry.get(GLOBAL_NS, {}).get(k) in authorized for k in keys)
+        namespaces = {
+            ns
+            for ns, grants in self._registry.items()
+            if ns != GLOBAL_NS
+            for k, status in grants.items()
+            if k in keys and status in authorized
+        }
+        return has_global, sorted(namespaces)
 
     def get_status(self, did: str, namespace: str) -> DIDStatus | None:
         if self.is_admin(did):
@@ -213,10 +296,24 @@ class DIDRegistry:
             return self._registry[GLOBAL_NS][did]
         return self._registry.get(namespace, {}).get(did)
 
-    def register_or_get(self, did: str, namespace: str) -> tuple[DIDStatus, bool]:
+    def register_or_get(
+        self,
+        did: str,
+        namespace: str,
+        owner_id: str | None = None,
+        org_ids: list[str] | None = None,
+    ) -> tuple[DIDStatus, bool]:
         """Register DID for a namespace, or return existing status.
 
         Returns (status, is_new). First DID becomes global admin.
+
+        A DID whose linked owner (Phase B) or one of that owner's orgs
+        (Phase E) already grants this namespace is reported as approved
+        *without* writing a registry entry for the DID itself — the grant
+        stays purely derived, so revoking it takes effect immediately next
+        sync rather than leaving an orphaned direct approval behind. This
+        also avoids registering a misleading PENDING entry for a device
+        that already works.
         """
         if self.is_admin(did):
             return DIDStatus.ADMIN, False
@@ -232,6 +329,12 @@ class DIDRegistry:
             self._save_record(record)
             return DIDStatus.ADMIN, True
 
+        if owner_id is not None and self._is_directly_authorized(owner_key(owner_id), namespace):
+            return DIDStatus.APPROVED, False
+        for org_id in org_ids or []:
+            if self._is_directly_authorized(org_key(org_id), namespace):
+                return DIDStatus.APPROVED, False
+
         # Register as pending for this namespace
         self._registry.setdefault(namespace, {})[did] = DIDStatus.PENDING
         self._save_registry()
@@ -240,13 +343,24 @@ class DIDRegistry:
         self._save_record(record)
         return DIDStatus.PENDING, True
 
-    def set_status(self, did: str, namespace: str, status: DIDStatus, by_did: str) -> None:
-        """Write a status transition to both registry and per-DID record."""
+    def set_status(self, target: str, namespace: str, status: DIDStatus, by_did: str) -> None:
+        """Write a status transition to the namespace registry.
+
+        ``target`` is a DID, an ``owner:<id>`` key (Phase B), or an
+        ``org:<id>`` key (Phase E). For a plain DID this also updates that
+        DID's per-file record, same as always. An owner or org key has no
+        per-DID record to update — the grant lives only in the namespace
+        registry; ``OwnerRegistry``/``OrgRegistry`` (sibling stores) hold
+        that identity's own data.
+        """
         now = int(time.time() * 1000)
-        self._registry.setdefault(namespace, {})[did] = status
+        self._registry.setdefault(namespace, {})[target] = status
         self._save_registry()
 
-        record = self._load_record(did) or DIDRecord(did=did, created_at=now)
+        if is_owner_key(target) or is_org_key(target):
+            return
+
+        record = self._load_record(target) or DIDRecord(did=target, created_at=now)
         record.namespaces[namespace] = NamespaceApproval(
             status=status, approved_by=by_did, approved_at=now
         )
@@ -254,20 +368,24 @@ class DIDRegistry:
 
     def approve(
         self,
-        did: str,
+        target: str,
         namespace: str,
         by_did: str,
         role: DIDStatus = DIDStatus.APPROVED,
     ) -> tuple[bool, str]:
-        """Approve a DID for a namespace at a given role.
+        """Approve a DID — or (Phase B) an ``owner:<id>`` key — for a
+        namespace at a given role.
 
         Authority:
         - Admin may set any role, any namespace (including '*').
         - Approver may set role=APPROVED on their specific namespace only.
+
+        Approving an owner key grants every DID currently *and future*
+        linked to that owner, without touching any of them individually.
         """
         if role not in (DIDStatus.APPROVED, DIDStatus.APPROVER):
             return False, f"invalid role: {role}"
-        if self.is_admin(did):
+        if self.is_admin(target):
             return False, "cannot modify admin DID"
 
         by_is_admin = self.is_admin(by_did)
@@ -279,18 +397,19 @@ class DIDRegistry:
             if not self.is_approver(by_did, namespace):
                 return False, f"not authorized to approve for namespace '{namespace}'"
 
-        self.set_status(did, namespace, role, by_did)
+        self.set_status(target, namespace, role, by_did)
         scope = "all namespaces" if namespace == GLOBAL_NS else namespace
         label = "approver on" if role == DIDStatus.APPROVER else "approved for"
         return True, f"{label} {scope}"
 
-    def revoke(self, did: str, namespace: str, by_did: str) -> tuple[bool, str]:
-        """Revoke a DID's access to a namespace (or all if namespace == '*').
+    def revoke(self, target: str, namespace: str, by_did: str) -> tuple[bool, str]:
+        """Revoke a DID's — or (Phase B) an owner's — access to a namespace
+        (or all if namespace == '*').
 
         Admin can revoke anyone. Approver can revoke only APPROVED members of
         their specific namespace (never another approver or admin).
         """
-        if self.is_admin(did):
+        if self.is_admin(target):
             return False, "cannot revoke admin DID"
 
         by_is_admin = self.is_admin(by_did)
@@ -299,19 +418,20 @@ class DIDRegistry:
                 return False, "only admin can revoke across all namespaces"
             if not self.is_approver(by_did, namespace):
                 return False, f"not authorized to revoke for namespace '{namespace}'"
-            target_status = self._registry.get(namespace, {}).get(did)
+            target_status = self._registry.get(namespace, {}).get(target)
             if target_status != DIDStatus.APPROVED:
                 return False, "approvers can only revoke APPROVED members"
 
-        self._registry.get(namespace, {}).pop(did, None)
+        self._registry.get(namespace, {}).pop(target, None)
         if not self._registry.get(namespace):
             self._registry.pop(namespace, None)
         self._save_registry()
 
-        record = self._load_record(did)
-        if record:
-            record.namespaces.pop(namespace, None)
-            self._save_record(record)
+        if not (is_owner_key(target) or is_org_key(target)):
+            record = self._load_record(target)
+            if record:
+                record.namespaces.pop(namespace, None)
+                self._save_record(record)
         return True, f"revoked from {'all namespaces' if namespace == GLOBAL_NS else namespace}"
 
     def list_all(self, namespace: str | None = None) -> list[DIDRecord]:
@@ -372,21 +492,369 @@ class DIDRegistry:
 
 
 @dataclass
+class Owner:
+    """A person who owns one or more DIDs.
+
+    Owners group DIDs under one stable identity so grants can be made once
+    (Phase B — see Owner-Identity-and-Instance-Discovery-Plan.md) and
+    inherited by every linked device, instead of approved per-DID. Email
+    addresses are labels, not the primary key — they change (this design
+    exists because one already did); ``id`` does not.
+    """
+
+    id: str
+    created_at: int
+    primary_email: str | None = None
+    emails: list[str] = field(default_factory=list)
+    linked_dids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OwnerRegistry:
+    """Registry of owners — one JSON file per owner, plus an email index.
+
+    Directory structure:
+        storage_path/
+        └── owners/
+            ├── index.json        # email -> owner_id
+            └── {owner_id_hash}.json
+
+    Phase A only: pure CRUD, no authorization behavior. A DID linking to an
+    owner does not yet change what that DID can access — grant resolution
+    falling through owner -> DID is Phase B (``DIDRegistry.is_authorized``).
+    """
+
+    storage_path: Path
+    _email_index: dict[str, str] = field(default_factory=dict)  # email -> owner_id
+
+    def __post_init__(self) -> None:
+        self.owners_dir = self.storage_path / "owners"
+        self.owners_dir.mkdir(parents=True, exist_ok=True)
+        self.index_path = self.owners_dir / "index.json"
+        self._load_index()
+
+    def _load_index(self) -> None:
+        if self.index_path.exists():
+            try:
+                with open(self.index_path) as f:
+                    self._email_index = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                self._email_index = {}
+        else:
+            self._email_index = {}
+
+    def _save_index(self) -> None:
+        with open(self.index_path, "w") as f:
+            json.dump(self._email_index, f)
+
+    def _owner_path(self, owner_id: str) -> Path:
+        owner_hash = hashlib.sha256(owner_id.encode()).hexdigest()[:16]
+        return self.owners_dir / f"{owner_hash}.json"
+
+    def _save_owner(self, owner: Owner) -> None:
+        with open(self._owner_path(owner.id), "w") as f:
+            json.dump(
+                {
+                    "id": owner.id,
+                    "created_at": owner.created_at,
+                    "primary_email": owner.primary_email,
+                    "emails": owner.emails,
+                    "linked_dids": owner.linked_dids,
+                },
+                f,
+                indent=2,
+            )
+
+    def get(self, owner_id: str) -> Owner | None:
+        path = self._owner_path(owner_id)
+        if not path.exists():
+            return None
+        try:
+            with open(path) as f:
+                d = json.load(f)
+            return Owner(
+                id=d["id"],
+                created_at=d["created_at"],
+                primary_email=d.get("primary_email"),
+                emails=d.get("emails", []),
+                linked_dids=d.get("linked_dids", []),
+            )
+        except (json.JSONDecodeError, OSError, KeyError):
+            return None
+
+    def get_by_email(self, email: str) -> Owner | None:
+        owner_id = self._email_index.get(email)
+        return self.get(owner_id) if owner_id else None
+
+    def get_by_did(self, did: str) -> Owner | None:
+        """Find the owner a DID is linked to, if any.
+
+        O(n) over owners via directory scan — fine at personal-server scale;
+        revisit (maintain a did -> owner_id index like the email one) if the
+        owner count ever grows large enough to matter.
+        """
+        for path in self.owners_dir.glob("*.json"):
+            if path == self.index_path:
+                continue
+            try:
+                with open(path) as f:
+                    d = json.load(f)
+                if did in d.get("linked_dids", []):
+                    return self.get(d["id"])
+            except (json.JSONDecodeError, OSError, KeyError):
+                continue
+        return None
+
+    def list_all(self) -> list[Owner]:
+        owners = []
+        for path in self.owners_dir.glob("*.json"):
+            if path == self.index_path:
+                continue
+            try:
+                with open(path) as f:
+                    d = json.load(f)
+                owner = self.get(d["id"])
+                if owner:
+                    owners.append(owner)
+            except (json.JSONDecodeError, OSError, KeyError):
+                continue
+        # created_at is millisecond resolution — two owners created in the
+        # same request burst can tie, so id is a deterministic tiebreaker
+        # rather than leaving order to directory-iteration happenstance.
+        return sorted(owners, key=lambda o: (o.created_at, o.id))
+
+    def create(self, owner_id: str, primary_email: str) -> tuple[Owner | None, str]:
+        """Create a new owner. Fails if the id or email is already taken."""
+        if self._owner_path(owner_id).exists():
+            return None, f"owner '{owner_id}' already exists"
+        if primary_email in self._email_index:
+            existing = self._email_index[primary_email]
+            return None, f"email '{primary_email}' already linked to owner '{existing}'"
+
+        now = int(time.time() * 1000)
+        owner = Owner(
+            id=owner_id, created_at=now, primary_email=primary_email, emails=[primary_email]
+        )
+        self._save_owner(owner)
+        self._email_index[primary_email] = owner_id
+        self._save_index()
+        return owner, "created"
+
+    def add_email(self, owner_id: str, email: str) -> tuple[bool, str]:
+        owner = self.get(owner_id)
+        if owner is None:
+            return False, f"owner '{owner_id}' not found"
+        if email in self._email_index:
+            existing = self._email_index[email]
+            if existing == owner_id:
+                return False, f"email already linked to '{owner_id}'"
+            return False, f"email already linked to a different owner '{existing}'"
+
+        owner.emails.append(email)
+        self._save_owner(owner)
+        self._email_index[email] = owner_id
+        self._save_index()
+        return True, f"added {email} to '{owner_id}'"
+
+    def link_did(self, owner_id: str, did: str) -> tuple[bool, str]:
+        """Link a DID to an owner.
+
+        Rejects a DID already linked to a *different* owner rather than
+        silently reassigning it — matches the "conflicting owner claims"
+        leaning in the design doc (admin must explicitly unlink first).
+        """
+        owner = self.get(owner_id)
+        if owner is None:
+            return False, f"owner '{owner_id}' not found"
+        existing = self.get_by_did(did)
+        if existing is not None and existing.id != owner_id:
+            return False, f"DID already linked to a different owner '{existing.id}'"
+        if did in owner.linked_dids:
+            return False, f"DID already linked to '{owner_id}'"
+
+        owner.linked_dids.append(did)
+        self._save_owner(owner)
+        return True, f"linked {did} to '{owner_id}'"
+
+    def unlink_did(self, owner_id: str, did: str) -> tuple[bool, str]:
+        owner = self.get(owner_id)
+        if owner is None:
+            return False, f"owner '{owner_id}' not found"
+        if did not in owner.linked_dids:
+            return False, f"DID not linked to '{owner_id}'"
+
+        owner.linked_dids.remove(did)
+        self._save_owner(owner)
+        return True, f"unlinked {did} from '{owner_id}'"
+
+
+ORG_KEY_PREFIX = "org:"
+
+
+def org_key(org_id: str) -> str:
+    """Registry key representing an org's grant — same trick as owner_key:
+    just another key in the flat namespace registry, no second table."""
+    return f"{ORG_KEY_PREFIX}{org_id}"
+
+
+def is_org_key(key: str) -> bool:
+    return key.startswith(ORG_KEY_PREFIX)
+
+
+@dataclass
+class Org:
+    """A group of owners — a grant-holder for instances that aren't any
+    one person's (Phase E). Membership authority is admin-only for v1:
+    both creating an org and changing its membership, matching the
+    owner-creation gate rather than the self-service device-invite path —
+    org membership changes who inherits access far more broadly than one
+    person adding their own laptop does, so this plan starts conservative.
+    """
+
+    id: str
+    created_at: int
+    name: str = ""
+    member_owner_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OrgRegistry:
+    """Registry of orgs — one JSON file per org, same pattern as
+    OwnerRegistry (no email-like alias index needed here).
+
+    Directory structure:
+        storage_path/
+        └── orgs/
+            └── {org_id_hash}.json
+    """
+
+    storage_path: Path
+
+    def __post_init__(self) -> None:
+        self.orgs_dir = self.storage_path / "orgs"
+        self.orgs_dir.mkdir(parents=True, exist_ok=True)
+
+    def _org_path(self, org_id: str) -> Path:
+        org_hash = hashlib.sha256(org_id.encode()).hexdigest()[:16]
+        return self.orgs_dir / f"{org_hash}.json"
+
+    def _save_org(self, org: Org) -> None:
+        with open(self._org_path(org.id), "w") as f:
+            json.dump(
+                {
+                    "id": org.id,
+                    "created_at": org.created_at,
+                    "name": org.name,
+                    "member_owner_ids": org.member_owner_ids,
+                },
+                f,
+                indent=2,
+            )
+
+    def get(self, org_id: str) -> Org | None:
+        path = self._org_path(org_id)
+        if not path.exists():
+            return None
+        try:
+            with open(path) as f:
+                d = json.load(f)
+            return Org(
+                id=d["id"],
+                created_at=d["created_at"],
+                name=d.get("name", ""),
+                member_owner_ids=d.get("member_owner_ids", []),
+            )
+        except (json.JSONDecodeError, OSError, KeyError):
+            return None
+
+    def list_all(self) -> list[Org]:
+        orgs = []
+        for path in self.orgs_dir.glob("*.json"):
+            try:
+                with open(path) as f:
+                    d = json.load(f)
+                org = self.get(d["id"])
+                if org:
+                    orgs.append(org)
+            except (json.JSONDecodeError, OSError, KeyError):
+                continue
+        # Deterministic even when created_at ties (see OwnerRegistry.list_all).
+        return sorted(orgs, key=lambda o: (o.created_at, o.id))
+
+    def orgs_for_owner(self, owner_id: str) -> list[Org]:
+        """Every org the given owner is a member of."""
+        return [o for o in self.list_all() if owner_id in o.member_owner_ids]
+
+    def create(self, org_id: str, name: str) -> tuple[Org | None, str]:
+        if self._org_path(org_id).exists():
+            return None, f"org '{org_id}' already exists"
+        now = int(time.time() * 1000)
+        org = Org(id=org_id, created_at=now, name=name)
+        self._save_org(org)
+        return org, "created"
+
+    def add_member(self, org_id: str, owner_id: str) -> tuple[bool, str]:
+        org = self.get(org_id)
+        if org is None:
+            return False, f"org '{org_id}' not found"
+        if owner_id in org.member_owner_ids:
+            return False, f"owner '{owner_id}' already a member of '{org_id}'"
+        org.member_owner_ids.append(owner_id)
+        self._save_org(org)
+        return True, f"added {owner_id} to '{org_id}'"
+
+    def remove_member(self, org_id: str, owner_id: str) -> tuple[bool, str]:
+        org = self.get(org_id)
+        if org is None:
+            return False, f"org '{org_id}' not found"
+        if owner_id not in org.member_owner_ids:
+            return False, f"owner '{owner_id}' not a member of '{org_id}'"
+        org.member_owner_ids.remove(owner_id)
+        self._save_org(org)
+        return True, f"removed {owner_id} from '{org_id}'"
+
+
+class InviteKind(str, Enum):
+    """What redeeming an invite actually does.
+
+    NAMESPACE (original): grants the redeeming DID ``role`` on ``namespace``
+    directly. DEVICE (Phase C): links the redeeming DID to an existing
+    owner — self-service, mintable by any DID already linked to that
+    owner. NEW_OWNER (Phase C): creates a brand-new owner and links the
+    redeeming DID as its first device — admin only to mint, this is the
+    server-admission gate.
+    """
+
+    NAMESPACE = "namespace"
+    DEVICE = "device"
+    NEW_OWNER = "new_owner"
+
+
+@dataclass
 class Invite:
-    """An invite record.
+    """An invite record — three kinds sharing one token lifecycle (hash
+    lookup, expiry/max-uses, atomic redeem bookkeeping). Which fields are
+    meaningful depends on ``kind``:
+
+    - NAMESPACE: ``namespace`` + ``role``.
+    - DEVICE: ``owner_id`` (the existing owner a new DID will link to).
+    - NEW_OWNER: ``owner_id`` (the id to create) + ``new_owner_email``.
 
     The raw token is never stored — only its SHA256 hash. The full token
     value is returned once, at creation time.
     """
 
     token_hash: str
-    namespace: str
-    role: DIDStatus  # APPROVED or APPROVER
     issued_by: str
     created_at: int
     expires_at: int | None
-    max_uses: int
-    uses: int
+    max_uses: int = 1
+    uses: int = 0
+    kind: InviteKind = InviteKind.NAMESPACE
+    namespace: str = ""
+    role: DIDStatus = DIDStatus.APPROVED
+    owner_id: str = ""
+    new_owner_email: str = ""
     redeemed_by: list[str] = field(default_factory=list)
 
     def is_valid(self, now_ms: int | None = None) -> tuple[bool, str]:
@@ -424,8 +892,11 @@ class InviteStore:
             json.dump(
                 {
                     "token_hash": invite.token_hash,
+                    "kind": invite.kind.value,
                     "namespace": invite.namespace,
                     "role": invite.role.value,
+                    "owner_id": invite.owner_id,
+                    "new_owner_email": invite.new_owner_email,
                     "issued_by": invite.issued_by,
                     "created_at": invite.created_at,
                     "expires_at": invite.expires_at,
@@ -445,8 +916,13 @@ class InviteStore:
                 d = json.load(f)
             return Invite(
                 token_hash=d["token_hash"],
-                namespace=d["namespace"],
-                role=DIDStatus(d["role"]),
+                # Missing "kind" means a file written before Phase C — those
+                # are always namespace invites.
+                kind=InviteKind(d.get("kind", InviteKind.NAMESPACE.value)),
+                namespace=d.get("namespace", ""),
+                role=DIDStatus(d.get("role", DIDStatus.APPROVED.value)),
+                owner_id=d.get("owner_id", ""),
+                new_owner_email=d.get("new_owner_email", ""),
                 issued_by=d["issued_by"],
                 created_at=d["created_at"],
                 expires_at=d.get("expires_at"),
@@ -459,21 +935,33 @@ class InviteStore:
 
     def create(
         self,
-        namespace: str,
-        role: DIDStatus,
         issued_by: str,
         expires_at: int | None,
         max_uses: int = 1,
+        kind: InviteKind = InviteKind.NAMESPACE,
+        namespace: str = "",
+        role: DIDStatus = DIDStatus.APPROVED,
+        owner_id: str = "",
+        new_owner_email: str = "",
     ) -> tuple[str, Invite]:
-        """Create an invite and return (token, record). Token is only returned here."""
+        """Create an invite and return (token, record). Token is only returned here.
+
+        Which of ``namespace``/``role`` vs ``owner_id``/``new_owner_email``
+        matters depends on ``kind`` — see ``Invite``'s docstring. Defaulting
+        ``kind`` to NAMESPACE keeps every pre-Phase-C caller working
+        unchanged.
+        """
         import secrets
 
         token = "hinv_" + secrets.token_urlsafe(24)
         now = int(time.time() * 1000)
         invite = Invite(
             token_hash=self._hash(token),
+            kind=kind,
             namespace=namespace,
             role=role,
+            owner_id=owner_id,
+            new_owner_email=new_owner_email,
             issued_by=issued_by,
             created_at=now,
             expires_at=expires_at,
@@ -551,6 +1039,11 @@ class UpstreamStorage:
         ├── dids/
         │   ├── registry.json
         │   └── {did_hash}.json
+        ├── owners/
+        │   ├── index.json
+        │   └── {owner_id_hash}.json
+        ├── orgs/
+        │   └── {org_id_hash}.json
         └── index.json  # {"instance/task_id": updated_at_ms}
     """
 
@@ -559,6 +1052,8 @@ class UpstreamStorage:
     # Sorted list of (timestamp, key) for efficient range queries
     _index_by_time: list[tuple[int, str]] = field(default_factory=list)
     did_registry: DIDRegistry = field(init=False)
+    owner_registry: OwnerRegistry = field(init=False)
+    org_registry: OrgRegistry = field(init=False)
     invites: InviteStore = field(init=False)
     shadow_writer: RevisionShadowWriter | None = field(default=None)
 
@@ -569,6 +1064,8 @@ class UpstreamStorage:
         self._migrate_did_partitioned_tasks()
         self._load_index()
         self.did_registry = DIDRegistry(self.storage_path)
+        self.owner_registry = OwnerRegistry(self.storage_path)
+        self.org_registry = OrgRegistry(self.storage_path)
         self.invites = InviteStore(self.storage_path)
 
     def _migrate_did_partitioned_tasks(self) -> None:

@@ -95,6 +95,21 @@ class UpstreamClient:
 
         return response
 
+    def me(self) -> dict:
+        """Self-information for this client's DID: linked owner (if any),
+        admin status. No special authority needed. Used by ``hopper
+        init``'s instance-discovery picker (Phase D)."""
+        try:
+            response = self._make_request("GET", "/me")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            raise UpstreamError(f"Failed to get self info: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
     def health(self) -> dict:
         """Check server health."""
         try:
@@ -209,18 +224,62 @@ class UpstreamClient:
         expires_in_ms: int | None = None,
         max_uses: int = 1,
     ) -> dict:
-        """Create an invite token. Returns {'token': ..., 'invite': {...}}.
+        """Create a namespace invite token. Returns {'token': ..., 'invite': {...}}.
 
         Admin can invite for any namespace/role. Approvers can invite role=approved
         on their own namespace.
         """
+        return self._create_invite_raw(
+            kind="namespace",
+            namespace=namespace,
+            role=role,
+            expires_in_ms=expires_in_ms,
+            max_uses=max_uses,
+        )
+
+    def create_device_invite(
+        self, owner_id: str, expires_in_ms: int | None = None, max_uses: int = 1
+    ) -> dict:
+        """Create a device invite — self-service. Mintable by any DID
+        already linked to ``owner_id``; redemption links the new DID and
+        inherits that owner's grants (Phase C)."""
+        return self._create_invite_raw(
+            kind="device", owner_id=owner_id, expires_in_ms=expires_in_ms, max_uses=max_uses
+        )
+
+    def create_new_owner_invite(
+        self, owner_id: str, email: str, expires_in_ms: int | None = None, max_uses: int = 1
+    ) -> dict:
+        """Create a new-owner invite — admin only. Redemption creates the
+        owner and links the redeeming DID as its first device (Phase C)."""
+        return self._create_invite_raw(
+            kind="new_owner",
+            owner_id=owner_id,
+            email=email,
+            expires_in_ms=expires_in_ms,
+            max_uses=max_uses,
+        )
+
+    def _create_invite_raw(
+        self,
+        kind: str,
+        namespace: str = "",
+        role: str = "approved",
+        owner_id: str = "",
+        email: str = "",
+        expires_in_ms: int | None = None,
+        max_uses: int = 1,
+    ) -> dict:
         try:
             response = self._make_request(
                 "POST",
                 "/invite/create",
                 body={
+                    "kind": kind,
                     "namespace": namespace,
                     "role": role,
+                    "owner_id": owner_id,
+                    "email": email,
                     "expires_in_ms": expires_in_ms,
                     "max_uses": max_uses,
                 },
@@ -232,6 +291,8 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            if e.response.status_code == 404:
+                raise UpstreamError(e.response.json().get("detail", "not found")) from e
             raise UpstreamError(f"Failed to create invite: {e.response.status_code}") from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
@@ -287,6 +348,268 @@ class UpstreamClient:
             raise UpstreamError(f"Failed to revoke invite: {e.response.status_code}") from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
+
+    def create_owner(self, owner_id: str, primary_email: str) -> dict:
+        """Create a new owner. Admin only."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/admin/owners",
+                body={"id": owner_id, "primary_email": primary_email},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can create owners") from e
+            raise UpstreamError(f"Failed to create owner: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def list_owners(self) -> dict:
+        """List all owners. Admin only."""
+        try:
+            response = self._make_request("GET", "/admin/owners")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can list owners") from e
+            raise UpstreamError(f"Failed to list owners: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def get_owner(self, owner_id: str) -> dict:
+        """Get one owner by id. Admin only."""
+        try:
+            response = self._make_request("GET", f"/admin/owners/{owner_id}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can view owners") from e
+            raise UpstreamError(f"Failed to get owner: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def add_owner_email(self, owner_id: str, email: str) -> dict:
+        """Add an email alias to an existing owner. Admin only."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/admin/owners/add-email",
+                body={"owner_id": owner_id, "email": email},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can edit owners") from e
+            raise UpstreamError(f"Failed to add email: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def link_owner_did(self, owner_id: str, target_did: str) -> dict:
+        """Link a DID to an owner. Admin only in Phase A."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/admin/owners/link-did",
+                body={"owner_id": owner_id, "did": target_did},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can link DIDs to owners") from e
+            raise UpstreamError(f"Failed to link DID: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def unlink_owner_did(self, owner_id: str, target_did: str) -> dict:
+        """Unlink a DID from an owner. Admin only."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/admin/owners/unlink-did",
+                body={"owner_id": owner_id, "did": target_did},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can unlink DIDs from owners") from e
+            raise UpstreamError(f"Failed to unlink DID: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def create_org(self, org_id: str, name: str = "") -> dict:
+        """Create a new org. Admin only."""
+        try:
+            response = self._make_request(
+                "POST", "/admin/orgs", body={"id": org_id, "name": name}
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can create orgs") from e
+            raise UpstreamError(f"Failed to create org: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def list_orgs(self) -> dict:
+        """List all orgs. Admin only."""
+        try:
+            response = self._make_request("GET", "/admin/orgs")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can list orgs") from e
+            raise UpstreamError(f"Failed to list orgs: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def get_org(self, org_id: str) -> dict:
+        """Get one org. Admin, or any owner who is a member."""
+        try:
+            response = self._make_request("GET", f"/admin/orgs/{org_id}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            if e.response.status_code == 404:
+                raise UpstreamError(e.response.json().get("detail", "org not found")) from e
+            raise UpstreamError(f"Failed to get org: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def add_org_member(self, org_id: str, owner_id: str) -> dict:
+        """Add an owner as a member of an org. Admin only."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/admin/orgs/add-member",
+                body={"org_id": org_id, "owner_id": owner_id},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can manage org membership") from e
+            if e.response.status_code == 404:
+                raise UpstreamError(e.response.json().get("detail", "not found")) from e
+            raise UpstreamError(f"Failed to add org member: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def remove_org_member(self, org_id: str, owner_id: str) -> dict:
+        """Remove an owner from an org. Admin only."""
+        try:
+            response = self._make_request(
+                "POST",
+                "/admin/orgs/remove-member",
+                body={"org_id": org_id, "owner_id": owner_id},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError("Only admin can manage org membership") from e
+            raise UpstreamError(f"Failed to remove org member: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def get_org_instances(self, org_id: str) -> dict:
+        """Namespaces granted directly to this org (not aggregated across
+        members). Admin, or any member owner, can view."""
+        try:
+            response = self._make_request("GET", f"/admin/orgs/{org_id}/instances")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+            if e.response.status_code == 404:
+                raise UpstreamError(e.response.json().get("detail", "org not found")) from e
+            raise UpstreamError(f"Failed to get org instances: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def approve_org(self, org_id: str, namespace: str = "*", role: str = "approved") -> dict:
+        """Approve an org for a namespace — every member owner's every
+        linked DID inherits the grant."""
+        from .storage import org_key
+
+        return self.approve_did(org_key(org_id), namespace=namespace, role=role)
+
+    def revoke_org(self, org_id: str, namespace: str = "*") -> dict:
+        """Revoke an org's namespace grant (or all with namespace='*')."""
+        from .storage import org_key
+
+        return self.revoke_did(org_key(org_id), namespace=namespace)
+
+    def get_owner_instances(self, owner_id: str) -> dict:
+        """Every namespace this owner can reach, directly or via any linked
+        DID (Phase B). Self-service for the owner's own DIDs; admin can
+        query any owner."""
+        try:
+            response = self._make_request("GET", f"/admin/instances?owner={owner_id}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("DID authentication failed") from e
+            if e.response.status_code == 403:
+                raise NotAdminError(
+                    e.response.json().get("detail", "not authorized")
+                ) from e
+            if e.response.status_code == 404:
+                raise UpstreamError(e.response.json().get("detail", "owner not found")) from e
+            raise UpstreamError(f"Failed to get owner instances: {e.response.status_code}") from e
+        except httpx.RequestError as e:
+            raise UpstreamError(f"Connection error: {e}") from e
+
+    def approve_owner(self, owner_id: str, namespace: str = "*", role: str = "approved") -> dict:
+        """Approve an owner for a namespace — every DID linked to that
+        owner, present and future, inherits the grant. Thin wrapper over
+        ``approve_did``: an owner grant is just another key in the same
+        namespace registry (see ``upstream.storage.owner_key``)."""
+        from .storage import owner_key
+
+        return self.approve_did(owner_key(owner_id), namespace=namespace, role=role)
+
+    def revoke_owner(self, owner_id: str, namespace: str = "*") -> dict:
+        """Revoke an owner's namespace grant (or all with namespace='*')."""
+        from .storage import owner_key
+
+        return self.revoke_did(owner_key(owner_id), namespace=namespace)
 
     def revoke_did(self, target_did: str, namespace: str = "*") -> dict:
         """Revoke a DID's access to a namespace (or all if namespace='*'). Requires admin."""
