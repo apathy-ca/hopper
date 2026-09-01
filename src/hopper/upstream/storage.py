@@ -255,15 +255,50 @@ class DIDRegistry:
 
     def _is_directly_authorized(self, key: str, namespace: str) -> bool:
         """Original DID-only authorization check — also reused for owner
-        keys, since an owner grant lives in the exact same registry shape."""
+        keys, since an owner grant lives in the exact same registry shape.
+
+        Round-8 fix (pre-dates this PR, confirmed present in master): this
+        used to return as soon as ``key`` was merely *present* in the
+        ``GLOBAL_NS`` bucket, even with a non-authorized status there
+        (e.g. PENDING) — never falling through to check the namespace-
+        specific bucket for a real, separate APPROVED grant. Reproduced:
+        a DID whose first sync happened to target instance name ``"*"``
+        (unvalidated free text, nothing rejects it) lands PENDING in
+        ``GLOBAL_NS``; an admin then explicitly approves it for 'eigan',
+        writing APPROVED there — but this still returned ``False`` and
+        every sync for 'eigan' 403'd despite the explicit approval.
+        ``_is_directly_approver`` below never had this bug — it checks
+        each bucket's *value*, not mere presence, which is what this now
+        matches.
+        """
         if self.is_admin(key):
             return True
         authorized = {DIDStatus.APPROVED, DIDStatus.APPROVER}
-        # Global approval
-        if key in self._registry.get(GLOBAL_NS, {}):
-            return self._registry[GLOBAL_NS][key] in authorized
-        # Namespace-specific approval
+        if self._registry.get(GLOBAL_NS, {}).get(key) in authorized:
+            return True
         return self._registry.get(namespace, {}).get(key) in authorized
+
+    def _owner_directly_authorized(self, owner_id: str | None, namespace: str) -> bool:
+        """Whether ``owner_id``'s own grant key is directly authorized for
+        ``namespace`` — ``False`` (not an error) when ``owner_id`` is
+        ``None``, since "no linked owner" is the common case, not a
+        missing argument. Factored out (round 8) after the same
+        ``owner_id is not None and self._is_directly_authorized(owner_key(...))``
+        shape was hand-duplicated across ``is_authorized``,
+        ``register_or_get``, and ``_residual_authorization_reason`` —
+        round 7's revoke fix already drifted out of sync with
+        ``is_authorized`` once because of exactly this kind of
+        duplication.
+        """
+        return owner_id is not None and self._is_directly_authorized(owner_key(owner_id), namespace)
+
+    def _any_org_directly_authorized(self, org_ids: list[str] | None, namespace: str) -> bool:
+        """Whether any of ``org_ids`` is directly authorized for
+        ``namespace`` — see ``_owner_directly_authorized``'s docstring for
+        why this was factored out."""
+        return any(
+            self._is_directly_authorized(org_key(org_id), namespace) for org_id in org_ids or []
+        )
 
     def is_authorized(
         self,
@@ -282,12 +317,9 @@ class DIDRegistry:
         """
         if self._is_directly_authorized(did, namespace):
             return True
-        if owner_id is not None and self._is_directly_authorized(owner_key(owner_id), namespace):
+        if self._owner_directly_authorized(owner_id, namespace):
             return True
-        for org_id in org_ids or []:
-            if self._is_directly_authorized(org_key(org_id), namespace):
-                return True
-        return False
+        return self._any_org_directly_authorized(org_ids, namespace)
 
     def _is_directly_approver(self, key: str, namespace: str) -> bool:
         """Original DID-only approver check — also reused for owner keys."""
@@ -377,11 +409,10 @@ class DIDRegistry:
         existing = self.get_status(did, namespace)
         if existing is not None:
             return existing, False
-        if owner_id is not None and self._is_directly_authorized(owner_key(owner_id), namespace):
+        if self._owner_directly_authorized(owner_id, namespace):
             return DIDStatus.APPROVED, False
-        for org_id in org_ids or []:
-            if self._is_directly_authorized(org_key(org_id), namespace):
-                return DIDStatus.APPROVED, False
+        if self._any_org_directly_authorized(org_ids, namespace):
+            return DIDStatus.APPROVED, False
 
         with self._lock():
             self._load_registry()  # refresh — another process may have just written
@@ -400,13 +431,10 @@ class DIDRegistry:
                 self._save_record(record)
                 return DIDStatus.ADMIN, True
 
-            if owner_id is not None and self._is_directly_authorized(
-                owner_key(owner_id), namespace
-            ):
+            if self._owner_directly_authorized(owner_id, namespace):
                 return DIDStatus.APPROVED, False
-            for org_id in org_ids or []:
-                if self._is_directly_authorized(org_key(org_id), namespace):
-                    return DIDStatus.APPROVED, False
+            if self._any_org_directly_authorized(org_ids, namespace):
+                return DIDStatus.APPROVED, False
 
             # Register as pending for this namespace
             self._registry.setdefault(namespace, {})[did] = DIDStatus.PENDING
@@ -611,23 +639,15 @@ class DIDRegistry:
         if is_org_key(target):
             return None
         if is_owner_key(target):
-            if any(
-                self._is_directly_authorized(org_key(org_id), namespace)
-                for org_id in target_org_ids or []
-            ):
+            if self._any_org_directly_authorized(target_org_ids, namespace):
                 return "an org grant", "revoke that org's grant too"
             return None
-        if target_owner_id is not None and self._is_directly_authorized(
-            owner_key(target_owner_id), namespace
-        ):
+        if self._owner_directly_authorized(target_owner_id, namespace):
             return (
                 "its linked owner's grant",
                 "revoke the owner's grant, or unlink this DID from its owner",
             )
-        if any(
-            self._is_directly_authorized(org_key(org_id), namespace)
-            for org_id in target_org_ids or []
-        ):
+        if self._any_org_directly_authorized(target_org_ids, namespace):
             return (
                 "an org grant via its linked owner",
                 "revoke the org's grant, or remove the owner from that org",
@@ -683,10 +703,25 @@ class DIDRegistry:
             if not by_is_admin:
                 target_status = self._registry.get(namespace, {}).get(target)
                 if target_status is None:
-                    return False, (
-                        "no direct grant here for an approver to revoke — if this target's "
-                        "access is owner/org-derived, only admin can revoke that"
+                    # Nothing to pop in this bucket for an approver -- but
+                    # *why* varies (round-8 fix: this used to always blame
+                    # "owner/org-derived", even when the target's access
+                    # was its own separate grant with no owner/org
+                    # involved at all — same message-mislabeling class
+                    # fixed elsewhere in this round, just missed here).
+                    # Reuse the same diagnosis revoke()'s own post-pop
+                    # check uses, since the question is identical: why
+                    # would this target still resolve as authorized.
+                    residual = self._residual_authorization_reason(
+                        target, namespace, target_owner_id, target_org_ids
                     )
+                    if residual is not None:
+                        reason, _ = residual
+                        return False, (
+                            f"no direct grant here for an approver to revoke — this target's "
+                            f"access comes from {reason}, which only admin can revoke"
+                        )
+                    return False, "target has no grant to revoke in this scope"
                 if target_status != DIDStatus.APPROVED:
                     return False, "approvers can only revoke APPROVED members"
 

@@ -70,6 +70,54 @@ class TestDidOnlyBehaviorUnchanged:
         assert registry.is_approver(BOB, "eigan") is False
 
 
+class TestIsDirectlyAuthorizedChecksBothBucketsNotJustPresence:
+    """Regression coverage for a round-8 finding on PR
+    owner-identity-instance-discovery: a genuine pre-existing bug
+    (confirmed present in master, not introduced by this branch, but
+    _residual_authorization_reason's revoke logic now depends on this
+    same primitive so it's worth closing here too). ``_is_directly_
+    authorized`` used to return as soon as ``key`` was merely *present*
+    in the GLOBAL_NS bucket, even at a non-authorized status (e.g.
+    PENDING) there -- never falling through to check the namespace-
+    specific bucket for a real, separate APPROVED grant.
+    """
+
+    def test_pending_global_entry_does_not_shadow_a_real_namespace_specific_approval(
+        self, registry: DIDRegistry
+    ) -> None:
+        """The exact repro: a DID's first sync happens to target instance
+        name '*' (unvalidated free text), landing it PENDING in GLOBAL_NS
+        -- an admin then explicitly approves it for 'eigan'. That
+        explicit approval must not be shadowed by the earlier PENDING
+        global entry."""
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "*")  # lands PENDING in GLOBAL_NS
+        assert registry.get_status(ALICE, "*") == DIDStatus.PENDING
+
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+
+        assert registry.is_authorized(ALICE, "eigan") is True
+
+    def test_pending_global_entry_alone_still_correctly_denies(self, registry: DIDRegistry) -> None:
+        """Sanity check the fix doesn't over-correct into always
+        authorizing once any GLOBAL_NS entry exists."""
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "*")  # lands PENDING in GLOBAL_NS
+
+        assert registry.is_authorized(ALICE, "eigan") is False
+
+    def test_approved_global_entry_still_authorizes_every_namespace(
+        self, registry: DIDRegistry
+    ) -> None:
+        """Sanity check the ordinary global-approval case (the common,
+        already-tested path) isn't disturbed by this fix."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "*", by_did=ADMIN)
+
+        assert registry.is_authorized(ALICE, "eigan") is True
+        assert registry.is_authorized(ALICE, "waypoint") is True
+
+
 class TestOwnerFallthrough:
     """The actual Phase B behavior: a DID with no direct grant inherits
     through its linked owner."""
@@ -477,10 +525,50 @@ class TestRevokeOwnResidualGrantDoesNotSilentlyNoOp:
         registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
         registry.register_or_get(BOB, "eigan", owner_id="james")  # owner-derived, no direct entry
 
-        success, message = registry.revoke(BOB, "eigan", by_did=ALICE)
+        success, message = registry.revoke(BOB, "eigan", by_did=ALICE, target_owner_id="james")
 
         assert success is False
         assert "no direct grant" in message
+        assert "linked owner's grant" in message
+
+    def test_approver_revoking_a_target_whose_only_access_is_its_own_separate_grant_names_it(
+        self, registry: DIDRegistry
+    ) -> None:
+        """Round-8 fix: the message above used to unconditionally blame
+        'owner/org-derived' access even when the target's access was its
+        own separate grant (e.g. a global '*') with no owner or org
+        involved at all -- same message-mislabeling class fixed for the
+        admin path, missed here."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+        registry.approve(BOB, "*", by_did=ADMIN)  # BOB's only grant: his own, global
+
+        success, message = registry.revoke(
+            BOB, "eigan", by_did=ALICE, target_owner_id=None, target_org_ids=[]
+        )
+
+        assert success is False
+        assert "own separate grant" in message
+        assert "owner" not in message.lower()
+
+    def test_approver_revoking_a_target_with_no_access_anywhere_gets_a_plain_message(
+        self, registry: DIDRegistry
+    ) -> None:
+        """The genuine-nothing-to-revoke case must not be mislabeled as
+        owner/org-derived either. BOB has a real grant, but on a
+        different namespace than the one being revoked -- so this
+        namespace's bucket has no entry for him at all (not even
+        PENDING), and no residual access anywhere explains it either."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+        registry.approve(BOB, "waypoint", by_did=ADMIN)  # unrelated namespace
+
+        success, message = registry.revoke(
+            BOB, "eigan", by_did=ALICE, target_owner_id=None, target_org_ids=[]
+        )
+
+        assert success is False
+        assert "no grant to revoke" in message
 
     def test_revoking_the_only_grant_a_did_holds_still_succeeds(
         self, registry: DIDRegistry
