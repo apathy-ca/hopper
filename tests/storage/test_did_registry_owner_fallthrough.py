@@ -334,7 +334,7 @@ class TestRevokeOwnerOrgDerivedAccessDoesNotSilentlyNoOp:
         success, message = registry.revoke(ALICE, "eigan", by_did=ADMIN, target_owner_id="james")
 
         assert success is False
-        assert "owner/org grant" in message
+        assert "linked owner's grant" in message
         assert registry.is_authorized(ALICE, "eigan", owner_id="james") is True  # still has access
 
     def test_revoking_a_directly_granted_did_still_succeeds_with_the_hint_present(
@@ -368,7 +368,134 @@ class TestRevokeOwnerOrgDerivedAccessDoesNotSilentlyNoOp:
         )
 
         assert success is False
-        assert "owner/org grant" in message
+        assert "org grant" in message
+
+
+class TestRevokeOwnResidualGrantDoesNotSilentlyNoOp:
+    """Regression coverage for a round-7 finding on PR
+    owner-identity-instance-discovery: round 6's re-check-after-pop fix
+    only ever looked at *fallthrough* (owner/org) for continued access —
+    it never checked whether the target itself still held a *separate*
+    direct grant the revoke call wasn't asked to touch (most commonly, a
+    GLOBAL_NS '*' entry independent of a namespace-specific one, or vice
+    versa). That left the exact same 'admin is told access was cut off
+    when it wasn't' bug this round otherwise fixed, one level up:
+
+    - For an owner/org-key target, this was a silent false *success* —
+      the old code's owner/org branches only checked org-membership
+      fallthrough, never the target's own remaining direct entry.
+    - For a DID target with its own separate global grant, the old code
+      *did* detect the residual access (is_authorized checks the target's
+      own direct grant first) but mislabeled it as coming from "an
+      owner/org grant" with "unlink the DID from its owner" remediation —
+      wrong on both counts when no owner was involved at all.
+    """
+
+    def test_revoking_a_namespace_grant_from_an_owner_with_a_separate_global_grant_fails_loudly(
+        self, registry: DIDRegistry
+    ) -> None:
+        """The exact round-7 repro: owner:james holds both an 'eigan'
+        grant and a separate '*' grant; revoking just 'eigan' must not
+        report success while '*' still grants every linked DID 'eigan'
+        access."""
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+        registry.approve(owner_key("james"), "*", by_did=ADMIN)
+
+        success, message = registry.revoke(owner_key("james"), "eigan", by_did=ADMIN)
+
+        assert success is False
+        assert "own separate grant" in message
+        assert registry.is_authorized(ALICE, "eigan", owner_id="james") is True
+
+    def test_revoking_a_namespace_grant_from_an_org_with_a_separate_global_grant_fails_loudly(
+        self, registry: DIDRegistry
+    ) -> None:
+        from hopper.upstream.storage import org_key
+
+        _bootstrap_admin(registry)
+        registry.approve(org_key("eigan-corp"), "rosetta", by_did=ADMIN)
+        registry.approve(org_key("eigan-corp"), "*", by_did=ADMIN)
+
+        success, message = registry.revoke(org_key("eigan-corp"), "rosetta", by_did=ADMIN)
+
+        assert success is False
+        assert "own separate grant" in message
+
+    def test_revoking_a_namespace_grant_from_a_did_with_a_separate_global_grant_names_its_own_grant(
+        self, registry: DIDRegistry
+    ) -> None:
+        """The related round-7 finding: this must be labeled as the DID's
+        own grant, not misattributed to an owner/org that isn't involved
+        at all."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+        registry.approve(ALICE, "*", by_did=ADMIN)
+
+        success, message = registry.revoke(
+            ALICE, "eigan", by_did=ADMIN, target_owner_id=None, target_org_ids=[]
+        )
+
+        assert success is False
+        assert "own separate grant" in message
+        assert "owner" not in message.lower()
+
+    def test_revoking_the_global_grant_does_not_scan_for_leftover_specific_namespace_grants(
+        self, registry: DIDRegistry
+    ) -> None:
+        """Documents the direction this fix does NOT cover, rather than
+        silently leaving it unverified: ``_is_directly_authorized`` checks
+        the GLOBAL_NS bucket first specifically because a '*' grant
+        implies access to every namespace -- so it's the right check for
+        "does a broader grant still cover the namespace I just revoked".
+        The reverse isn't symmetric: a leftover 'eigan'-specific entry
+        doesn't mean the target is still "authorized for '*'" in any
+        meaningful sense, and detecting it would need a scan of every
+        namespace bucket, not a targeted check -- out of scope for the
+        round-7 finding this class fixes, which was specifically about a
+        specific-namespace revoke leaving a broader grant behind."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+        registry.approve(ALICE, "*", by_did=ADMIN)
+
+        success, message = registry.revoke(
+            ALICE, "*", by_did=ADMIN, target_owner_id=None, target_org_ids=[]
+        )
+
+        assert success is True
+        assert registry.is_authorized(ALICE, "eigan") is True  # untouched, and not flagged
+
+    def test_approver_revoking_owner_derived_access_gets_an_accurate_message(
+        self, registry: DIDRegistry
+    ) -> None:
+        """Round-7 minor finding: an approver revoking a target with no
+        direct entry used to get the generic (and misleading) 'approvers
+        can only revoke APPROVED members' -- the real reason is that
+        owner/org-derived access is admin-only to touch."""
+        _bootstrap_admin(registry)
+        registry.approve(owner_key("james"), "eigan", by_did=ADMIN)
+        registry.approve(ALICE, "eigan", by_did=ADMIN, role=DIDStatus.APPROVER)
+        registry.register_or_get(BOB, "eigan", owner_id="james")  # owner-derived, no direct entry
+
+        success, message = registry.revoke(BOB, "eigan", by_did=ALICE)
+
+        assert success is False
+        assert "no direct grant" in message
+
+    def test_revoking_the_only_grant_a_did_holds_still_succeeds(
+        self, registry: DIDRegistry
+    ) -> None:
+        """No residual grant anywhere -- must not regress into always
+        failing now that a same-target self-check was added."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+
+        success, message = registry.revoke(
+            ALICE, "eigan", by_did=ADMIN, target_owner_id=None, target_org_ids=[]
+        )
+
+        assert success is True
+        assert registry.is_authorized(ALICE, "eigan") is False
 
 
 class TestApproveRevokeBlocksNonAdminFromOwnerOrgTargets:

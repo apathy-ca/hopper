@@ -259,7 +259,7 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "Not authorized")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to approve: {e.response.status_code}")
             ) from e
@@ -339,9 +339,9 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "Not authorized")) from e
             if e.response.status_code == 404:
-                raise UpstreamError(e.response.json().get("detail", "not found")) from e
+                raise UpstreamError(_detail_or(e.response, "not found")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to create invite: {e.response.status_code}")
             ) from e
@@ -362,7 +362,7 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code in (403, 404):
-                raise NotAuthorizedError(e.response.json().get("detail", "redeem failed")) from e
+                raise NotAuthorizedError(_detail_or(e.response, "redeem failed")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to redeem: {e.response.status_code}")
             ) from e
@@ -399,7 +399,7 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "Not authorized")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to revoke invite: {e.response.status_code}")
             ) from e
@@ -568,9 +568,9 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "Not authorized")) from e
             if e.response.status_code == 404:
-                raise UpstreamError(e.response.json().get("detail", "org not found")) from e
+                raise UpstreamError(_detail_or(e.response, "org not found")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to get org: {e.response.status_code}")
             ) from e
@@ -593,7 +593,7 @@ class UpstreamClient:
             if e.response.status_code == 403:
                 raise NotAdminError("Only admin can manage org membership") from e
             if e.response.status_code == 404:
-                raise UpstreamError(e.response.json().get("detail", "not found")) from e
+                raise UpstreamError(_detail_or(e.response, "not found")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to add org member: {e.response.status_code}")
             ) from e
@@ -632,9 +632,9 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "Not authorized")) from e
             if e.response.status_code == 404:
-                raise UpstreamError(e.response.json().get("detail", "org not found")) from e
+                raise UpstreamError(_detail_or(e.response, "org not found")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to get org instances: {e.response.status_code}")
             ) from e
@@ -666,9 +666,9 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "not authorized")) from e
             if e.response.status_code == 404:
-                raise UpstreamError(e.response.json().get("detail", "owner not found")) from e
+                raise UpstreamError(_detail_or(e.response, "owner not found")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to get owner instances: {e.response.status_code}")
             ) from e
@@ -704,7 +704,7 @@ class UpstreamClient:
             if e.response.status_code == 401:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
-                raise NotAdminError(e.response.json().get("detail", "Not authorized")) from e
+                raise NotAdminError(_detail_or(e.response, "Not authorized")) from e
             raise UpstreamError(
                 _detail_or(e.response, f"Failed to revoke: {e.response.status_code}")
             ) from e

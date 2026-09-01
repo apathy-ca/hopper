@@ -565,36 +565,74 @@ class DIDRegistry:
             return False, f"not authorized to revoke for namespace '{namespace}'"
         return True, ""
 
-    def _would_still_be_authorized(
+    def _residual_authorization_reason(
         self,
         target: str,
         namespace: str,
         target_owner_id: str | None,
         target_org_ids: list[str] | None,
-    ) -> bool:
-        """After ``target``'s own direct namespace entry has already been
-        removed, would it still resolve as authorized through fallthrough?
+    ) -> tuple[str, str] | None:
+        """After ``target``'s own entry in ``namespace``'s bucket has
+        already been removed, why (if at all) would it still resolve as
+        authorized? ``None`` means genuinely cut off; otherwise
+        ``(reason, remediation)`` — ``revoke()`` uses both to build an
+        honest message: never "revoked" when access actually persists,
+        and never blamed on (or told to fix via) an owner/org grant when
+        the real cause is the target's own separate direct grant.
 
-        A plain DID falls through to its linked owner, then that owner's
-        orgs — exactly ``is_authorized``'s resolution order, since that's
-        the same chain ``register_or_get`` used to grant it access without
-        ever writing a direct per-DID entry in the first place (Phase B/E:
-        an owner- or org-derived grant intentionally has no direct
-        registry row to remove). An owner key has no *linked owner* of its
-        own, but can still be a member of an org with its own grant. An
-        org key has no further fallthrough — an org's grant is never
-        inherited from anything above it.
+        Checked in order:
+
+        1. ``target``'s own *separate* direct grant — a round-7 finding:
+           revoking a namespace-specific entry doesn't touch a separate
+           ``GLOBAL_NS`` ('*') entry the same key might independently
+           hold (or vice versa if ``namespace`` was ``'*'`` and a
+           namespace-specific entry remains) — ``_is_directly_authorized``
+           checks both buckets for exactly this reason. This applies to
+           every target kind (DID, owner key, org key) equally; an
+           earlier version only ever checked *fallthrough* for owner/org
+           targets, missing this bucket entirely for them — the headline
+           gap this round closes. For a DID it was already caught, but
+           mislabeled as "an owner/org grant" with "unlink from owner"
+           remediation even when it was the DID's own grant and no owner
+           was involved at all — the wording below now avoids both.
+        2. Owner fallthrough (DID targets only) — the DID's linked owner
+           still holds a grant, same chain ``register_or_get`` used to
+           authorize it without ever writing a direct per-DID entry.
+        3. Org fallthrough — the DID's linked owner's orgs, or (for an
+           owner-key target) the owner's own org memberships directly.
+           An org key has no further fallthrough of its own — an org's
+           grant is never inherited from anything above it.
         """
+        if self._is_directly_authorized(target, namespace):
+            return (
+                "its own separate grant (e.g. a global '*' approval this call didn't target)",
+                "revoke that grant too",
+            )
         if is_org_key(target):
-            return False
+            return None
         if is_owner_key(target):
-            return any(
+            if any(
                 self._is_directly_authorized(org_key(org_id), namespace)
                 for org_id in target_org_ids or []
+            ):
+                return "an org grant", "revoke that org's grant too"
+            return None
+        if target_owner_id is not None and self._is_directly_authorized(
+            owner_key(target_owner_id), namespace
+        ):
+            return (
+                "its linked owner's grant",
+                "revoke the owner's grant, or unlink this DID from its owner",
             )
-        return self.is_authorized(
-            target, namespace, owner_id=target_owner_id, org_ids=target_org_ids
-        )
+        if any(
+            self._is_directly_authorized(org_key(org_id), namespace)
+            for org_id in target_org_ids or []
+        ):
+            return (
+                "an org grant via its linked owner",
+                "revoke the org's grant, or remove the owner from that org",
+            )
+        return None
 
     def revoke(
         self,
@@ -644,6 +682,11 @@ class DIDRegistry:
 
             if not by_is_admin:
                 target_status = self._registry.get(namespace, {}).get(target)
+                if target_status is None:
+                    return False, (
+                        "no direct grant here for an approver to revoke — if this target's "
+                        "access is owner/org-derived, only admin can revoke that"
+                    )
                 if target_status != DIDStatus.APPROVED:
                     return False, "approvers can only revoke APPROVED members"
 
@@ -658,13 +701,16 @@ class DIDRegistry:
                     record.namespaces.pop(namespace, None)
                     self._save_record(record)
 
-            if self._would_still_be_authorized(target, namespace, target_owner_id, target_org_ids):
+            residual = self._residual_authorization_reason(
+                target, namespace, target_owner_id, target_org_ids
+            )
+            if residual is not None:
+                reason, remediation = residual
                 scope = "all namespaces" if namespace == GLOBAL_NS else f"'{namespace}'"
                 kind = "owner" if is_owner_key(target) else "org" if is_org_key(target) else "DID"
                 return False, (
-                    f"{kind} still has access to {scope} through an owner/org grant — "
-                    "this had no direct grant to remove here; revoke the owner/org grant "
-                    "itself, or unlink the DID from its owner, to actually cut off access"
+                    f"{kind} still has access to {scope} through {reason} — "
+                    f"{remediation} to actually cut off access"
                 )
             return True, f"revoked from {'all namespaces' if namespace == GLOBAL_NS else namespace}"
 

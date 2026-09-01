@@ -984,12 +984,15 @@ def org_create(
     client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
-        client.create_org(org_id, name=name)
+        result = client.create_org(org_id, name=name)
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
         raise click.Abort() from e
 
-    print_success(f"Created org '{org_id}'" + (f" ({name})" if name else ""))
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Created org '{org_id}'" + (f" ({name})" if name else ""))
 
 
 @org.command(name="add-member")
@@ -1007,12 +1010,15 @@ def org_add_member(
     client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
-        client.add_org_member(org_id, owner_id)
+        result = client.add_org_member(org_id, owner_id)
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
         raise click.Abort() from e
 
-    print_success(f"Added owner '{owner_id}' to org '{org_id}'")
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Added owner '{owner_id}' to org '{org_id}'")
 
 
 @org.command(name="remove-member")
@@ -1030,12 +1036,15 @@ def org_remove_member(
     client, _ = _get_admin_client(ctx, server, admin_key)
 
     try:
-        client.remove_org_member(org_id, owner_id)
+        result = client.remove_org_member(org_id, owner_id)
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
         raise click.Abort() from e
 
-    print_success(f"Removed owner '{owner_id}' from org '{org_id}'")
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Removed owner '{owner_id}' from org '{org_id}'")
 
 
 @org.command(name="list")
@@ -1128,14 +1137,17 @@ def org_approve(
     ns = "*" if all_namespaces else (namespace or "*")
 
     try:
-        client.approve_org(org_id, namespace=ns, role=role)
+        result = client.approve_org(org_id, namespace=ns, role=role)
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
         raise click.Abort() from e
 
-    scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
-    label = "granted approver on" if role == "approver" else "approved for"
-    print_success(f"Org '{org_id}': {label} {scope}")
+    if ctx.json_output:
+        print_json(result)
+    else:
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        label = "granted approver on" if role == "approver" else "approved for"
+        print_success(f"Org '{org_id}': {label} {scope}")
 
 
 @org.command(name="revoke")
@@ -1160,13 +1172,16 @@ def org_revoke(
     ns = "*" if all_namespaces else (namespace or "*")
 
     try:
-        client.revoke_org(org_id, namespace=ns)
+        result = client.revoke_org(org_id, namespace=ns)
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
         raise click.Abort() from e
 
-    scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
-    print_success(f"Org '{org_id}': revoked from {scope}")
+    if ctx.json_output:
+        print_json(result)
+    else:
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        print_success(f"Org '{org_id}': revoked from {scope}")
 
 
 @org.command(name="instances")
@@ -1291,6 +1306,12 @@ def invite_create(
         raise click.Abort()
     if new_owner_id is not None and not email:
         print_error("--new-owner requires --email.")
+        raise click.Abort()
+    if namespace is None and role != "approved":
+        # create_device_invite/create_new_owner_invite take no role at
+        # all -- passing --role with --owner/--new-owner used to be
+        # silently dropped with no warning that it had no effect.
+        print_error("--role only applies to --namespace invites.")
         raise click.Abort()
 
     if expires.lower() == "never":

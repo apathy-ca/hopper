@@ -1222,22 +1222,37 @@ async def invite_revoke(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
 
-    # Look up first so we can authority-check before revoking.
     reg = storage.did_registry
+    caller_is_admin = reg.is_admin(did)
     matches = [
         p
         for p in storage.invites.invites_dir.glob("*.json")
         if p.stem.startswith(req.token_hash_prefix)
     ]
-    if not matches:
-        raise HTTPException(status_code=404, detail="no matching invite")
-    if len(matches) > 1:
-        raise HTTPException(status_code=400, detail=f"ambiguous prefix: {len(matches)} matches")
+
+    # Same existence-oracle reasoning as owner_instances/get_org/
+    # org_instances/invite_create's DEVICE branch: whether this prefix
+    # matches anything can only be checked after globbing, and a
+    # non-admin's authority over the match depends on its contents (issued_by/
+    # namespace) — so a non-admin gets one 403 for "no match", "ambiguous
+    # prefix", and "matches but not theirs" alike, never a distinguishing
+    # 404/400. Low stakes here since token_hash_prefix is a SHA256 hash
+    # prefix, not a guessable slug, but the same collapse costs nothing.
+    if caller_is_admin:
+        if not matches:
+            raise HTTPException(status_code=404, detail="no matching invite")
+        if len(matches) > 1:
+            raise HTTPException(status_code=400, detail=f"ambiguous prefix: {len(matches)} matches")
+    elif len(matches) != 1:
+        raise HTTPException(status_code=403, detail="not authorized to revoke this invite")
+
     invite = storage.invites._load_path(matches[0])
     if invite is None:
-        raise HTTPException(status_code=500, detail="invite record corrupt")
+        if caller_is_admin:
+            raise HTTPException(status_code=500, detail="invite record corrupt")
+        raise HTTPException(status_code=403, detail="not authorized to revoke this invite")
 
-    if not reg.is_admin(did):
+    if not caller_is_admin:
         by_owner_id, by_org_ids = _resolve_owner_and_orgs(storage, did)
         if invite.issued_by != did and not reg.is_approver(
             did, invite.namespace, owner_id=by_owner_id, org_ids=by_org_ids
