@@ -370,11 +370,33 @@ class DIDRegistry:
         return has_global, sorted(namespaces)
 
     def get_status(self, did: str, namespace: str) -> DIDStatus | None:
+        """The DID's status for ``namespace`` — same GLOBAL_NS-vs-
+        namespace-specific resolution as ``_is_directly_authorized``
+        (round-8 fix, applied here too): a merely-*present* GLOBAL_NS
+        entry used to shadow a real, different-status namespace-specific
+        entry regardless of its own value. Reproduced: a stray PENDING
+        entry in GLOBAL_NS (e.g. from a sync that happened to target
+        instance name '*') alongside a real APPROVED entry in 'eigan'
+        used to report PENDING even though ``is_authorized`` correctly
+        said True for the same pair — same broken contract, one function
+        away from the one round 8 already fixed. An authorized GLOBAL_NS
+        status still wins outright (it grants access everywhere,
+        regardless of what's in any specific namespace bucket); otherwise
+        a real namespace-specific entry — even an unauthorized one, like
+        PENDING — is preferred over an equally-unauthorized global one,
+        since it's the more specific answer to "what's this DID's status
+        *here*".
+        """
         if self.is_admin(did):
             return DIDStatus.ADMIN
-        if did in self._registry.get(GLOBAL_NS, {}):
-            return self._registry[GLOBAL_NS][did]
-        return self._registry.get(namespace, {}).get(did)
+        authorized = {DIDStatus.APPROVED, DIDStatus.APPROVER}
+        global_status = self._registry.get(GLOBAL_NS, {}).get(did)
+        if global_status in authorized:
+            return global_status
+        namespace_status = self._registry.get(namespace, {}).get(did)
+        if namespace_status is not None:
+            return namespace_status
+        return global_status
 
     def register_or_get(
         self,
@@ -613,9 +635,16 @@ class DIDRegistry:
         1. ``target``'s own *separate* direct grant — a round-7 finding:
            revoking a namespace-specific entry doesn't touch a separate
            ``GLOBAL_NS`` ('*') entry the same key might independently
-           hold (or vice versa if ``namespace`` was ``'*'`` and a
-           namespace-specific entry remains) — ``_is_directly_authorized``
-           checks both buckets for exactly this reason. This applies to
+           hold — ``_is_directly_authorized`` checks both buckets for
+           exactly this reason. The reverse direction (revoking ``'*'``
+           itself while an unrelated namespace-specific entry survives)
+           is *not* covered: both checks collapse onto the same
+           ``GLOBAL_NS`` bucket when ``namespace`` is ``'*'``, so a
+           leftover namespace-specific grant elsewhere is never scanned
+           for — an accepted, out-of-scope limitation (round 7's
+           ``test_revoking_the_global_grant_does_not_scan_for_leftover_
+           specific_namespace_grants`` documents and locks this down
+           deliberately, not a gap left unverified). This applies to
            every target kind (DID, owner key, org key) equally; an
            earlier version only ever checked *fallthrough* for owner/org
            targets, missing this bucket entirely for them — the headline

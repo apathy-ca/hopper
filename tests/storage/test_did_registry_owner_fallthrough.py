@@ -118,6 +118,62 @@ class TestIsDirectlyAuthorizedChecksBothBucketsNotJustPresence:
         assert registry.is_authorized(ALICE, "waypoint") is True
 
 
+class TestGetStatusChecksBothBucketsNotJustPresence:
+    """Regression coverage for a round-9 finding on PR
+    owner-identity-instance-discovery: ``get_status`` had the exact same
+    bug class round 8 fixed in ``_is_directly_authorized`` -- presence in
+    GLOBAL_NS, not its value, used to shadow a real, different-status
+    namespace-specific entry. Not a live authorization bypass (the actual
+    gate, ``is_authorized``, was already fixed and correct for this same
+    pair), but the same broken contract one function away, and
+    ``register_or_get`` calls ``get_status`` internally.
+    """
+
+    def test_pending_global_entry_does_not_shadow_a_real_namespace_specific_approval(
+        self, registry: DIDRegistry
+    ) -> None:
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "*")  # lands PENDING in GLOBAL_NS
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+
+        assert registry.get_status(ALICE, "eigan") == DIDStatus.APPROVED
+
+    def test_pending_global_entry_alone_still_reported_as_pending(
+        self, registry: DIDRegistry
+    ) -> None:
+        """No namespace-specific entry at all -- must still fall back to
+        the global one rather than returning None."""
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "*")  # lands PENDING in GLOBAL_NS
+
+        assert registry.get_status(ALICE, "eigan") == DIDStatus.PENDING
+
+    def test_approved_global_entry_wins_over_a_lesser_namespace_specific_entry(
+        self, registry: DIDRegistry
+    ) -> None:
+        """An authorized global grant is the DID's real overall status,
+        regardless of what a specific namespace bucket separately holds."""
+        _bootstrap_admin(registry)
+        registry.approve(ALICE, "*", by_did=ADMIN)
+        registry.register_or_get(BOB, "eigan")  # unrelated DID, sanity only
+
+        assert registry.get_status(ALICE, "eigan") == DIDStatus.APPROVED
+
+    def test_register_or_get_is_not_fooled_by_a_stray_global_pending_entry(
+        self, registry: DIDRegistry
+    ) -> None:
+        """register_or_get calls get_status internally -- confirm the fix
+        actually reaches that caller, not just direct get_status callers."""
+        _bootstrap_admin(registry)
+        registry.register_or_get(ALICE, "*")  # lands PENDING in GLOBAL_NS
+        registry.approve(ALICE, "eigan", by_did=ADMIN)
+
+        status, is_new = registry.register_or_get(ALICE, "eigan")
+
+        assert status == DIDStatus.APPROVED
+        assert is_new is False
+
+
 class TestOwnerFallthrough:
     """The actual Phase B behavior: a DID with no direct grant inherits
     through its linked owner."""

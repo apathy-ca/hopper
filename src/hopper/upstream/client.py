@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import httpx
 
@@ -447,7 +448,17 @@ class UpstreamClient:
     def get_owner(self, owner_id: str) -> dict:
         """Get one owner by id. Admin only."""
         try:
-            response = self._make_request("GET", f"/admin/owners/{owner_id}")
+            # quote(..., safe="") -- owner_id is a path *segment*, not a
+            # query param like the sibling instance-lookup methods (round-9
+            # finding): raw f-string interpolation let an id containing
+            # '/', '?', or '#' silently retarget or corrupt the request
+            # (confirmed: "jhenry/../admin" collapsed to a request for
+            # "admin", "jhenry?x=evil" reinterpreted the rest as a query
+            # string) -- server ids have no format validation to rule this
+            # out. Encoding here keeps the round-trip correct: the server
+            # decodes request.url.path back to the exact original id before
+            # verifying the signature, matching _make_request's docstring.
+            response = self._make_request("GET", f"/admin/owners/{quote(owner_id, safe='')}")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -561,7 +572,9 @@ class UpstreamClient:
     def get_org(self, org_id: str) -> dict:
         """Get one org. Admin, or any owner who is a member."""
         try:
-            response = self._make_request("GET", f"/admin/orgs/{org_id}")
+            # See get_owner's comment -- org_id is a path segment, needs
+            # the same encoding.
+            response = self._make_request("GET", f"/admin/orgs/{quote(org_id, safe='')}")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -625,7 +638,9 @@ class UpstreamClient:
         """Namespaces granted directly to this org (not aggregated across
         members). Admin, or any member owner, can view."""
         try:
-            response = self._make_request("GET", f"/admin/orgs/{org_id}/instances")
+            # See get_owner's comment -- org_id is a path segment, needs
+            # the same encoding.
+            response = self._make_request("GET", f"/admin/orgs/{quote(org_id, safe='')}/instances")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:

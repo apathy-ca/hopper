@@ -1416,8 +1416,16 @@ def invite_list(
             status_bits.append("expired")
         status = ", ".join(status_bits) if status_bits else "active"
 
+        kind = inv.get("kind", "namespace")
+        if kind == "device":
+            scope = f"kind=device  owner={inv['owner_id']}"
+        elif kind == "new_owner":
+            scope = f"kind=new_owner  owner={inv['owner_id']}  email={inv['new_owner_email']}"
+        else:
+            scope = f"ns={inv['namespace']}  role={inv['role']}"
+
         click.echo(
-            f"  {inv['token_hash'][:12]}…  ns={inv['namespace']}  role={inv['role']}  uses={inv['uses']}/{inv['max_uses']}  [{status}]"
+            f"  {inv['token_hash'][:12]}…  {scope}  uses={inv['uses']}/{inv['max_uses']}  [{status}]"
         )
         if exp:
             dt = datetime.fromtimestamp(exp / 1000, tz=UTC)
