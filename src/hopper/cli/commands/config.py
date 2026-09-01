@@ -44,6 +44,18 @@ DEFAULT_KNOWLEDGE_SOURCE = "https://github.com/apathy-ca/agent-knowledge.git"
 @click.option("--profile", default="default", help="Profile name (for server mode)")
 @click.option("--endpoint", help="API endpoint URL (for server mode)")
 @click.option("--server", "-s", is_flag=True, help="Initialize for server mode instead of local")
+@click.option(
+    "--claim",
+    "claim_token",
+    default=None,
+    help="Redeem a device/owner invite as part of init (Phase C)",
+)
+@click.option(
+    "--upstream",
+    "upstream_server",
+    default=None,
+    help="Upstream server URL, if not already configured (used with --claim)",
+)
 @click.option("--non-interactive", is_flag=True, help="Non-interactive mode")
 @click.option("--allow-git", is_flag=True, help="Do not add .hopper/ to .gitignore")
 @click.pass_obj
@@ -57,6 +69,8 @@ def init(
     profile: str,
     endpoint: str | None,
     server: bool,
+    claim_token: str | None,
+    upstream_server: str | None,
     non_interactive: bool,
     allow_git: bool,
 ) -> None:
@@ -66,11 +80,20 @@ def init(
     with hopper-usage.md and relevant agent-knowledge synced from the
     exe.dev standard location.
 
+    If this machine's identity is already linked to an owner on an
+    upstream server (or becomes linked via --claim), init discovers
+    instances that identity can already reach before defaulting the
+    instance name to the current directory — interactively, a picker;
+    non-interactively, a refusal listing the candidates rather than a
+    silent default (--name always skips this and wins outright).
+
     Examples:
         hopper init                     # Initialize in current directory (default)
         hopper init --no-knowledge      # Skip agent-knowledge, just hopper-usage.md
         hopper init -k /path/to/knowledge  # Use custom knowledge source
         hopper init --allow-git         # Don't gitignore .hopper/
+        hopper init --claim <token>     # Redeem a device/owner invite, then discover
+        hopper init --name eigan        # Explicit — skips discovery entirely
         hopper init --server            # Initialize server mode config
         hopper init --server --endpoint https://api.hopper.io
     """
@@ -89,7 +112,136 @@ def init(
         non_interactive=non_interactive,
         instance_name=name,
         allow_git=allow_git,
+        claim_token=claim_token,
+        upstream_server=upstream_server,
     )
+
+
+def _try_upstream_client(ctx: Context):
+    """Best-effort upstream client for opportunistic instance discovery.
+
+    Returns (client, did_key) or None. Quiet on anything missing or
+    broken — no server configured, no DID key, key won't load. This must
+    never interrupt plain local-only ``hopper init``, which is the common
+    case and the one this can't be allowed to touch.
+    """
+    try:
+        from hopper.upstream.client import UpstreamClient
+        from hopper.upstream.did import load_did_key
+
+        profile = ctx.config.current_profile
+        server_url = profile.upstream.server
+        if not server_url:
+            return None
+        key_path_str = profile.upstream.did_key_path
+        if not key_path_str:
+            return None
+        key_path = Path(key_path_str).expanduser()
+        if not key_path.exists():
+            return None
+        did_key = load_did_key(key_path)
+        return UpstreamClient(server_url=server_url, did_key=did_key), did_key
+    except Exception:
+        return None
+
+
+def _discover_reachable_instances(ctx: Context) -> tuple[list[str], bool, bool] | None:
+    """(explicit_namespaces, has_global_grant, is_admin) reachable by this
+    machine's identity, or None if discovery doesn't apply — no upstream
+    configured, or this DID isn't linked to any owner. Callers fall back
+    to the unchanged default-name behavior when this returns None.
+    """
+    probe = _try_upstream_client(ctx)
+    if probe is None:
+        return None
+    client, _ = probe
+    try:
+        me = client.me()
+        owner_id = me.get("owner_id")
+        if not owner_id:
+            return None
+        result = client.get_owner_instances(owner_id)
+    except Exception:
+        return None
+    return (
+        result.get("instances", []),
+        result.get("global_access", False),
+        bool(me.get("is_admin")),
+    )
+
+
+def _pick_instance_name(candidates: list[str], default_new: str, has_global: bool) -> str:
+    """Interactive picker: existing reachable instances, or create new."""
+    console.print("\n[bold]Existing Hopper instances this identity can reach:[/bold]")
+    for i, cand in enumerate(candidates, start=1):
+        console.print(f"  {i}) {cand}")
+    new_idx = len(candidates) + 1
+    console.print(f"  {new_idx}) create new: [cyan]{default_new}[/cyan]")
+    if has_global:
+        console.print(
+            "  [dim](plus a global grant — you can also type any other existing "
+            "namespace name directly)[/dim]"
+        )
+    choice = Prompt.ask("Choose", default=str(new_idx))
+    try:
+        idx = int(choice)
+    except ValueError:
+        return choice  # typed a literal name (relevant when has_global)
+    if 1 <= idx <= len(candidates):
+        return candidates[idx - 1]
+    return default_new
+
+
+def _claim_invite_during_init(ctx: Context, claim_token: str, upstream_server: str | None) -> None:
+    """Redeem a device/owner invite as part of 'hopper init', generating a
+    DID key first if this machine doesn't have one yet. Mirrors 'hopper
+    upstream init' + 'hopper upstream redeem' combined into one step."""
+    from hopper.upstream.client import NotAuthorizedError, UpstreamClient, UpstreamError
+    from hopper.upstream.did import generate_did_key, load_did_key
+
+    profile = ctx.config.current_profile
+    server_url = upstream_server or profile.upstream.server
+    if not server_url:
+        print_error("No upstream server known — pass --upstream <url> together with --claim.")
+        raise click.Abort()
+
+    key_path_str = profile.upstream.did_key_path or str(Path.home() / ".hopper" / "did.key")
+    key_path = Path(key_path_str).expanduser()
+    if key_path.exists():
+        did_key = load_did_key(key_path)
+    else:
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        did_key = generate_did_key()
+        did_key.save(key_path)
+        print_success(f"Generated DID key: {did_key.did}")
+        print_info(f"Key saved to: {key_path}")
+
+    client = UpstreamClient(server_url=server_url, did_key=did_key)
+    try:
+        result = client.redeem_invite(claim_token)
+    except (NotAuthorizedError, UpstreamError) as e:
+        print_error(f"Failed to claim invite: {e}")
+        raise click.Abort() from e
+
+    profile.upstream.server = server_url
+    profile.upstream.did_key_path = str(key_path)
+    profile.upstream.enabled = True
+    ctx.config.save()
+    print_success(result.get("message", "claimed"))
+
+
+def _refuse_non_interactive_instance_default(candidates: list[str], has_global: bool) -> None:
+    default_new = Path.cwd().name
+    print_error(
+        "Existing Hopper instance(s) are reachable for this identity — "
+        "pass --name explicitly rather than defaulting to the directory name."
+    )
+    for cand in candidates:
+        console.print(f"  {cand}")
+    if has_global:
+        console.print("  (plus: a global grant reaches every existing namespace)")
+    console.print(f"  (or --name {default_new!r} to deliberately create a new instance)")
+    raise click.Abort()
 
 
 def _init_local_mode(
@@ -101,6 +253,8 @@ def _init_local_mode(
     non_interactive: bool,
     instance_name: str | None = None,
     allow_git: bool = False,
+    claim_token: str | None = None,
+    upstream_server: str | None = None,
 ) -> None:
     """Initialize local/embedded Hopper storage with knowledge."""
     from hopper.storage import MarkdownStorage, StorageConfig
@@ -127,6 +281,27 @@ def _init_local_mode(
                 print_info("Aborted")
                 return
         console.print("[dim]Reinitializing...[/dim]")
+
+    # Phase C/D: claim a device/owner invite as part of init, if given.
+    # Generates a DID key on first use exactly like 'hopper upstream init'
+    # would, then redeems the token — so a genuinely new machine can go
+    # from nothing to a linked owner in this one command.
+    if claim_token:
+        _claim_invite_during_init(ctx, claim_token, upstream_server)
+
+    # Phase D: discover instances this identity can already reach before
+    # ever falling back to the directory-name default. Only engages when
+    # an upstream server + linked owner are actually in play — a plain
+    # local-only user (the common case) hits none of this.
+    if instance_name is None:
+        discovery = _discover_reachable_instances(ctx)
+        if discovery is not None:
+            candidates, has_global, _is_admin = discovery
+            if candidates or has_global:
+                if non_interactive:
+                    _refuse_non_interactive_instance_default(candidates, has_global)
+                else:
+                    instance_name = _pick_instance_name(candidates, Path.cwd().name, has_global)
 
     # Initialize storage structure
     config = StorageConfig.local(storage_path, instance_name=instance_name or Path.cwd().name)

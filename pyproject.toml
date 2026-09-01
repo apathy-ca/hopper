@@ -38,7 +38,13 @@ dependencies = [
     "httpx>=0.25.0",
     # MCP server (primary use case for Claude Desktop / Claude Code)
     # Requires >=1.0.0 for SSE transport support (includes starlette, sse-starlette)
-    "mcp>=1.0.0",
+    # <2.0.0: mcp 2.x renamed FastMCP -> MCPServer and changed other APIs
+    # (mcp.server.sse, mcp.server.streamable_http*) that src/hopper/api/mcp_sse/
+    # and src/hopper/mcp/ import directly. An unpinned upper bound let CI's
+    # plain `pip install` (which ignores uv.lock) pick up a 2.x release and
+    # break every test that imports hopper.api at collection time. Bump this
+    # only alongside an actual migration of those call sites to the 2.x API.
+    "mcp>=1.0.0,<2.0.0",
     # DID signing for upstream sync
     "pynacl>=1.5.0",
 ]
@@ -46,7 +52,18 @@ dependencies = [
 [project.optional-dependencies]
 server = [
     # HTTP server
-    "fastapi>=0.104.0",
+    # <0.137.0: fastapi redesigned include_router() in 0.137 to wrap an
+    # included APIRouter in a lazy fastapi.routing._IncludedRouter instead of
+    # flattening its routes onto app.routes eagerly (bisected directly: 0.136.0
+    # still flattens correctly, 0.137.0+ doesn't). Breaks nothing at
+    # request-dispatch time as far as tested, but breaks any code (including
+    # tests/storage/test_upstream_server_routes.py's route-registration sanity
+    # check) that introspects app.routes expecting real APIRoute objects with
+    # .path/.methods. An unpinned upper bound let CI's plain `pip install`
+    # (which ignores uv.lock) pick up 0.141.1 and make that sanity check see
+    # zero registered routes. Same shape as the mcp<2.0.0 pin above — bump
+    # only alongside adapting route introspection to the new lazy API.
+    "fastapi>=0.104.0,<0.137.0",
     "uvicorn[standard]>=0.24.0",
     # Database (Postgres driver for server mode)
     "psycopg2-binary>=2.9.9",

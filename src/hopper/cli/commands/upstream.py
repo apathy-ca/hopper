@@ -649,6 +649,576 @@ def admin_revoke(
         print_success(f"Revoked {did} from {scope}")
 
 
+# --- Owner commands (Phase A — CRUD only, admin-gated) ---
+
+
+@admin.group(name="owner")
+def owner() -> None:
+    """Manage owners — the identity grouping DIDs by person.
+
+    Phase A: pure data-model CRUD. Linking a DID to an owner does not yet
+    change what that DID can access (see Owner-Identity-and-Instance-
+    Discovery-Plan.md, Phase B).
+    """
+    pass
+
+
+@owner.command(name="create")
+@click.argument("owner_id")
+@click.option("--email", required=True, help="Primary email for this owner")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def owner_create(
+    ctx: Context, owner_id: str, email: str, server: str | None, admin_key: str | None
+) -> None:
+    """Create a new owner. Admin only — this is the server-admission gate."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.create_owner(owner_id, email)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Created owner '{owner_id}' ({email})")
+
+
+@owner.command(name="add-email")
+@click.argument("owner_id")
+@click.option("--email", required=True, help="Email to add")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def owner_add_email(
+    ctx: Context, owner_id: str, email: str, server: str | None, admin_key: str | None
+) -> None:
+    """Add an email alias to an existing owner (e.g. a domain change)."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.add_owner_email(owner_id, email)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Added {email} to owner '{owner_id}'")
+
+
+@owner.command(name="link-did")
+@click.argument("target_did")
+@click.option("--owner", "-o", "owner_id", required=True, help="Owner id to link this DID to")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def owner_link_did(
+    ctx: Context, target_did: str, owner_id: str, server: str | None, admin_key: str | None
+) -> None:
+    """Link a DID to an owner."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.link_owner_did(owner_id, target_did)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Linked {target_did} to owner '{owner_id}'")
+
+
+@owner.command(name="unlink-did")
+@click.argument("target_did")
+@click.option("--owner", "-o", "owner_id", required=True, help="Owner id to unlink this DID from")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def owner_unlink_did(
+    ctx: Context, target_did: str, owner_id: str, server: str | None, admin_key: str | None
+) -> None:
+    """Unlink a DID from an owner."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.unlink_owner_did(owner_id, target_did)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Unlinked {target_did} from owner '{owner_id}'")
+
+
+@owner.command(name="list")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def owner_list(ctx: Context, server: str | None, admin_key: str | None) -> None:
+    """List all owners."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.list_owners()
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        owners = result.get("owners", [])
+        if not owners:
+            print_info("No owners registered.")
+            return
+        for o in owners:
+            emails = ", ".join(o.get("emails", []))
+            n_dids = len(o.get("linked_dids", []))
+            click.echo(f"  {o['id']}  <{emails}>  ({n_dids} device(s))")
+
+
+@owner.command(name="get")
+@click.argument("owner_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def owner_get(ctx: Context, owner_id: str, server: str | None, admin_key: str | None) -> None:
+    """Show one owner's emails and linked DIDs."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.get_owner(owner_id)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        o = result.get("owner") or {}
+        print_info(f"Owner: {o.get('id')}")
+        print_info(f"Emails: {', '.join(o.get('emails', []))}")
+        print_info("Linked DIDs:")
+        for d in o.get("linked_dids", []):
+            click.echo(f"  {d}")
+
+
+@owner.command(name="approve")
+@click.argument("owner_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Approve for a specific namespace")
+@click.option("--all", "all_namespaces", is_flag=True, help="Approve for all namespaces")
+@click.option(
+    "--role",
+    "-r",
+    type=click.Choice(["approved", "approver"]),
+    default="approved",
+    help="'approved' (default) or 'approver'",
+)
+@click.pass_obj
+def owner_approve(
+    ctx: Context,
+    owner_id: str,
+    server: str | None,
+    admin_key: str | None,
+    namespace: str | None,
+    all_namespaces: bool,
+    role: str,
+) -> None:
+    """Approve an owner for a namespace (or all with --all).
+
+    Every DID currently — and in future — linked to this owner inherits
+    the grant. No per-device re-approval needed (Phase B).
+    """
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+    ns = "*" if all_namespaces else (namespace or "*")
+
+    try:
+        result = client.approve_owner(owner_id, namespace=ns, role=role)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        label = "granted approver on" if role == "approver" else "approved for"
+        print_success(f"Owner '{owner_id}': {label} {scope}")
+
+
+@owner.command(name="revoke")
+@click.argument("owner_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Revoke for a specific namespace")
+@click.option("--all", "all_namespaces", is_flag=True, help="Revoke for all namespaces")
+@click.pass_obj
+def owner_revoke(
+    ctx: Context,
+    owner_id: str,
+    server: str | None,
+    admin_key: str | None,
+    namespace: str | None,
+    all_namespaces: bool,
+) -> None:
+    """Revoke an owner's namespace grant (or all with --all).
+
+    Takes effect for every linked DID immediately — nothing to revoke
+    per-device.
+    """
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+    ns = "*" if all_namespaces else (namespace or "*")
+
+    try:
+        result = client.revoke_owner(owner_id, namespace=ns)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        print_success(f"Owner '{owner_id}': revoked from {scope}")
+
+
+@owner.command(name="instances")
+@click.argument("owner_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option(
+    "--key",
+    "-k",
+    type=click.Path(),
+    help="Path to admin key, or any DID key already linked to this owner",
+)
+@click.pass_obj
+def owner_instances_cmd(ctx: Context, owner_id: str, server: str | None, key: str | None) -> None:
+    """Every namespace this owner can reach, directly or via any linked DID.
+
+    Self-service — any of the owner's own linked DIDs can run this, not
+    just admin. This is the audit view: what would previously have taken
+    guessing namespace names and getting rejected one at a time.
+    """
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.get_owner_instances(owner_id)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_info(f"Owner: {result.get('owner_id')}")
+        if result.get("is_admin"):
+            print_info("Server admin — implicitly reaches every namespace.")
+        elif result.get("global_access"):
+            print_info("Global grant ('*') — reaches every namespace, present and future.")
+        instances = result.get("instances", [])
+        if instances:
+            print_info("Namespace grants:")
+            for i in instances:
+                click.echo(f"  {i}")
+        elif not result.get("is_admin") and not result.get("global_access"):
+            print_info("No namespace grants.")
+
+
+# --- Org commands (Phase E — membership authority is admin-only for v1) ---
+
+
+@admin.group(name="org")
+def org() -> None:
+    """Manage orgs — a grant-holder for instances that aren't any one
+    person's, made of member owners.
+
+    Creating an org and changing its membership are both admin-only for
+    v1 — a more conservative default than owner devices, since org
+    membership changes who inherits access far more broadly than one
+    person adding their own laptop does.
+    """
+    pass
+
+
+@org.command(name="create")
+@click.argument("org_id")
+@click.option("--name", default="", help="Display name")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def org_create(
+    ctx: Context, org_id: str, name: str, server: str | None, admin_key: str | None
+) -> None:
+    """Create a new org. Admin only."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.create_org(org_id, name=name)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Created org '{org_id}'" + (f" ({name})" if name else ""))
+
+
+@org.command(name="add-member")
+@click.argument("org_id")
+@click.option("--owner", "-o", "owner_id", required=True, help="Owner id to add as a member")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def org_add_member(
+    ctx: Context, org_id: str, owner_id: str, server: str | None, admin_key: str | None
+) -> None:
+    """Add an owner as a member of an org. Admin only."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.add_org_member(org_id, owner_id)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Added owner '{owner_id}' to org '{org_id}'")
+
+
+@org.command(name="remove-member")
+@click.argument("org_id")
+@click.option("--owner", "-o", "owner_id", required=True, help="Owner id to remove")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def org_remove_member(
+    ctx: Context, org_id: str, owner_id: str, server: str | None, admin_key: str | None
+) -> None:
+    """Remove an owner from an org. Admin only."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.remove_org_member(org_id, owner_id)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_success(f"Removed owner '{owner_id}' from org '{org_id}'")
+
+
+@org.command(name="list")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.pass_obj
+def org_list(ctx: Context, server: str | None, admin_key: str | None) -> None:
+    """List all orgs. Admin only."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+
+    try:
+        result = client.list_orgs()
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        orgs = result.get("orgs", [])
+        if not orgs:
+            print_info("No orgs registered.")
+            return
+        for o in orgs:
+            n_members = len(o.get("member_owner_ids", []))
+            click.echo(f"  {o['id']}  {o.get('name', '')}  ({n_members} member(s))")
+
+
+@org.command(name="get")
+@click.argument("org_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option(
+    "--key", "-k", type=click.Path(), help="Path to admin key, or a DID linked to a member owner"
+)
+@click.pass_obj
+def org_get(ctx: Context, org_id: str, server: str | None, key: str | None) -> None:
+    """Show one org's members. Admin, or any member owner's device."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.get_org(org_id)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        o = result.get("org") or {}
+        print_info(f"Org: {o.get('id')} ({o.get('name', '')})")
+        print_info("Members:")
+        for m in o.get("member_owner_ids", []):
+            click.echo(f"  {m}")
+
+
+@org.command(name="approve")
+@click.argument("org_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Approve for a specific namespace")
+@click.option("--all", "all_namespaces", is_flag=True, help="Approve for all namespaces")
+@click.option(
+    "--role",
+    "-r",
+    type=click.Choice(["approved", "approver"]),
+    default="approved",
+    help="'approved' (default) or 'approver'",
+)
+@click.pass_obj
+def org_approve(
+    ctx: Context,
+    org_id: str,
+    server: str | None,
+    admin_key: str | None,
+    namespace: str | None,
+    all_namespaces: bool,
+    role: str,
+) -> None:
+    """Approve an org for a namespace (or all with --all).
+
+    Every member owner's every linked DID inherits the grant.
+    """
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+    ns = "*" if all_namespaces else (namespace or "*")
+
+    try:
+        result = client.approve_org(org_id, namespace=ns, role=role)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        label = "granted approver on" if role == "approver" else "approved for"
+        print_success(f"Org '{org_id}': {label} {scope}")
+
+
+@org.command(name="revoke")
+@click.argument("org_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option("--admin-key", "-k", type=click.Path(), help="Path to admin DID key")
+@click.option("--namespace", "-n", default=None, help="Revoke for a specific namespace")
+@click.option("--all", "all_namespaces", is_flag=True, help="Revoke for all namespaces")
+@click.pass_obj
+def org_revoke(
+    ctx: Context,
+    org_id: str,
+    server: str | None,
+    admin_key: str | None,
+    namespace: str | None,
+    all_namespaces: bool,
+) -> None:
+    """Revoke an org's namespace grant (or all with --all)."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, admin_key)
+    ns = "*" if all_namespaces else (namespace or "*")
+
+    try:
+        result = client.revoke_org(org_id, namespace=ns)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        scope = "all namespaces" if ns == "*" else f"namespace '{ns}'"
+        print_success(f"Org '{org_id}': revoked from {scope}")
+
+
+@org.command(name="instances")
+@click.argument("org_id")
+@click.option("--server", "-s", help="Upstream server URL")
+@click.option(
+    "--key", "-k", type=click.Path(), help="Path to admin key, or a DID linked to a member owner"
+)
+@click.pass_obj
+def org_instances_cmd(ctx: Context, org_id: str, server: str | None, key: str | None) -> None:
+    """Namespaces granted directly to this org (not aggregated across
+    members — that's 'owner instances' for an individual member)."""
+    from hopper.upstream.client import NotAdminError, UpstreamError
+
+    client, _ = _get_admin_client(ctx, server, key)
+
+    try:
+        result = client.get_org_instances(org_id)
+    except (NotAdminError, UpstreamError) as e:
+        print_error(str(e))
+        raise click.Abort() from e
+
+    if ctx.json_output:
+        print_json(result)
+    else:
+        print_info(f"Org: {result.get('org_id')}")
+        if result.get("global_access"):
+            print_info("Global grant ('*') — reaches every namespace, present and future.")
+        instances = result.get("instances", [])
+        if instances:
+            print_info("Namespace grants:")
+            for i in instances:
+                click.echo(f"  {i}")
+        elif not result.get("global_access"):
+            print_info("No namespace grants.")
+
+
 # --- Invite commands (peer approval) ---
 
 
@@ -677,13 +1247,27 @@ def invite() -> None:
 
 
 @invite.command(name="create")
-@click.option("--namespace", "-n", required=True, help="Instance namespace (e.g. Rosetta_Program)")
+@click.option("--namespace", "-n", default=None, help="Instance namespace — namespace invite")
+@click.option(
+    "--owner",
+    "-o",
+    "owner_id",
+    default=None,
+    help="Existing owner id — device invite (self-service, any DID linked to it)",
+)
+@click.option(
+    "--new-owner",
+    "new_owner_id",
+    default=None,
+    help="Owner id to create — new-owner invite (admin only)",
+)
+@click.option("--email", default=None, help="Primary email for --new-owner")
 @click.option(
     "--role",
     "-r",
     type=click.Choice(["approved", "approver"]),
     default="approved",
-    help="Role to grant on redeem (default: approved). 'approver' is admin-only.",
+    help="Role to grant on redeem (namespace invites only). 'approver' is admin-only.",
 )
 @click.option(
     "--expires",
@@ -697,19 +1281,38 @@ def invite() -> None:
 @click.pass_obj
 def invite_create(
     ctx: Context,
-    namespace: str,
+    namespace: str | None,
+    owner_id: str | None,
+    new_owner_id: str | None,
+    email: str | None,
     role: str,
     expires: str,
     uses: int,
     server: str | None,
     key: str | None,
 ) -> None:
-    """Create an invite token.
+    """Create an invite token — namespace, device, or new-owner.
 
-    The token is printed ONCE and is not recoverable — pass it to the
-    recipient via a secure channel. They redeem with 'hopper upstream redeem'.
+    Exactly one of --namespace, --owner, or --new-owner (with --email) is
+    required. The token is printed ONCE and is not recoverable — pass it to
+    the recipient via a secure channel. They redeem with
+    'hopper upstream redeem'.
     """
     from hopper.upstream.client import NotAdminError, UpstreamError
+
+    given = sum(x is not None for x in (namespace, owner_id, new_owner_id))
+    if given != 1:
+        print_error("Exactly one of --namespace, --owner, or --new-owner is required.")
+        raise click.Abort()
+    if new_owner_id is not None and not email:
+        print_error("--new-owner requires --email.")
+        raise click.Abort()
+    if namespace is None and role != "approved":
+        # create_device_invite/create_new_owner_invite take no role at
+        # all -- passing --role with --owner/--new-owner used to be
+        # silently dropped with no warning that it had no effect.
+        print_error("--role only applies to --namespace invites.")
+        raise click.Abort()
 
     if expires.lower() == "never":
         expires_in_ms: int | None = None
@@ -723,9 +1326,22 @@ def invite_create(
     client, _ = _get_admin_client(ctx, server, key)
 
     try:
-        result = client.create_invite(
-            namespace=namespace, role=role, expires_in_ms=expires_in_ms, max_uses=uses
-        )
+        if namespace is not None:
+            result = client.create_invite(
+                namespace=namespace, role=role, expires_in_ms=expires_in_ms, max_uses=uses
+            )
+            label = f"namespace '{namespace}' (role: {role})"
+        elif owner_id is not None:
+            result = client.create_device_invite(
+                owner_id, expires_in_ms=expires_in_ms, max_uses=uses
+            )
+            label = f"owner '{owner_id}' — device invite"
+        else:
+            assert new_owner_id is not None and email is not None
+            result = client.create_new_owner_invite(
+                new_owner_id, email, expires_in_ms=expires_in_ms, max_uses=uses
+            )
+            label = f"new owner '{new_owner_id}' ({email})"
     except (NotAdminError, UpstreamError) as e:
         print_error(str(e))
         raise click.Abort() from e
@@ -737,7 +1353,7 @@ def invite_create(
         print_json(result)
         return
 
-    print_success(f"Invite created for namespace '{namespace}' (role: {role})")
+    print_success(f"Invite created for {label}")
     click.echo("")
     click.echo(f"  Server:    {client.server_url}")
     click.echo(f"  Token:     {token}")
@@ -800,8 +1416,16 @@ def invite_list(
             status_bits.append("expired")
         status = ", ".join(status_bits) if status_bits else "active"
 
+        kind = inv.get("kind", "namespace")
+        if kind == "device":
+            scope = f"kind=device  owner={inv['owner_id']}"
+        elif kind == "new_owner":
+            scope = f"kind=new_owner  owner={inv['owner_id']}  email={inv['new_owner_email']}"
+        else:
+            scope = f"ns={inv['namespace']}  role={inv['role']}"
+
         click.echo(
-            f"  {inv['token_hash'][:12]}…  ns={inv['namespace']}  role={inv['role']}  uses={inv['uses']}/{inv['max_uses']}  [{status}]"
+            f"  {inv['token_hash'][:12]}…  {scope}  uses={inv['uses']}/{inv['max_uses']}  [{status}]"
         )
         if exp:
             dt = datetime.fromtimestamp(exp / 1000, tz=UTC)
@@ -883,6 +1507,12 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
         print_json(result)
     else:
         print_success(result.get("message", "redeemed"))
+        owner_id = result.get("owner_id")
+        if owner_id:
+            print_info(
+                f"Run 'hopper upstream admin owner instances {owner_id}' to see what "
+                "this owner (and now this device) can reach."
+            )
         if namespace and storage_path:
             print_info(f"Instance id set to '{namespace}' in {storage_path}/config.yaml")
         elif namespace:
