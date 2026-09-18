@@ -2,7 +2,7 @@
 
 **Persistent Memory for AI Agents**
 
-Hopper gives AI agents long-term memory. Track tasks, store notes, record feedback, and maintain context across sessions.
+Hopper gives AI agents long-term memory that works across machines, sessions, and model providers. Track tasks, store notes, record feedback, and maintain context -- and keep it when you switch tools.
 
 ## Install
 

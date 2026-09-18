@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hopper-memory"
 dynamic = ["version"]
-description = "Persistent memory and task management for AI agents"
+description = "Persistent memory and task tracking for AI agents that works across machines, sessions, and model providers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
