@@ -19,7 +19,14 @@ import click
 from hopper.cli.client import APIError
 from hopper.cli.local_client import LocalClientError
 from hopper.cli.main import Context
-from hopper.cli.output import console, print_error, print_info, print_json, print_success
+from hopper.cli.output import (
+    console,
+    print_error,
+    print_info,
+    print_json,
+    print_success,
+    print_warning,
+)
 
 ClientError = (APIError, LocalClientError)
 
@@ -32,6 +39,16 @@ _RECLASSIFY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("memory", "claude-import", "claude-memory-project", "claude-memory-feedback"),
     ),
 )
+
+
+def is_foreign_record(record_instance: str | None, own_instance: str | None) -> bool:
+    """True if a record belongs to another instance's shard than this store's.
+
+    Sync stores a record under its own ``instance`` field, so rewriting a
+    foreign record re-stamps it and pushes it into the other shard, where it
+    can overwrite newer remote state this store has never pulled.
+    """
+    return bool(own_instance and record_instance and record_instance != own_instance)
 
 
 def _target_kind(tags: list[str], current_kind: str) -> str | None:
@@ -59,12 +76,18 @@ def maintenance() -> None:
     "--apply",
     "apply_changes",
     is_flag=True,
-    help="Actually write the new kinds. Without this flag, runs as a dry-run "
-    "and mutates nothing.",
+    help="Actually write the new kinds. Without this flag, runs as a dry-run and mutates nothing.",
 )
 @click.option("--limit", type=int, default=100000, help="Max records to scan")
+@click.option(
+    "--include-foreign",
+    is_flag=True,
+    help="Also rewrite records that belong to a different instance than this "
+    "store. Skipped by default: they may be stale copies, and rewriting them "
+    "overwrites newer remote state on the next sync.",
+)
 @click.pass_obj
-def reclassify(ctx: Context, apply_changes: bool, limit: int) -> None:
+def reclassify(ctx: Context, apply_changes: bool, limit: int, include_foreign: bool) -> None:
     """Reclassify legacy tag-encoded records to first-class kinds.
 
     DRY-RUN BY DEFAULT. Records tagged ``gpu-job`` become kind=job; records
@@ -83,15 +106,25 @@ def reclassify(ctx: Context, apply_changes: bool, limit: int) -> None:
 
             counts: dict[str, int] = {target: 0 for target, _ in _RECLASSIFY_RULES}
             planned: list[tuple[str, str]] = []  # (record_id, target_kind)
+            skipped_foreign: list[str] = []
+            own_instance = getattr(getattr(client, "config", None), "instance_id", None)
 
             for rec in records:
                 target = _target_kind(rec.get("tags", []), rec.get("kind", "task"))
                 if target is None:
                     continue
+                if not include_foreign and is_foreign_record(rec.get("instance"), own_instance):
+                    skipped_foreign.append(rec["id"])
+                    continue
                 counts[target] += 1
                 planned.append((rec["id"], target))
 
             total = len(planned)
+            if skipped_foreign and not ctx.json_output:
+                print_warning(
+                    f"Skipped {len(skipped_foreign)} record(s) belonging to another instance "
+                    f"(not '{own_instance}'): sync them first, or pass --include-foreign."
+                )
 
             if apply_changes:
                 applied = 0
@@ -100,7 +133,14 @@ def reclassify(ctx: Context, apply_changes: bool, limit: int) -> None:
                     applied += 1
 
                 if ctx.json_output:
-                    print_json({"applied": applied, "by_kind": counts, "dry_run": False})
+                    print_json(
+                        {
+                            "applied": applied,
+                            "by_kind": counts,
+                            "dry_run": False,
+                            "skipped_foreign": skipped_foreign,
+                        }
+                    )
                 else:
                     print_success(f"Reclassified {applied} record(s).")
                     for target, n in counts.items():
@@ -110,7 +150,14 @@ def reclassify(ctx: Context, apply_changes: bool, limit: int) -> None:
 
             # Dry-run: report only, mutate nothing.
             if ctx.json_output:
-                print_json({"would_change": total, "by_kind": counts, "dry_run": True})
+                print_json(
+                    {
+                        "would_change": total,
+                        "by_kind": counts,
+                        "dry_run": True,
+                        "skipped_foreign": skipped_foreign,
+                    }
+                )
             else:
                 if total == 0:
                     print_info("Nothing to reclassify.")
