@@ -209,7 +209,7 @@ class Config(BaseSettings):
                 local_data["path"] = Path(local_data["path"])
 
             profiles[name] = ProfileConfig(
-                mode=profile_data.get("mode", "server"),
+                mode=profile_data.get("mode", "local"),
                 api=APIConfig(**profile_data.get("api", {})),
                 auth=AuthConfig(**profile_data.get("auth", {})),
                 local=LocalConfig(**local_data) if local_data else LocalConfig(),
