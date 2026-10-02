@@ -602,7 +602,10 @@ def check_environment(env: Env, all_records: list[Any]) -> list[Check]:
             )
 
     # legacy records
-    legacy = legacy_records(all_records)
+    from hopper.storage.base import StorageConfig
+
+    own = StorageConfig.local(env.storage).instance_id if env.storage else None
+    legacy = legacy_records(all_records, own)
     if legacy:
         out.append(
             Check(
@@ -617,11 +620,14 @@ def check_environment(env: Env, all_records: list[Any]) -> list[Check]:
     return out
 
 
-def legacy_records(records: list[Any]) -> list[tuple[Any, str]]:
-    from hopper.cli.commands.maintenance import _target_kind
+def legacy_records(records: list[Any], own_instance: str | None = None) -> list[tuple[Any, str]]:
+    """Legacy tag-encoded records this store may migrate (its own instance only)."""
+    from hopper.cli.commands.maintenance import _target_kind, is_foreign_record
 
     found = []
     for r in records:
+        if is_foreign_record(getattr(r, "instance", None), own_instance):
+            continue
         target = _target_kind(list(r.tags or []), getattr(r, "kind", "task"))
         if target:
             found.append((r, target))
@@ -706,7 +712,7 @@ def apply_fixes(env: Env, checks: list[Check], json_mode: bool) -> int:
             )
             done += 1
 
-        legacy = legacy_records(records)
+        legacy = legacy_records(records, client.config.instance_id)
         if legacy:
             _emit(
                 f"FIX: reclassifying {_plural(len(legacy), 'legacy record')} "
