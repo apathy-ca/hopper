@@ -186,6 +186,7 @@ def sync_upstream(
                 "pushed": result.pushed,
                 "pulled": result.pulled,
                 "conflicts": result.conflicts,
+                "conflict_notes": result.notes_added,
                 "errors": result.errors,
             }
         )
@@ -215,7 +216,13 @@ def sync_upstream(
                         print_info(f"  {task_id}")
 
             if conflict_count > 0:
-                print_warning(f"{conflict_count} conflict(s) (server wins)")
+                msg = f"{conflict_count} conflict(s) (server wins)"
+                if result.notes_added:
+                    msg += (
+                        f"; your losing edit was saved as a note on "
+                        f"{len(result.notes_added)} task(s)"
+                    )
+                print_warning(msg)
                 if verbose:
                     for task_id in result.conflicts:
                         print_warning(f"  {task_id}")

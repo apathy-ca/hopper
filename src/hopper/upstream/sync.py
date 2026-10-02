@@ -84,6 +84,7 @@ class SyncResult:
     pulled: list[str] = field(default_factory=list)  # task IDs pulled
     conflicts: list[str] = field(default_factory=list)  # task IDs with conflicts
     errors: list[str] = field(default_factory=list)  # error messages
+    notes_added: list[str] = field(default_factory=list)  # losing edits saved as notes
 
 
 def _datetime_to_ms(dt: datetime | None) -> int:
@@ -300,6 +301,62 @@ def _next_batch(
     return batch, n
 
 
+SYNC_NOTE_AUTHOR = "hopper:sync"
+_LOST_FIELDS = (
+    "title",
+    "status",
+    "priority",
+    "description",
+    "tags",
+    "assigned_to",
+    "project",
+    "depends_on",
+)
+_LOST_VALUE_MAX = 2000
+
+
+def _record_lost_edit(task_store: TaskMarkdownStore, pushed: SyncTask) -> bool:
+    """Keep a rejected local edit as a note on the task that replaced it.
+
+    When the server rejects a push (server wins), the pull overwrites the local
+    task and the losing values would vanish. Append them as an attributed note,
+    listing only the fields that differ from the version that won. The note is
+    saved with the winner's timestamp so it stays local until the task next
+    changes; bumping updated_at here would let this host's copy overwrite a
+    newer edit made elsewhere in the meantime.
+
+    Returns True if a note was added.
+    """
+    current = task_store.get(pushed.id, include_deleted=True)
+    if current is None:
+        return False
+    lines = []
+    for name in _LOST_FIELDS:
+        mine, winner = getattr(pushed, name, None), getattr(current, name, None)
+        if mine == winner:
+            continue
+        text = str(mine)
+        if len(text) > _LOST_VALUE_MAX:
+            text = text[:_LOST_VALUE_MAX] + "... [truncated]"
+        lines.append(f"- {name}: {text}")
+    if not lines:
+        return False
+    when = pushed.updated_at.isoformat() if pushed.updated_at else "unknown time"
+    current.notes = _merge_notes(
+        current.notes,
+        [
+            {
+                "author": SYNC_NOTE_AUTHOR,
+                "ts": datetime.now(UTC).isoformat(),
+                "body": f"Sync conflict: the server version won. Your local edit from {when} "
+                "was replaced; its values for the fields that differ:\n" + "\n".join(lines),
+            }
+        ],
+    )
+    task_store.save(current, preserve_timestamp=True)
+    return True
+
+
 def _apply_pulled(
     response: SyncResponse, task_store: TaskMarkdownStore, result: SyncResult
 ) -> None:
@@ -389,6 +446,8 @@ def sync_with_upstream(
 
         result.pushed.extend(response.accepted)
         result.conflicts.extend(c.task_id for c in response.rejected)
+        rejected_ids = {c.task_id for c in response.rejected}
+        losers = [t for t in batch if t.id in rejected_ids]
         _apply_pulled(response, task_store, result)
 
         # Drain remaining pull pages. Until the last page, the cursor is the
@@ -407,6 +466,11 @@ def sync_with_upstream(
                 result.errors.append(str(e))
                 return result
             _apply_pulled(response, task_store, result)
+
+        # The winning versions are in place; preserve what the losers had.
+        for pushed in losers:
+            if _record_lost_edit(task_store, pushed):
+                result.notes_added.append(pushed.id)
 
         since = response.server_time
         state.last_server_time = response.server_time
