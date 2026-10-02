@@ -46,11 +46,23 @@ class StorageConfig:
         except Exception:
             return None
 
+    @staticmethod
+    def _default_name(path: Path) -> str:
+        """Default instance name for a store with no configured one.
+
+        A project store lives at <project>/.hopper, so name it after the
+        project rather than the literal ".hopper". The global ~/.hopper keeps
+        its directory name so existing sync namespaces don't change.
+        """
+        if path.name == ".hopper" and path != Path.home() / ".hopper":
+            return path.parent.name
+        return path.name
+
     @classmethod
     def local(cls, path: Path | None = None, instance_name: str | None = None) -> StorageConfig:
         """Create local storage config."""
         resolved = path or Path.home() / ".hopper"
-        name = instance_name or cls._read_instance_name(resolved) or resolved.name
+        name = instance_name or cls._read_instance_name(resolved) or cls._default_name(resolved)
         return cls(
             mode="local",
             path=resolved,
