@@ -59,6 +59,7 @@ def add_task(storage: Path, title="t", status="open", age_days=0.0, **kw) -> str
 
     client = LocalClient(storage)
     t = LocalTask.create(title=title)
+    t.instance = client.config.instance_id  # as LocalClient.create_task does
     t.status = status
     for k, v in kw.items():
         setattr(t, k, v)
