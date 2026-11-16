@@ -13,6 +13,7 @@ import json
 import socket
 import subprocess
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -520,7 +521,7 @@ def check_tasks(env: Env, all_records: list[Any]) -> list[Check]:
 # --------------------------------------------------------------------------
 
 
-def _commit_checker(env: Env):
+def _commit_checker(env: Env) -> Callable[[str], bool | None] | None:
     """Return a sha -> True/False checker for the project's git repo, or None."""
     pdir = env.project_dir
     if pdir is None or env.is_global_store or not pdir.exists():

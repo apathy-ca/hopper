@@ -100,6 +100,10 @@ class LocalTask:
     # How the author knows this is true (e.g. 'observed in test run',
     # 'told by user', 'read in code at src/x.py'). Short free text.
     how_known: str | None = None
+    # Write-time salience flag ("revisit this") that lapses at salient_until.
+    # Read it through hopper.memory.salience.is_salient, which applies expiry.
+    salience: bool = False
+    salient_until: datetime | None = None
 
     @classmethod
     def _generate_id(cls) -> str:
@@ -140,6 +144,8 @@ class LocalTask:
         drift_score: float | None = None,
         evidence: list[str] | None = None,
         how_known: str | None = None,
+        salience: bool = False,
+        salient_until: datetime | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> LocalTask:
         """Create a new task with generated ID."""
@@ -180,6 +186,8 @@ class LocalTask:
             drift_score=drift_score,
             evidence=list(evidence or []),
             how_known=how_known,
+            salience=bool(salience),
+            salient_until=_parse_datetime(salient_until),
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -254,6 +262,10 @@ class LocalTask:
             data["evidence"] = self.evidence
         if self.how_known:
             data["how_known"] = self.how_known
+        if self.salience:
+            data["salience"] = True
+        if self.salient_until:
+            data["salient_until"] = self.salient_until.isoformat()
         return data
 
     @classmethod
@@ -302,6 +314,8 @@ class LocalTask:
             drift_score=fm.get("drift_score"),
             evidence=list(fm.get("evidence") or []),
             how_known=fm.get("how_known"),
+            salience=bool(fm.get("salience", False)),
+            salient_until=_parse_datetime(fm.get("salient_until")),
         )
 
 

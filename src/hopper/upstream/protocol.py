@@ -63,6 +63,9 @@ class SyncTask(BaseModel):
     # Evidence references (task ids / commit shas / file paths) on memory records.
     evidence: list[str] = Field(default_factory=list)
     how_known: str | None = None
+    # Write-time salience flag + expiry (see hopper.memory.salience).
+    salience: bool = False
+    salient_until: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -102,6 +105,8 @@ class SyncTask(BaseModel):
             provenance=getattr(task, "provenance", None),
             evidence=getattr(task, "evidence", None) or [],
             how_known=getattr(task, "how_known", None),
+            salience=bool(getattr(task, "salience", False)),
+            salient_until=getattr(task, "salient_until", None),
         )
 
 

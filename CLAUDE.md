@@ -98,6 +98,8 @@ hopper memory add "Sync batches at 512KB" --subject project:hopper \
   "read in code at X". A guess is fine if you say it is one.
 - `--evidence` (repeatable): task ids, commit shas, or file paths relative to
   the project root. `hopper doctor` flags memories whose evidence is gone.
+- `--salient [--salient-for 3d]`: flag a memory worth revisiting; the flag
+  lapses after the window (default 3d).
 
 ### Session lifecycle
 

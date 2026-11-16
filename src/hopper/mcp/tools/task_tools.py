@@ -87,6 +87,15 @@ def get_task_tools() -> list[Tool]:
                         "(e.g. 'observed in test run', 'told by user', "
                         "'read in code at src/x.py').",
                     },
+                    "salient": {
+                        "type": "boolean",
+                        "description": "For kind='memory': flag it to revisit. The "
+                        "flag lapses after salient_for (default 3d).",
+                    },
+                    "salient_for": {
+                        "type": "string",
+                        "description": "Salience window, e.g. '12h', '3d', '1w' (implies salient).",
+                    },
                     "location": {
                         "type": "string",
                         "description": "Author location context (e.g. 'phone-claude', 'ember-cli'). "
@@ -303,6 +312,12 @@ async def create_task(
     for field in ("subject", "scope", "provenance", "evidence", "how_known"):
         if args.get(field) is not None:
             task_data[field] = args[field]
+    if args.get("salient") or args.get("salient_for"):
+        from hopper.memory.salience import parse_salience_window, salient_until_from
+
+        window = parse_salience_window(args["salient_for"]) if args.get("salient_for") else None
+        task_data["salience"] = True
+        task_data["salient_until"] = salient_until_from(window=window).isoformat()
 
     if "project" in args:
         task_data["project"] = args["project"]

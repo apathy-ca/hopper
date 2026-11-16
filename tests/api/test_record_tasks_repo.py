@@ -107,6 +107,12 @@ class TestCreatePersistsKind:
         result = _create(repo, title="m", kind="memory", how_known="told by user")
         assert repo.get(result["id"])["how_known"] == "told by user"
 
+    def test_create_passes_through_salience(self, repo):
+        until = "2026-11-19T12:00:00+00:00"
+        result = _create(repo, title="m", kind="memory", salience=True, salient_until=until)
+        got = repo.get(result["id"])
+        assert got["salience"] is True and got["salient_until"] == until
+
 
 class TestGetHydrates:
     def test_get_hydrates_from_payload(self, repo):

@@ -167,6 +167,17 @@ def _make_memory_group() -> click.Group:
         "`hopper task get`.",
     )
     @click.option(
+        "--salient",
+        is_flag=True,
+        help="Flag this memory as salient (worth revisiting / prioritising in "
+        "consolidation). The flag lapses after --salient-for (default 3d).",
+    )
+    @click.option(
+        "--salient-for",
+        metavar="WINDOW",
+        help="How long the salience flag lasts: e.g. 12h, 3d, 1w (default 3d). Implies --salient.",
+    )
+    @click.option(
         "--priority",
         "-p",
         type=click.Choice(["low", "medium", "high", "urgent"]),
@@ -184,6 +195,8 @@ def _make_memory_group() -> click.Group:
         provenance: str | None,
         evidence: tuple[str, ...],
         how_known: str | None,
+        salient: bool,
+        salient_for: str | None,
         priority: str,
         tag: tuple[str, ...],
         non_interactive: bool,
@@ -201,6 +214,15 @@ def _make_memory_group() -> click.Group:
         # Promote subject/scope/provenance to real record fields (frontmatter)
         # instead of a text preamble on the description.
         tags = ("memory",) + tuple(t for t in tag if t != "memory")
+        salient_until = None
+        if salient or salient_for:
+            from hopper.memory.salience import parse_salience_window, salient_until_from
+
+            try:
+                window = parse_salience_window(salient_for) if salient_for else None
+            except ValueError as e:
+                raise click.BadParameter(str(e), param_hint="--salient-for") from e
+            salient_until = salient_until_from(window=window).isoformat()
         ctx.invoke(
             add_task,
             title=title,
@@ -221,6 +243,7 @@ def _make_memory_group() -> click.Group:
             provenance=provenance,
             evidence=tuple(evidence),
             how_known=how_known,
+            salient_until=salient_until,
         )
 
     @base.command(name="session-summary")

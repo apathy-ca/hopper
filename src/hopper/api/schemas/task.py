@@ -111,6 +111,10 @@ class TaskCreate(BaseModel):
         description="Memory evidence references: task ids, commit shas, or file paths",
     )
     how_known: str | None = Field(None, description="How the author knows the memory is true")
+    salience: bool = Field(False, description="Write-time salience flag (lapses)")
+    salient_until: str | None = Field(
+        None, description="ISO timestamp after which the salience flag lapses"
+    )
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -210,6 +214,8 @@ class TaskResponse(BaseModel):
     provenance: str | None = None
     evidence: list[str] = []
     how_known: str | None = None
+    salience: bool = False
+    salient_until: str | None = None
 
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 

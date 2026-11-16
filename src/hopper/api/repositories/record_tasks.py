@@ -53,6 +53,8 @@ _PASSTHROUGH_OPTIONAL = (
     "drift_score",
     "evidence",
     "how_known",
+    "salience",
+    "salient_until",
     "source_instance",
 )
 

@@ -141,6 +141,8 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
         drift_score=getattr(task, "drift_score", None),
         evidence=getattr(task, "evidence", None) or [],
         how_known=getattr(task, "how_known", None),
+        salience=bool(getattr(task, "salience", False)),
+        salient_until=getattr(task, "salient_until", None),
     )
 
 
@@ -231,6 +233,8 @@ def _apply_sync_task_to_local(
         existing.drift_score = sync_task.drift_score
         existing.evidence = list(sync_task.evidence or [])
         existing.how_known = sync_task.how_known
+        existing.salience = bool(sync_task.salience)
+        existing.salient_until = sync_task.salient_until
         task_store.save(existing, preserve_timestamp=True)
     else:
         # Create new task with the remote ID
@@ -273,6 +277,8 @@ def _apply_sync_task_to_local(
             drift_score=sync_task.drift_score,
             evidence=list(sync_task.evidence or []),
             how_known=sync_task.how_known,
+            salience=bool(sync_task.salience),
+            salient_until=sync_task.salient_until,
         )
         task_store.save(new_task, preserve_timestamp=True)
 
