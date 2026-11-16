@@ -98,6 +98,11 @@ class TestCreatePersistsKind:
         assert result["scope"] == "private"
         assert result["provenance"] == "observation"
 
+    def test_create_passes_through_evidence(self, repo):
+        result = _create(repo, title="m", kind="memory", evidence=["t1a2b3c4d", "src/x.py"])
+        assert result["evidence"] == ["t1a2b3c4d", "src/x.py"]
+        assert repo.get(result["id"])["evidence"] == ["t1a2b3c4d", "src/x.py"]
+
 
 class TestGetHydrates:
     def test_get_hydrates_from_payload(self, repo):

@@ -152,6 +152,15 @@ def _make_memory_group() -> click.Group:
         "'observation', 'inferred from memory-id abc123')",
     )
     @click.option(
+        "--evidence",
+        "-e",
+        multiple=True,
+        help="What backs this memory: a task id, commit sha, or file path "
+        "(relative to the project root). Repeatable. Prefix with task:, "
+        "commit: or file: to disambiguate. `hopper doctor` flags evidence "
+        "that no longer exists.",
+    )
+    @click.option(
         "--priority",
         "-p",
         type=click.Choice(["low", "medium", "high", "urgent"]),
@@ -167,6 +176,7 @@ def _make_memory_group() -> click.Group:
         subject: str | None,
         scope: str,
         provenance: str | None,
+        evidence: tuple[str, ...],
         priority: str,
         tag: tuple[str, ...],
         non_interactive: bool,
@@ -177,6 +187,8 @@ def _make_memory_group() -> click.Group:
             hopper memory add "User prefers terse responses" --subject user:preferences
             hopper memory add "Rosetta queues peak at 03:00 UTC" \\
                 --subject agent:rosetta-agent --scope shared-across-agents
+            hopper memory add "Sync batches at 512KB" \\
+                --evidence src/hopper/upstream/sync.py --evidence t1234abcd
         """
         # Promote subject/scope/provenance to real record fields (frontmatter)
         # instead of a text preamble on the description.
@@ -199,6 +211,7 @@ def _make_memory_group() -> click.Group:
             subject=subject,
             scope=scope,
             provenance=provenance,
+            evidence=tuple(evidence),
         )
 
     @base.command(name="session-summary")

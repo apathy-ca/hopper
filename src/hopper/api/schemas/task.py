@@ -106,6 +106,10 @@ class TaskCreate(BaseModel):
     consolidated_at: str | None = Field(None, description="ISO timestamp of consolidation")
     drift_checked_at: str | None = Field(None, description="ISO timestamp of last drift check")
     drift_score: float | None = Field(None, description="Drift score from last reality check (0-1)")
+    evidence: list[str] = Field(
+        default_factory=list,
+        description="Memory evidence references: task ids, commit shas, or file paths",
+    )
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -203,6 +207,7 @@ class TaskResponse(BaseModel):
     subject: str | None = None
     scope: str | None = None
     provenance: str | None = None
+    evidence: list[str] = []
 
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 

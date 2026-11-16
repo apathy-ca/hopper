@@ -139,6 +139,7 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
         consolidated_at=getattr(task, "consolidated_at", None),
         drift_checked_at=getattr(task, "drift_checked_at", None),
         drift_score=getattr(task, "drift_score", None),
+        evidence=getattr(task, "evidence", None) or [],
     )
 
 
@@ -227,6 +228,7 @@ def _apply_sync_task_to_local(
         existing.consolidated_at = sync_task.consolidated_at
         existing.drift_checked_at = sync_task.drift_checked_at
         existing.drift_score = sync_task.drift_score
+        existing.evidence = list(sync_task.evidence or [])
         task_store.save(existing, preserve_timestamp=True)
     else:
         # Create new task with the remote ID
@@ -267,6 +269,7 @@ def _apply_sync_task_to_local(
             consolidated_at=sync_task.consolidated_at,
             drift_checked_at=sync_task.drift_checked_at,
             drift_score=sync_task.drift_score,
+            evidence=list(sync_task.evidence or []),
         )
         task_store.save(new_task, preserve_timestamp=True)
 

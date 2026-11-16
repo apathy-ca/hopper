@@ -218,6 +218,7 @@ class LocalClient:
             consolidated_at=data.get("consolidated_at"),
             drift_checked_at=data.get("drift_checked_at"),
             drift_score=data.get("drift_score"),
+            evidence=data.get("evidence") or [],
         )
         task.instance = self.config.instance_id
         author = self._author_context(
@@ -495,6 +496,8 @@ class LocalClient:
             task.drift_checked_at = data["drift_checked_at"]
         if "drift_score" in data:
             task.drift_score = data["drift_score"]
+        if "evidence" in data:
+            task.evidence = list(data["evidence"] or [])
 
         # Handle tags
         if "add_tags" in data:
@@ -858,6 +861,7 @@ class LocalClient:
                 task.drift_checked_at.isoformat() if task.drift_checked_at else None
             ),
             "drift_score": task.drift_score,
+            "evidence": task.evidence,
             "project_id": task.project,
             "instance": task.instance,
             "source": task.source,

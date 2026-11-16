@@ -109,6 +109,7 @@ def _record_to_response(rec: dict[str, Any]) -> TaskResponse:
         "subject",
         "scope",
         "provenance",
+        "evidence",
     ):
         if rec.get(key) is not None:
             data[key] = rec[key]

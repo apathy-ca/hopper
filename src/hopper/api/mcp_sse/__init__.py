@@ -187,6 +187,7 @@ class UpstreamNamespaceClient:
             "subject": data.get("subject"),
             "scope": data.get("scope"),
             "provenance": data.get("provenance"),
+            "evidence": list(data.get("evidence") or []),
             "instance": self._ns,
             "source": data.get("source", "mcp"),
             "created_at": now,
@@ -493,6 +494,7 @@ def hopper_create_memory(
     priority: str = "medium",
     tags: list[str] | None = None,
     location: str | None = None,
+    evidence: list[str] | None = None,
 ) -> dict:
     """Create a memory record — first-class agent knowledge.
 
@@ -517,6 +519,9 @@ def hopper_create_memory(
         priority: low | medium | high | urgent (default medium)
         tags: Additional tags (free-form; kind="memory" is set automatically)
         location: Author location — see hopper_create_task for guidance.
+        evidence: References that back this memory — task ids, commit shas,
+            or file paths relative to the project root. `hopper doctor` flags
+            references that no longer exist.
     """
     try:
         from hopper.location import resolve_location
@@ -532,6 +537,7 @@ def hopper_create_memory(
                     "subject": subject,
                     "scope": scope,
                     "provenance": provenance,
+                    "evidence": list(evidence or []),
                     "source": resolve_location(override=location, transport="mcp"),
                 }
             )
