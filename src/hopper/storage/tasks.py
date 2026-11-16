@@ -97,6 +97,9 @@ class LocalTask:
     # file paths (optionally ``task:``/``commit:``/``file:`` prefixed). Checked
     # by ``hopper doctor`` (memory.evidence) for references that no longer exist.
     evidence: list[str] = field(default_factory=list)
+    # How the author knows this is true (e.g. 'observed in test run',
+    # 'told by user', 'read in code at src/x.py'). Short free text.
+    how_known: str | None = None
 
     @classmethod
     def _generate_id(cls) -> str:
@@ -136,6 +139,7 @@ class LocalTask:
         drift_checked_at: datetime | None = None,
         drift_score: float | None = None,
         evidence: list[str] | None = None,
+        how_known: str | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> LocalTask:
         """Create a new task with generated ID."""
@@ -175,6 +179,7 @@ class LocalTask:
             drift_checked_at=drift_checked_at,
             drift_score=drift_score,
             evidence=list(evidence or []),
+            how_known=how_known,
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -247,6 +252,8 @@ class LocalTask:
             data["drift_score"] = self.drift_score
         if self.evidence:
             data["evidence"] = self.evidence
+        if self.how_known:
+            data["how_known"] = self.how_known
         return data
 
     @classmethod
@@ -294,6 +301,7 @@ class LocalTask:
             drift_checked_at=_parse_datetime(fm.get("drift_checked_at")),
             drift_score=fm.get("drift_score"),
             evidence=list(fm.get("evidence") or []),
+            how_known=fm.get("how_known"),
         )
 
 

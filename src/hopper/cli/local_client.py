@@ -219,6 +219,7 @@ class LocalClient:
             drift_checked_at=data.get("drift_checked_at"),
             drift_score=data.get("drift_score"),
             evidence=data.get("evidence") or [],
+            how_known=data.get("how_known"),
         )
         task.instance = self.config.instance_id
         author = self._author_context(
@@ -498,6 +499,8 @@ class LocalClient:
             task.drift_score = data["drift_score"]
         if "evidence" in data:
             task.evidence = list(data["evidence"] or [])
+        if "how_known" in data:
+            task.how_known = data["how_known"]
 
         # Handle tags
         if "add_tags" in data:
@@ -862,6 +865,7 @@ class LocalClient:
             ),
             "drift_score": task.drift_score,
             "evidence": task.evidence,
+            "how_known": task.how_known,
             "project_id": task.project,
             "instance": task.instance,
             "source": task.source,

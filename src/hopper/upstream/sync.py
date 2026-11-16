@@ -140,6 +140,7 @@ def _local_task_to_sync_task(task: LocalTask) -> SyncTask:
         drift_checked_at=getattr(task, "drift_checked_at", None),
         drift_score=getattr(task, "drift_score", None),
         evidence=getattr(task, "evidence", None) or [],
+        how_known=getattr(task, "how_known", None),
     )
 
 
@@ -229,6 +230,7 @@ def _apply_sync_task_to_local(
         existing.drift_checked_at = sync_task.drift_checked_at
         existing.drift_score = sync_task.drift_score
         existing.evidence = list(sync_task.evidence or [])
+        existing.how_known = sync_task.how_known
         task_store.save(existing, preserve_timestamp=True)
     else:
         # Create new task with the remote ID
@@ -270,6 +272,7 @@ def _apply_sync_task_to_local(
             drift_checked_at=sync_task.drift_checked_at,
             drift_score=sync_task.drift_score,
             evidence=list(sync_task.evidence or []),
+            how_known=sync_task.how_known,
         )
         task_store.save(new_task, preserve_timestamp=True)
 

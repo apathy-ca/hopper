@@ -103,6 +103,10 @@ class TestCreatePersistsKind:
         assert result["evidence"] == ["t1a2b3c4d", "src/x.py"]
         assert repo.get(result["id"])["evidence"] == ["t1a2b3c4d", "src/x.py"]
 
+    def test_create_passes_through_how_known(self, repo):
+        result = _create(repo, title="m", kind="memory", how_known="told by user")
+        assert repo.get(result["id"])["how_known"] == "told by user"
+
 
 class TestGetHydrates:
     def test_get_hydrates_from_payload(self, repo):

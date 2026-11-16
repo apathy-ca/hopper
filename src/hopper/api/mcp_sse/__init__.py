@@ -188,6 +188,7 @@ class UpstreamNamespaceClient:
             "scope": data.get("scope"),
             "provenance": data.get("provenance"),
             "evidence": list(data.get("evidence") or []),
+            "how_known": data.get("how_known"),
             "instance": self._ns,
             "source": data.get("source", "mcp"),
             "created_at": now,
@@ -495,6 +496,7 @@ def hopper_create_memory(
     tags: list[str] | None = None,
     location: str | None = None,
     evidence: list[str] | None = None,
+    how_known: str | None = None,
 ) -> dict:
     """Create a memory record — first-class agent knowledge.
 
@@ -522,6 +524,8 @@ def hopper_create_memory(
         evidence: References that back this memory — task ids, commit shas,
             or file paths relative to the project root. `hopper doctor` flags
             references that no longer exist.
+        how_known: How you know this is true, in a few words — e.g.
+            "observed in test run", "told by user", "read in code at src/x.py".
     """
     try:
         from hopper.location import resolve_location
@@ -538,6 +542,7 @@ def hopper_create_memory(
                     "scope": scope,
                     "provenance": provenance,
                     "evidence": list(evidence or []),
+                    "how_known": how_known,
                     "source": resolve_location(override=location, transport="mcp"),
                 }
             )

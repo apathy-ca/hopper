@@ -103,6 +103,7 @@ def task() -> None:
     multiple=True,
     help="Evidence reference: task id, commit sha, or file path (memory records only)",
 )
+@click.option("--how-known", hidden=True, help="How the author knows it (memory records only)")
 @click.pass_obj
 def add_task(
     ctx: Context,
@@ -126,6 +127,7 @@ def add_task(
     scope: str | None = None,
     provenance: str | None = None,
     evidence: tuple[str, ...] = (),
+    how_known: str | None = None,
 ) -> None:
     """Create a new task.
 
@@ -198,6 +200,8 @@ def add_task(
         task_data["provenance"] = provenance
     if evidence:
         task_data["evidence"] = list(evidence)
+    if how_known:
+        task_data["how_known"] = how_known
 
     # Create task — use brief path when a full brief is provided
     try:

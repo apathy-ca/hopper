@@ -3,7 +3,7 @@
 ---
 
 ## Hopper - Persistent Memory
-<!-- hopper-agent-files: v3 -->
+<!-- hopper-agent-files: v4 -->
 
 This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent memory across AI agent sessions.
 
@@ -39,6 +39,21 @@ Identify yourself with `platform:task-name` when claiming work:
   safe; they render in `hopper task get`.
 - Every record stamps an immutable `created_by`. Notes and creator both travel
   with the task through `hopper sync` to the shared board.
+
+### Recording memories
+
+When you store a memory, say how you know it and cite what backs it:
+
+```bash
+hopper memory add "Sync batches at 512KB" --subject project:hopper \
+  --how-known "read in code at src/hopper/upstream/sync.py" \
+  --evidence src/hopper/upstream/sync.py --evidence t1a2b3c4d
+```
+
+- `--how-known`: a few words — "observed in test run", "told by user",
+  "read in code at X". A guess is fine if you say it is one.
+- `--evidence` (repeatable): task ids, commit shas, or file paths relative to
+  the project root. `hopper doctor` flags memories whose evidence is gone.
 
 ### Session lifecycle
 

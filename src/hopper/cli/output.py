@@ -294,6 +294,8 @@ def print_task_detail(task: dict[str, Any]) -> None:
         console.print(f"[bold]Tags:[/bold] {', '.join(tags)}")
 
     # Memory provenance fields (memory records only; absent on ordinary tasks)
+    if how_known := task.get("how_known"):
+        console.print(f"[bold]How known:[/bold] {how_known}")
     if evidence := task.get("evidence"):
         console.print(f"[bold]Evidence:[/bold] {', '.join(evidence)}")
 

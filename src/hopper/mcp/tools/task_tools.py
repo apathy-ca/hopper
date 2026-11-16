@@ -81,6 +81,12 @@ def get_task_tools() -> list[Tool]:
                         "description": "For kind='memory': references backing it — "
                         "task ids, commit shas, or file paths (checked by hopper doctor).",
                     },
+                    "how_known": {
+                        "type": "string",
+                        "description": "For kind='memory': how you know it is true "
+                        "(e.g. 'observed in test run', 'told by user', "
+                        "'read in code at src/x.py').",
+                    },
                     "location": {
                         "type": "string",
                         "description": "Author location context (e.g. 'phone-claude', 'ember-cli'). "
@@ -294,7 +300,7 @@ async def create_task(
 
     # Structured memory fields — persisted as real record fields (not preamble)
     # for kind="memory". Mirrors the CLI `hopper memory add`.
-    for field in ("subject", "scope", "provenance", "evidence"):
+    for field in ("subject", "scope", "provenance", "evidence", "how_known"):
         if args.get(field) is not None:
             task_data[field] = args[field]
 

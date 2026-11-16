@@ -161,6 +161,12 @@ def _make_memory_group() -> click.Group:
         "that no longer exists.",
     )
     @click.option(
+        "--how-known",
+        help="How you know this is true, in a few words (e.g. 'observed in "
+        "test run', 'told by user', 'read in code at src/x.py'). Shown by "
+        "`hopper task get`.",
+    )
+    @click.option(
         "--priority",
         "-p",
         type=click.Choice(["low", "medium", "high", "urgent"]),
@@ -177,6 +183,7 @@ def _make_memory_group() -> click.Group:
         scope: str,
         provenance: str | None,
         evidence: tuple[str, ...],
+        how_known: str | None,
         priority: str,
         tag: tuple[str, ...],
         non_interactive: bool,
@@ -188,7 +195,8 @@ def _make_memory_group() -> click.Group:
             hopper memory add "Rosetta queues peak at 03:00 UTC" \\
                 --subject agent:rosetta-agent --scope shared-across-agents
             hopper memory add "Sync batches at 512KB" \\
-                --evidence src/hopper/upstream/sync.py --evidence t1234abcd
+                --evidence src/hopper/upstream/sync.py --evidence t1234abcd \\
+                --how-known "read in code at sync.py"
         """
         # Promote subject/scope/provenance to real record fields (frontmatter)
         # instead of a text preamble on the description.
@@ -212,6 +220,7 @@ def _make_memory_group() -> click.Group:
             scope=scope,
             provenance=provenance,
             evidence=tuple(evidence),
+            how_known=how_known,
         )
 
     @base.command(name="session-summary")

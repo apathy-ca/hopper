@@ -110,6 +110,7 @@ class TaskCreate(BaseModel):
         default_factory=list,
         description="Memory evidence references: task ids, commit shas, or file paths",
     )
+    how_known: str | None = Field(None, description="How the author knows the memory is true")
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -208,6 +209,7 @@ class TaskResponse(BaseModel):
     scope: str | None = None
     provenance: str | None = None
     evidence: list[str] = []
+    how_known: str | None = None
 
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 
