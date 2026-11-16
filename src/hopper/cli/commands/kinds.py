@@ -289,6 +289,17 @@ def _make_memory_group() -> click.Group:
         is_flag=True,
         help="Write propose revisions instead of applying directly",
     )
+    @click.option(
+        "--instructions",
+        envvar="HOPPER_CONSOLIDATION_INSTRUCTIONS",
+        metavar="TEXT",
+        help=(
+            "Free-text guidance for the LLM, e.g. 'focus on coding conventions; "
+            "preserve exact error messages'. Steers what summaries emphasise and "
+            "preserve; it does not perform line-level edits of records. "
+            "Default: $HOPPER_CONSOLIDATION_INSTRUCTIONS."
+        ),
+    )
     @click.option("--model", envvar="HOPPER_CONSOLIDATION_MODEL", hidden=True)
     @click.pass_obj
     def memory_consolidate(
@@ -297,6 +308,7 @@ def _make_memory_group() -> click.Group:
         scope: str | None,
         dry_run: bool,
         propose: bool,
+        instructions: str | None,
         model: str | None,
     ) -> None:
         """Run LLM-driven consolidation over memory records.
@@ -312,6 +324,7 @@ def _make_memory_group() -> click.Group:
         Examples:
             hopper memory consolidate --subject project:waypoint --dry-run
             hopper memory consolidate --subject project:waypoint
+            hopper memory consolidate --instructions "keep exact quotes per contract"
         """
         from rich.console import Console
 
@@ -327,6 +340,7 @@ def _make_memory_group() -> click.Group:
                 dry_run=dry_run,
                 propose=propose,
                 model=model,
+                instructions=instructions,
             )
 
         if "error" in result:

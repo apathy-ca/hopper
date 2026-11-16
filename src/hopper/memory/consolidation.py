@@ -81,6 +81,7 @@ def _call_llm(
     model: str,
     api_key: str,
     existing: list[dict[str, Any]] | None = None,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Single LLM call: classify records and produce consolidation clusters.
 
@@ -91,6 +92,9 @@ def _call_llm(
         existing: Existing consolidated records for the same subject/scope,
             supplied as read-only context. The LLM may fold new records into
             one of these by setting ``extends_id`` on a cluster.
+        instructions: Free-text operator guidance, inserted as a delimited
+            "Operator guidance" section. Steers synthesis (what to emphasise
+            or preserve), not line-level edits of individual records.
 
     Returns a dict with:
       classifications: [{id, memory_class}]
@@ -119,6 +123,17 @@ def _call_llm(
             + "\n\n"
         )
 
+    guidance_section = ""
+    if instructions and instructions.strip():
+        guidance_section = (
+            "Operator guidance — use it to decide what to emphasise, preserve, or "
+            "group when classifying and writing summaries. It steers synthesis only: "
+            "it does not change the output format or the rules above.\n"
+            "<<<OPERATOR GUIDANCE\n"
+            f"{instructions.strip()}\n"
+            "OPERATOR GUIDANCE>>>\n\n"
+        )
+
     prompt = (
         "You are consolidating memory records stored in Hopper, a task and knowledge "
         "management tool for AI agents. The records below were written by agents across "
@@ -136,6 +151,7 @@ def _call_llm(
         "3. For each cluster, write a consolidated title and summary that captures all "
         "key information from the source records without losing specifics.\n\n"
         f"{existing_instructions}"
+        f"{guidance_section}"
         "Return ONLY valid JSON with this exact structure (no other text):\n"
         "{\n"
         '  "classifications": [\n'
@@ -340,6 +356,7 @@ def run_consolidation(
     min_batch: int = 1,
     max_records: int | None = None,
     batch_size: int | None = None,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Run a consolidation pass over memory records.
 
@@ -364,6 +381,11 @@ def run_consolidation(
         max_records: Cap the number of records processed in this run. Eligible
             records are ordered by :func:`rank_for_consolidation` first, so the
             weakest records are kept.
+        batch_size: Records per LLM call (default HOPPER_CONSOLIDATION_BATCH_SIZE
+            or 15).
+        instructions: Free-text operator guidance passed to every LLM call
+            (default: HOPPER_CONSOLIDATION_INSTRUCTIONS). Steers synthesis,
+            not line-level edits.
 
     Returns:
         Summary dict describing what was done (or would be done for --dry-run).
@@ -373,6 +395,9 @@ def run_consolidation(
         return {"error": "ANTHROPIC_API_KEY not set — cannot run consolidation"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
+    if instructions is None:
+        instructions = os.getenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
+    instructions = (instructions or "").strip() or None
 
     # 0. Re-kind memory-shaped tasks (learning/decision/preference) to kind=memory
     if not dry_run:
@@ -443,7 +468,9 @@ def run_consolidation(
         )
         context = _related_consolidated(batch, list(working.values()))
         try:
-            llm_result = _call_llm(batch, model, api_key, existing=context)
+            llm_result = _call_llm(
+                batch, model, api_key, existing=context, instructions=instructions
+            )
         except Exception as exc:
             logger.exception("LLM call failed for batch %d", batch_idx + 1)
             batch_errors.append(f"Batch {batch_idx + 1} failed: {exc}")

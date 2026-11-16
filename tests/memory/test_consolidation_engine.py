@@ -686,3 +686,99 @@ def test_max_records_keeps_weakest(fake_client):
     prompt = mock_anth.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "ID: ep-003" in prompt and "ID: ep-004" in prompt
     assert "ID: ep-001" not in prompt and "ID: ep-002" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Operator instructions
+# ---------------------------------------------------------------------------
+
+
+def _prompt_of(mock_anth, call=0):
+    return mock_anth.messages.create.call_args_list[call].kwargs["messages"][0]["content"]
+
+
+def test_call_llm_includes_delimited_operator_guidance():
+    mock_anth = _mock_anthropic(_LLM_RESPONSE)
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        _call_llm(
+            [{"id": "x", "title": "t"}],
+            "m",
+            "k",
+            instructions="  Preserve exact quotes per contract.  ",
+        )
+    prompt = _prompt_of(mock_anth)
+    assert "Operator guidance" in prompt
+    assert "<<<OPERATOR GUIDANCE\nPreserve exact quotes per contract.\nOPERATOR GUIDANCE>>>" in (
+        prompt
+    )
+    # Guidance precedes the output spec and the records
+    assert prompt.index("OPERATOR GUIDANCE>>>") < prompt.index("Return ONLY valid JSON")
+
+
+@pytest.mark.parametrize("instructions", [None, "", "   "])
+def test_call_llm_omits_guidance_when_empty(instructions):
+    mock_anth = _mock_anthropic(_LLM_RESPONSE)
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        _call_llm([{"id": "x", "title": "t"}], "m", "k", instructions=instructions)
+    assert "OPERATOR GUIDANCE" not in _prompt_of(mock_anth)
+
+
+def test_run_consolidation_threads_instructions_to_every_batch(fake_client):
+    mock_anth = _mock_anthropic(*[{"classifications": [], "clusters": []}] * 2)
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_consolidation(fake_client, dry_run=True, batch_size=2, instructions="Focus X")
+    assert mock_anth.messages.create.call_count == 2
+    for i in range(2):
+        assert "Focus X" in _prompt_of(mock_anth, i)
+
+
+def test_run_consolidation_instructions_env_default(fake_client):
+    env = {"ANTHROPIC_API_KEY": "fake", "HOPPER_CONSOLIDATION_INSTRUCTIONS": "From env"}
+
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+    with patch.dict("os.environ", env):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_consolidation(fake_client, dry_run=True)
+    assert "From env" in _prompt_of(mock_anth)
+
+    # Explicit argument wins over the env var
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+    with patch.dict("os.environ", env):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_consolidation(fake_client, dry_run=True, instructions="Explicit")
+    assert "Explicit" in _prompt_of(mock_anth)
+    assert "From env" not in _prompt_of(mock_anth)
+
+
+def test_cli_consolidate_passes_instructions(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from hopper.cli.main import cli
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".hopper" / "tasks").mkdir(parents=True)
+    monkeypatch.delenv("HOPPER_CONSOLIDATION_INSTRUCTIONS", raising=False)
+    fake_result = {"dry_run": True, "eligible": 0, "classifications": [], "clusters": []}
+    runner = CliRunner()
+
+    with patch(
+        "hopper.memory.consolidation.run_consolidation", return_value=fake_result
+    ) as mock_run:
+        result = runner.invoke(
+            cli, ["memory", "consolidate", "--dry-run", "--instructions", "Keep quotes"]
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Keep quotes"
+
+        result = runner.invoke(
+            cli,
+            ["memory", "consolidate", "--dry-run"],
+            env={"HOPPER_CONSOLIDATION_INSTRUCTIONS": "Env guidance"},
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Env guidance"
+
+    help_text = runner.invoke(cli, ["memory", "consolidate", "--help"]).output
+    assert "--instructions" in help_text
+    assert "line-level edits" in help_text
