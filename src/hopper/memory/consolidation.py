@@ -16,6 +16,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from hopper.memory.salience import is_salient
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -227,6 +229,11 @@ def _timestamp(value: Any) -> float:
     return 0.0
 
 
+def _key_salience(r: dict[str, Any]) -> int:
+    # Agent-flagged (and unexpired) records are consolidated first.
+    return 0 if is_salient(r) else 1
+
+
 def _key_class_tier(r: dict[str, Any]) -> int:
     return _CLASS_TIER.get(r.get("memory_class"), _UNKNOWN_CLASS_TIER)
 
@@ -248,6 +255,7 @@ def _key_id(r: dict[str, Any]) -> str:
 # field, lower = weaker = sooner, absent = neutral), insert one function here
 # at the desired precedence — nothing else needs to change.
 _PRIORITY_KEYS = (
+    _key_salience,
     _key_class_tier,
     _key_reinforcement,
     _key_last_touched,
@@ -266,6 +274,7 @@ def rank_for_consolidation(records: list[dict[str, Any]]) -> list[dict[str, Any]
     the cap drops the strongest records, not an arbitrary tail. Ordering, by
     precedence (each level breaks ties in the previous one):
 
+    0. Salience: records flagged salient and not yet expired come first.
     1. memory_class tier: unclassified, then episodic, then noise, then
        durable_fact, then anything else.
     2. Reinforcement: fewer attributed notes first (notes are the only

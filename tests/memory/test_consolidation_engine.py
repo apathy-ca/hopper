@@ -639,6 +639,20 @@ def test_rank_class_tier_first():
     assert _ids(rank_for_consolidation(records)) == ["e", "d", "c", "a", "b"]
 
 
+def test_rank_salient_first_unless_expired():
+    records = [
+        {"id": "plain"},
+        {"id": "expired", "salience": True, "salient_until": "2000-01-01T00:00:00+00:00"},
+        {
+            "id": "salient-durable",
+            "salience": True,
+            "salient_until": "2999-01-01T00:00:00+00:00",
+            "memory_class": "durable_fact",
+        },
+    ]
+    assert _ids(rank_for_consolidation(records)) == ["salient-durable", "expired", "plain"]
+
+
 def test_rank_fewer_notes_then_least_recently_touched():
     records = [
         {"id": "many-notes", "notes": [{}, {}], "updated_at": "2020-01-01T00:00:00"},
