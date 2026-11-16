@@ -303,7 +303,9 @@ def _make_memory_group() -> click.Group:
 
         Classifies episodic/durable_fact/noise, merges overlapping episodic
         records into consolidated summaries, and updates source records with
-        superseded_by. Results sync upstream via the normal record-update path.
+        superseded_by. New episodes that belong in an existing consolidated
+        summary (same subject/scope) extend that record in place instead of
+        creating a duplicate. Results sync upstream via the normal record-update path.
 
         Requires ANTHROPIC_API_KEY to be set.
 
@@ -343,13 +345,16 @@ def _make_memory_group() -> click.Group:
             )
             for cluster in result.get("clusters", []):
                 src = ", ".join(cluster.get("source_ids", []))
-                console.print(f"  [dim]•[/dim] {cluster.get('title')} ← [{src}]")
+                ext = cluster.get("extends_id")
+                target = f" (extends {ext})" if ext else ""
+                console.print(f"  [dim]•[/dim] {cluster.get('title')}{target} ← [{src}]")
             return
 
         console.print(
             f"[green]Consolidation complete[/green] (run {result.get('run_id')})\n"
             f"  Eligible records: {result['eligible']}\n"
             f"  Consolidated records created: {result['consolidated_records_created']}\n"
+            f"  Consolidated records extended: {result.get('consolidated_records_updated', 0)}\n"
             f"  Source records superseded: {result['source_records_superseded']}\n"
             f"  Classified only: {result['records_classified_only']}\n"
             f"  Durable facts flagged: {result['durable_facts_flagged']}"
