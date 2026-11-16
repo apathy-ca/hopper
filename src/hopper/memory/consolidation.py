@@ -181,6 +181,91 @@ _MAX_EXISTING_CONTEXT = 10
 _EXISTING_SUMMARY_CHARS = 4000
 
 
+# Lower tier = consolidated first. Unclassified records have never been looked
+# at; episodic ones are the raw material for merging; noise is low value but
+# may still be redundant with something; durable facts are already settled.
+_CLASS_TIER: dict[str | None, int] = {
+    None: 0,
+    "episodic": 1,
+    "noise": 2,
+    "durable_fact": 3,
+}
+_UNKNOWN_CLASS_TIER = 4
+
+
+def _timestamp(value: Any) -> float:
+    """Epoch seconds for a datetime or ISO string; 0.0 if missing/unparseable.
+
+    Naive values are treated as UTC (that is how the storage layers persist
+    them). Missing timestamps map to 0.0 so they sort as the oldest.
+    """
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return 0.0
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.timestamp()
+    return 0.0
+
+
+def _key_class_tier(r: dict[str, Any]) -> int:
+    return _CLASS_TIER.get(r.get("memory_class"), _UNKNOWN_CLASS_TIER)
+
+
+def _key_reinforcement(r: dict[str, Any]) -> int:
+    return len(r.get("notes") or [])
+
+
+def _key_last_touched(r: dict[str, Any]) -> float:
+    return _timestamp(r.get("updated_at") or r.get("created_at"))
+
+
+def _key_id(r: dict[str, Any]) -> str:
+    return str(r.get("id", ""))
+
+
+# Ordered sort-key components; each maps a record to an ascending sort value
+# (smaller = consolidate sooner). To add a new signal (e.g. a ``salience``
+# field, lower = weaker = sooner, absent = neutral), insert one function here
+# at the desired precedence — nothing else needs to change.
+_PRIORITY_KEYS = (
+    _key_class_tier,
+    _key_reinforcement,
+    _key_last_touched,
+    _key_id,
+)
+
+
+def _priority_key(r: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(f(r) for f in _PRIORITY_KEYS)
+
+
+def rank_for_consolidation(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order records so the weakest / least-settled are consolidated first.
+
+    Deterministic and LLM-free; applied before ``max_records`` and batching so
+    the cap drops the strongest records, not an arbitrary tail. Ordering, by
+    precedence (each level breaks ties in the previous one):
+
+    1. memory_class tier: unclassified, then episodic, then noise, then
+       durable_fact, then anything else.
+    2. Reinforcement: fewer attributed notes first (notes are the only
+       per-record signal today that other agents revisited the record).
+    3. Least recently touched first: ``updated_at``, falling back to
+       ``created_at``; records with neither sort as oldest.
+    4. Record id, so the order is total and stable across runs.
+
+    No confidence/contradiction field exists on memory records yet; new
+    signals slot into ``_PRIORITY_KEYS``.
+
+    Returns a new list; the input is not modified.
+    """
+    return sorted(records, key=_priority_key)
+
+
 def _related_consolidated(
     batch: list[dict[str, Any]], pool: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -276,7 +361,9 @@ def run_consolidation(
         model: Anthropic model to use (default: claude-haiku-4-5-20251001).
         only_unclassified: Only process records with no memory_class set yet.
         min_batch: Skip the LLM call if fewer than this many records are eligible.
-        max_records: Cap the number of records sent to the LLM per call.
+        max_records: Cap the number of records processed in this run. Eligible
+            records are ordered by :func:`rank_for_consolidation` first, so the
+            weakest records are kept.
 
     Returns:
         Summary dict describing what was done (or would be done for --dry-run).
@@ -322,6 +409,8 @@ def run_consolidation(
     if len(eligible) < min_batch:
         return {"skipped": True, "reason": "below min_batch", "eligible": len(eligible)}
 
+    # Weakest records first, so max_records drops the most settled ones.
+    eligible = rank_for_consolidation(eligible)
     if max_records is not None and len(eligible) > max_records:
         eligible = eligible[:max_records]
 

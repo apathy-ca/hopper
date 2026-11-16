@@ -10,7 +10,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hopper.memory.consolidation import _call_llm, run_consolidation, run_drift_check
+from hopper.memory.consolidation import (
+    _call_llm,
+    rank_for_consolidation,
+    run_consolidation,
+    run_drift_check,
+)
 
 # ---------------------------------------------------------------------------
 # Fake client
@@ -611,3 +616,73 @@ def test_extensions_across_batches_compose(client_with_consolidated):
     assert con["description"] == "Summary after batch 2."
     assert con["source_record_ids"] == ["old-001", "old-002", "ep-001", "ep-002"]
     assert len(client.notes["con-001"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# rank_for_consolidation
+# ---------------------------------------------------------------------------
+
+
+def _ids(records):
+    return [r["id"] for r in records]
+
+
+def test_rank_class_tier_first():
+    """Unclassified, then episodic, noise, durable_fact, then unknown classes."""
+    records = [
+        {"id": "a", "memory_class": "durable_fact"},
+        {"id": "b", "memory_class": "weird"},
+        {"id": "c", "memory_class": "noise"},
+        {"id": "d", "memory_class": "episodic"},
+        {"id": "e"},
+    ]
+    assert _ids(rank_for_consolidation(records)) == ["e", "d", "c", "a", "b"]
+
+
+def test_rank_fewer_notes_then_least_recently_touched():
+    records = [
+        {"id": "many-notes", "notes": [{}, {}], "updated_at": "2020-01-01T00:00:00"},
+        {"id": "recent", "updated_at": "2026-06-01T00:00:00+00:00"},
+        {"id": "old", "updated_at": "2025-01-01T00:00:00Z"},
+        {"id": "created-only", "created_at": "2025-06-01T00:00:00"},
+        {"id": "no-ts"},
+    ]
+    assert _ids(rank_for_consolidation(records)) == [
+        "no-ts",
+        "old",
+        "created-only",
+        "recent",
+        "many-notes",
+    ]
+
+
+def test_rank_handles_datetimes_and_bad_values_deterministically():
+    from datetime import UTC, datetime
+
+    records = [
+        {"id": "z", "updated_at": datetime(2026, 1, 1, tzinfo=UTC)},
+        {"id": "y", "updated_at": datetime(2025, 1, 1)},  # naive = UTC
+        {"id": "x", "updated_at": "not-a-date"},
+        {"id": "w", "updated_at": "not-a-date"},
+    ]
+    ranked = rank_for_consolidation(records)
+    assert _ids(ranked) == ["w", "x", "y", "z"]
+    assert _ids(rank_for_consolidation(list(reversed(records)))) == _ids(ranked)
+    # Input not mutated
+    assert _ids(records) == ["z", "y", "x", "w"]
+
+
+def test_max_records_keeps_weakest(fake_client):
+    """max_records is applied after ranking, not to raw list order."""
+    fake_client._tasks["ep-001"]["memory_class"] = "durable_fact"
+    fake_client._tasks["ep-002"]["memory_class"] = "episodic"
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            result = run_consolidation(fake_client, dry_run=True, max_records=2)
+
+    assert result["eligible"] == 2
+    prompt = mock_anth.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "ID: ep-003" in prompt and "ID: ep-004" in prompt
+    assert "ID: ep-001" not in prompt and "ID: ep-002" not in prompt
