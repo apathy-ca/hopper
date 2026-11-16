@@ -97,6 +97,14 @@ def task() -> None:
 @click.option("--subject", hidden=True, help="Memory subject (memory records only)")
 @click.option("--scope", hidden=True, help="Memory scope (memory records only)")
 @click.option("--provenance", hidden=True, help="Memory provenance (memory records only)")
+@click.option(
+    "--evidence",
+    hidden=True,
+    multiple=True,
+    help="Evidence reference: task id, commit sha, or file path (memory records only)",
+)
+@click.option("--how-known", hidden=True, help="How the author knows it (memory records only)")
+@click.option("--salient-until", hidden=True, help="Salience expiry, ISO (memory records only)")
 @click.pass_obj
 def add_task(
     ctx: Context,
@@ -119,6 +127,9 @@ def add_task(
     subject: str | None = None,
     scope: str | None = None,
     provenance: str | None = None,
+    evidence: tuple[str, ...] = (),
+    how_known: str | None = None,
+    salient_until: str | None = None,
 ) -> None:
     """Create a new task.
 
@@ -189,6 +200,13 @@ def add_task(
         task_data["scope"] = scope
     if provenance:
         task_data["provenance"] = provenance
+    if evidence:
+        task_data["evidence"] = list(evidence)
+    if how_known:
+        task_data["how_known"] = how_known
+    if salient_until:
+        task_data["salience"] = True
+        task_data["salient_until"] = salient_until
 
     # Create task — use brief path when a full brief is provided
     try:

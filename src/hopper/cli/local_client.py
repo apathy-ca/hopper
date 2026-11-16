@@ -20,7 +20,7 @@ from hopper.storage import (
 )
 from hopper.storage.memory import LocalFeedback, LocalPattern
 from hopper.storage.revision_writer import AuthorContext
-from hopper.storage.tasks import LocalTask
+from hopper.storage.tasks import LocalTask, _parse_datetime
 
 
 def _read_storage_type(storage_path: Path) -> str:
@@ -195,6 +195,11 @@ class LocalClient:
         # each record, not just which machine (source).
         created_by = data.get("created_by") or data.get("assigned_to")
         created_by_did = self._resolve_creator_did(data.get("author_did"))
+        salient_until = data.get("salient_until")
+        if data.get("salience") and not salient_until:
+            from hopper.memory.salience import salient_until_from
+
+            salient_until = salient_until_from()  # flag without expiry -> default window
         task = LocalTask.create(
             title=data.get("title", "Untitled"),
             description=data.get("description"),
@@ -218,6 +223,10 @@ class LocalClient:
             consolidated_at=data.get("consolidated_at"),
             drift_checked_at=data.get("drift_checked_at"),
             drift_score=data.get("drift_score"),
+            evidence=data.get("evidence") or [],
+            how_known=data.get("how_known"),
+            salience=bool(data.get("salience")),
+            salient_until=salient_until,
         )
         task.instance = self.config.instance_id
         author = self._author_context(
@@ -495,6 +504,14 @@ class LocalClient:
             task.drift_checked_at = data["drift_checked_at"]
         if "drift_score" in data:
             task.drift_score = data["drift_score"]
+        if "evidence" in data:
+            task.evidence = list(data["evidence"] or [])
+        if "how_known" in data:
+            task.how_known = data["how_known"]
+        if "salience" in data:
+            task.salience = bool(data["salience"])
+        if "salient_until" in data:
+            task.salient_until = _parse_datetime(data["salient_until"])
 
         # Handle tags
         if "add_tags" in data:
@@ -858,6 +875,10 @@ class LocalClient:
                 task.drift_checked_at.isoformat() if task.drift_checked_at else None
             ),
             "drift_score": task.drift_score,
+            "evidence": task.evidence,
+            "how_known": task.how_known,
+            "salience": task.salience,
+            "salient_until": task.salient_until.isoformat() if task.salient_until else None,
             "project_id": task.project,
             "instance": task.instance,
             "source": task.source,

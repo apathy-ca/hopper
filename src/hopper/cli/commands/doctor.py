@@ -13,6 +13,7 @@ import json
 import socket
 import subprocess
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,11 +28,12 @@ from hopper.cli.main import Context
 OK, WARN, ERROR = "ok", "warn", "error"
 _EXIT = {OK: 0, WARN: 1, ERROR: 2}
 
-GROUPS = ("config", "sync", "tasks", "environment")
+GROUPS = ("config", "sync", "tasks", "memory", "environment")
 GROUP_TITLES = {
     "config": "Config",
     "sync": "Sync",
     "tasks": "Tasks",
+    "memory": "Memory",
     "environment": "Environment",
 }
 
@@ -515,6 +517,78 @@ def check_tasks(env: Env, all_records: list[Any]) -> list[Check]:
 
 
 # --------------------------------------------------------------------------
+# checks: memory
+# --------------------------------------------------------------------------
+
+
+def _commit_checker(env: Env) -> Callable[[str], bool | None] | None:
+    """Return a sha -> True/False checker for the project's git repo, or None."""
+    pdir = env.project_dir
+    if pdir is None or env.is_global_store or not pdir.exists():
+        return None
+    if _git(["rev-parse", "--is-inside-work-tree"], pdir) != "true":
+        return None
+
+    def exists(sha: str) -> bool | None:
+        # cat-file -e prints nothing: "" = present, None = absent (or git failed).
+        return _git(["cat-file", "-e", f"{sha}^{{commit}}"], pdir) is not None
+
+    return exists
+
+
+def stale_evidence(
+    records: list[Any], env: Env, own_instance: str | None
+) -> tuple[list[tuple[Any, list[str]]], int]:
+    """Memory records (this instance's shard only) whose evidence is gone.
+
+    Returns ``(found, skipped_foreign)``. Records from another instance's
+    shard are skipped: their relative paths and task ids belong to a
+    different project, and rewriting them would clobber newer remote state.
+    """
+    from hopper.cli.commands.maintenance import is_foreign_record
+    from hopper.memory.evidence import find_missing_evidence
+
+    ids = {r.id for r in records}
+    root = None if env.is_global_store else env.project_dir
+    commit_exists = _commit_checker(env)
+    found: list[tuple[Any, list[str]]] = []
+    skipped = 0
+    for r in records:
+        if getattr(r, "kind", "task") != "memory" or not getattr(r, "evidence", None):
+            continue
+        if is_foreign_record(getattr(r, "instance", None), own_instance):
+            skipped += 1
+            continue
+        missing = find_missing_evidence(
+            r.evidence, known_ids=ids, project_root=root, commit_exists=commit_exists
+        )
+        if missing:
+            found.append((r, missing))
+    return found, skipped
+
+
+def check_memory(env: Env, all_records: list[Any]) -> list[Check]:
+    from hopper.storage.base import StorageConfig
+
+    own = StorageConfig.local(env.storage).instance_id if env.storage else None
+    stale, skipped = stale_evidence(all_records, env, own)
+    foreign = f" ({skipped} from another instance not checked)" if skipped else ""
+    if stale:
+        detail = "; ".join(f"{r.id} ({', '.join(m[:3])})" for r, m in stale[:3])
+        return [
+            Check(
+                "memory.evidence",
+                WARN,
+                f"{_plural(len(stale), 'memory record')} cite evidence that no longer "
+                f"exists: {detail}{foreign}",
+                "re-verify each memory, then update or retire it "
+                "(hopper doctor --fix leaves a note on each)",
+            )
+        ]
+    return [Check("memory.evidence", OK, f"All memory evidence resolves{foreign}")]
+
+
+# --------------------------------------------------------------------------
 # checks: environment
 # --------------------------------------------------------------------------
 
@@ -660,6 +734,7 @@ def run_checks(env: Env) -> list[Check]:
         checks.append(Check("tasks.load", ERROR, f"Cannot read tasks: {load_err}", "hopper init"))
     else:
         checks += check_tasks(env, records)
+        checks += check_memory(env, records)
     checks += check_environment(env, records)
 
     order = {g: i for i, g in enumerate(GROUPS)}
@@ -723,6 +798,17 @@ def apply_fixes(env: Env, checks: list[Check], json_mode: bool) -> int:
                 r.kind = target
                 store.save(r)
             done += 1
+
+        # Stale evidence: never edits the memory or its evidence (that needs
+        # judgment) -- just leaves one attributed note per distinct finding.
+        stale, _ = stale_evidence(records, env, client.config.instance_id)
+        for r, missing in stale:
+            body = "`hopper doctor`: evidence no longer exists: " + ", ".join(missing)
+            if any(n.get("body") == body for n in r.notes or []):
+                continue
+            _emit(f"FIX: noting missing evidence on {r.id} ({', '.join(missing)})", json_mode)
+            store.add_note(r.id, body, author=DOCTOR_IDENTITY)
+            done += 1
     finally:
         client.close()
     return done
@@ -768,8 +854,10 @@ def doctor(ctx: Context, json_flag: bool, fix: bool, stale_days: float) -> None:
 
     \b
     --fix only: releases ownerless/stale in_progress tasks to open (with a
-    note), annotates the inert legacy sync: block, and runs reclassify. It
-    never closes, deletes, or re-prioritizes tasks.
+    note), annotates the inert legacy sync: block, runs reclassify, and
+    leaves a note on memories whose evidence no longer exists. It never
+    closes, deletes, or re-prioritizes tasks, and skips records that belong
+    to another instance's shard.
     """
     json_mode = json_flag or ctx.json_output
     env = Env(

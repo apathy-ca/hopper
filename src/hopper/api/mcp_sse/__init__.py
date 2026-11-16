@@ -187,6 +187,10 @@ class UpstreamNamespaceClient:
             "subject": data.get("subject"),
             "scope": data.get("scope"),
             "provenance": data.get("provenance"),
+            "evidence": list(data.get("evidence") or []),
+            "how_known": data.get("how_known"),
+            "salience": bool(data.get("salience")),
+            "salient_until": data.get("salient_until"),
             "instance": self._ns,
             "source": data.get("source", "mcp"),
             "created_at": now,
@@ -493,6 +497,10 @@ def hopper_create_memory(
     priority: str = "medium",
     tags: list[str] | None = None,
     location: str | None = None,
+    evidence: list[str] | None = None,
+    how_known: str | None = None,
+    salient: bool = False,
+    salient_for: str | None = None,
 ) -> dict:
     """Create a memory record — first-class agent knowledge.
 
@@ -517,9 +525,24 @@ def hopper_create_memory(
         priority: low | medium | high | urgent (default medium)
         tags: Additional tags (free-form; kind="memory" is set automatically)
         location: Author location — see hopper_create_task for guidance.
+        evidence: References that back this memory — task ids, commit shas,
+            or file paths relative to the project root. `hopper doctor` flags
+            references that no longer exist.
+        how_known: How you know this is true, in a few words — e.g.
+            "observed in test run", "told by user", "read in code at src/x.py".
+        salient: Flag this memory to revisit (e.g. for consolidation). The
+            flag lapses after salient_for.
+        salient_for: Salience window ("12h", "3d", "1w"; default 3d).
+            Implies salient.
     """
     try:
         from hopper.location import resolve_location
+        from hopper.memory.salience import parse_salience_window, salient_until_from
+
+        salient_until = None
+        if salient or salient_for:
+            window = parse_salience_window(salient_for) if salient_for else None
+            salient_until = salient_until_from(window=window).isoformat()
 
         with _get_client() as client:
             result = client.create_task(
@@ -532,6 +555,10 @@ def hopper_create_memory(
                     "subject": subject,
                     "scope": scope,
                     "provenance": provenance,
+                    "evidence": list(evidence or []),
+                    "how_known": how_known,
+                    "salience": salient_until is not None,
+                    "salient_until": salient_until,
                     "source": resolve_location(override=location, transport="mcp"),
                 }
             )

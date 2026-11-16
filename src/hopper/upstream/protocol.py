@@ -60,6 +60,12 @@ class SyncTask(BaseModel):
     consolidated_at: datetime | None = None
     drift_checked_at: datetime | None = None
     drift_score: float | None = None
+    # Evidence references (task ids / commit shas / file paths) on memory records.
+    evidence: list[str] = Field(default_factory=list)
+    how_known: str | None = None
+    # Write-time salience flag + expiry (see hopper.memory.salience).
+    salience: bool = False
+    salient_until: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -97,6 +103,10 @@ class SyncTask(BaseModel):
             subject=getattr(task, "subject", None),
             scope=getattr(task, "scope", None),
             provenance=getattr(task, "provenance", None),
+            evidence=getattr(task, "evidence", None) or [],
+            how_known=getattr(task, "how_known", None),
+            salience=bool(getattr(task, "salience", False)),
+            salient_until=getattr(task, "salient_until", None),
         )
 
 
