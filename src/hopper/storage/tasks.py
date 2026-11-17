@@ -93,6 +93,17 @@ class LocalTask:
     consolidated_at: datetime | None = None
     drift_checked_at: datetime | None = None
     drift_score: float | None = None
+    # Evidence: references backing a memory record — task ids, commit shas, or
+    # file paths (optionally ``task:``/``commit:``/``file:`` prefixed). Checked
+    # by ``hopper doctor`` (memory.evidence) for references that no longer exist.
+    evidence: list[str] = field(default_factory=list)
+    # How the author knows this is true (e.g. 'observed in test run',
+    # 'told by user', 'read in code at src/x.py'). Short free text.
+    how_known: str | None = None
+    # Write-time salience flag ("revisit this") that lapses at salient_until.
+    # Read it through hopper.memory.salience.is_salient, which applies expiry.
+    salience: bool = False
+    salient_until: datetime | None = None
 
     @classmethod
     def _generate_id(cls) -> str:
@@ -131,6 +142,10 @@ class LocalTask:
         consolidated_at: datetime | None = None,
         drift_checked_at: datetime | None = None,
         drift_score: float | None = None,
+        evidence: list[str] | None = None,
+        how_known: str | None = None,
+        salience: bool = False,
+        salient_until: datetime | None = None,
         **kwargs: Any,  # Accept and ignore unknown fields
     ) -> LocalTask:
         """Create a new task with generated ID."""
@@ -169,6 +184,10 @@ class LocalTask:
             consolidated_at=consolidated_at,
             drift_checked_at=drift_checked_at,
             drift_score=drift_score,
+            evidence=list(evidence or []),
+            how_known=how_known,
+            salience=bool(salience),
+            salient_until=_parse_datetime(salient_until),
         )
 
     def to_frontmatter(self) -> dict[str, Any]:
@@ -239,6 +258,14 @@ class LocalTask:
             data["drift_checked_at"] = self.drift_checked_at.isoformat()
         if self.drift_score is not None:
             data["drift_score"] = self.drift_score
+        if self.evidence:
+            data["evidence"] = self.evidence
+        if self.how_known:
+            data["how_known"] = self.how_known
+        if self.salience:
+            data["salience"] = True
+        if self.salient_until:
+            data["salient_until"] = self.salient_until.isoformat()
         return data
 
     @classmethod
@@ -285,6 +312,10 @@ class LocalTask:
             consolidated_at=_parse_datetime(fm.get("consolidated_at")),
             drift_checked_at=_parse_datetime(fm.get("drift_checked_at")),
             drift_score=fm.get("drift_score"),
+            evidence=list(fm.get("evidence") or []),
+            how_known=fm.get("how_known"),
+            salience=bool(fm.get("salience", False)),
+            salient_until=_parse_datetime(fm.get("salient_until")),
         )
 
 

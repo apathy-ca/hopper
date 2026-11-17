@@ -152,6 +152,32 @@ def _make_memory_group() -> click.Group:
         "'observation', 'inferred from memory-id abc123')",
     )
     @click.option(
+        "--evidence",
+        "-e",
+        multiple=True,
+        help="What backs this memory: a task id, commit sha, or file path "
+        "(relative to the project root). Repeatable. Prefix with task:, "
+        "commit: or file: to disambiguate. `hopper doctor` flags evidence "
+        "that no longer exists.",
+    )
+    @click.option(
+        "--how-known",
+        help="How you know this is true, in a few words (e.g. 'observed in "
+        "test run', 'told by user', 'read in code at src/x.py'). Shown by "
+        "`hopper task get`.",
+    )
+    @click.option(
+        "--salient",
+        is_flag=True,
+        help="Flag this memory as salient (worth revisiting / prioritising in "
+        "consolidation). The flag lapses after --salient-for (default 3d).",
+    )
+    @click.option(
+        "--salient-for",
+        metavar="WINDOW",
+        help="How long the salience flag lasts: e.g. 12h, 3d, 1w (default 3d). Implies --salient.",
+    )
+    @click.option(
         "--priority",
         "-p",
         type=click.Choice(["low", "medium", "high", "urgent"]),
@@ -167,6 +193,10 @@ def _make_memory_group() -> click.Group:
         subject: str | None,
         scope: str,
         provenance: str | None,
+        evidence: tuple[str, ...],
+        how_known: str | None,
+        salient: bool,
+        salient_for: str | None,
         priority: str,
         tag: tuple[str, ...],
         non_interactive: bool,
@@ -177,10 +207,22 @@ def _make_memory_group() -> click.Group:
             hopper memory add "User prefers terse responses" --subject user:preferences
             hopper memory add "Rosetta queues peak at 03:00 UTC" \\
                 --subject agent:rosetta-agent --scope shared-across-agents
+            hopper memory add "Sync batches at 512KB" \\
+                --evidence src/hopper/upstream/sync.py --evidence t1234abcd \\
+                --how-known "read in code at sync.py"
         """
         # Promote subject/scope/provenance to real record fields (frontmatter)
         # instead of a text preamble on the description.
         tags = ("memory",) + tuple(t for t in tag if t != "memory")
+        salient_until = None
+        if salient or salient_for:
+            from hopper.memory.salience import parse_salience_window, salient_until_from
+
+            try:
+                window = parse_salience_window(salient_for) if salient_for else None
+            except ValueError as e:
+                raise click.BadParameter(str(e), param_hint="--salient-for") from e
+            salient_until = salient_until_from(window=window).isoformat()
         ctx.invoke(
             add_task,
             title=title,
@@ -199,6 +241,9 @@ def _make_memory_group() -> click.Group:
             subject=subject,
             scope=scope,
             provenance=provenance,
+            evidence=tuple(evidence),
+            how_known=how_known,
+            salient_until=salient_until,
         )
 
     @base.command(name="session-summary")
@@ -289,6 +334,17 @@ def _make_memory_group() -> click.Group:
         is_flag=True,
         help="Write propose revisions instead of applying directly",
     )
+    @click.option(
+        "--instructions",
+        envvar="HOPPER_CONSOLIDATION_INSTRUCTIONS",
+        metavar="TEXT",
+        help=(
+            "Free-text guidance for the LLM, e.g. 'focus on coding conventions; "
+            "preserve exact error messages'. Steers what summaries emphasise and "
+            "preserve; it does not perform line-level edits of records. "
+            "Default: $HOPPER_CONSOLIDATION_INSTRUCTIONS."
+        ),
+    )
     @click.option("--model", envvar="HOPPER_CONSOLIDATION_MODEL", hidden=True)
     @click.pass_obj
     def memory_consolidate(
@@ -297,19 +353,23 @@ def _make_memory_group() -> click.Group:
         scope: str | None,
         dry_run: bool,
         propose: bool,
+        instructions: str | None,
         model: str | None,
     ) -> None:
         """Run LLM-driven consolidation over memory records.
 
         Classifies episodic/durable_fact/noise, merges overlapping episodic
         records into consolidated summaries, and updates source records with
-        superseded_by. Results sync upstream via the normal record-update path.
+        superseded_by. New episodes that belong in an existing consolidated
+        summary (same subject/scope) extend that record in place instead of
+        creating a duplicate. Results sync upstream via the normal record-update path.
 
         Requires ANTHROPIC_API_KEY to be set.
 
         Examples:
             hopper memory consolidate --subject project:waypoint --dry-run
             hopper memory consolidate --subject project:waypoint
+            hopper memory consolidate --instructions "keep exact quotes per contract"
         """
         from rich.console import Console
 
@@ -325,6 +385,7 @@ def _make_memory_group() -> click.Group:
                 dry_run=dry_run,
                 propose=propose,
                 model=model,
+                instructions=instructions,
             )
 
         if "error" in result:
@@ -343,13 +404,16 @@ def _make_memory_group() -> click.Group:
             )
             for cluster in result.get("clusters", []):
                 src = ", ".join(cluster.get("source_ids", []))
-                console.print(f"  [dim]•[/dim] {cluster.get('title')} ← [{src}]")
+                ext = cluster.get("extends_id")
+                target = f" (extends {ext})" if ext else ""
+                console.print(f"  [dim]•[/dim] {cluster.get('title')}{target} ← [{src}]")
             return
 
         console.print(
             f"[green]Consolidation complete[/green] (run {result.get('run_id')})\n"
             f"  Eligible records: {result['eligible']}\n"
             f"  Consolidated records created: {result['consolidated_records_created']}\n"
+            f"  Consolidated records extended: {result.get('consolidated_records_updated', 0)}\n"
             f"  Source records superseded: {result['source_records_superseded']}\n"
             f"  Classified only: {result['records_classified_only']}\n"
             f"  Durable facts flagged: {result['durable_facts_flagged']}"

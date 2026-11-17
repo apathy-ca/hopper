@@ -16,6 +16,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from hopper.memory.salience import is_salient
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -56,26 +58,83 @@ def _rekind_memory_shaped_tasks(client: Any, extra_tags: set[str] | None = None)
     return rekinds
 
 
-def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[str, Any]:
+def _format_episode(r: dict[str, Any]) -> str:
+    return "ID: {id}\nTitle: {title}{subject}{content}".format(
+        id=r["id"],
+        title=r.get("title", "(untitled)"),
+        subject=f"\nSubject: {r['subject']}" if r.get("subject") else "",
+        content=(f"\nContent: {r.get('description', '')[:400]}" if r.get("description") else ""),
+    )
+
+
+def _format_existing(r: dict[str, Any]) -> str:
+    # Existing summaries are shown (nearly) in full: when the LLM extends one it
+    # rewrites the whole summary, so truncating here would silently drop content.
+    return "ID: {id}\nTitle: {title}{subject}\nSummary: {summary}".format(
+        id=r["id"],
+        title=r.get("title", "(untitled)"),
+        subject=f"\nSubject: {r['subject']}" if r.get("subject") else "",
+        summary=(r.get("description") or "")[:_EXISTING_SUMMARY_CHARS],
+    )
+
+
+def _call_llm(
+    records: list[dict[str, Any]],
+    model: str,
+    api_key: str,
+    existing: list[dict[str, Any]] | None = None,
+    instructions: str | None = None,
+) -> dict[str, Any]:
     """Single LLM call: classify records and produce consolidation clusters.
+
+    Args:
+        records: Episode records to classify and cluster.
+        model: Anthropic model id.
+        api_key: Anthropic API key.
+        existing: Existing consolidated records for the same subject/scope,
+            supplied as read-only context. The LLM may fold new records into
+            one of these by setting ``extends_id`` on a cluster.
+        instructions: Free-text operator guidance, inserted as a delimited
+            "Operator guidance" section. Steers synthesis (what to emphasise
+            or preserve), not line-level edits of individual records.
 
     Returns a dict with:
       classifications: [{id, memory_class}]
-      clusters: [{source_ids, title, summary}]
+      clusters: [{source_ids, title, summary, extends_id?}]
     """
     import anthropic
 
-    records_text = "\n\n".join(
-        "ID: {id}\nTitle: {title}{subject}{content}".format(
-            id=r["id"],
-            title=r.get("title", "(untitled)"),
-            subject=f"\nSubject: {r['subject']}" if r.get("subject") else "",
-            content=(
-                f"\nContent: {r.get('description', '')[:400]}" if r.get("description") else ""
-            ),
+    existing = existing or []
+    records_text = "\n\n".join(_format_episode(r) for r in records)
+
+    existing_instructions = ""
+    existing_section = ""
+    if existing:
+        existing_instructions = (
+            "4. Existing consolidated summaries are listed separately below as READ-ONLY "
+            "context. Never classify them and never put their IDs in source_ids. If new "
+            'records belong in one of those summaries, set that cluster\'s "extends_id" '
+            'to the existing summary\'s ID and write "summary" as the full updated '
+            "summary (existing content plus the new information, losing nothing). A "
+            "cluster that extends an existing summary may contain a single new record. "
+            'Otherwise set "extends_id" to null.\n\n'
         )
-        for r in records
-    )
+        existing_section = (
+            "Existing consolidated summaries (read-only context):\n\n"
+            + "\n\n".join(_format_existing(r) for r in existing)
+            + "\n\n"
+        )
+
+    guidance_section = ""
+    if instructions and instructions.strip():
+        guidance_section = (
+            "Operator guidance — use it to decide what to emphasise, preserve, or "
+            "group when classifying and writing summaries. It steers synthesis only: "
+            "it does not change the output format or the rules above.\n"
+            "<<<OPERATOR GUIDANCE\n"
+            f"{instructions.strip()}\n"
+            "OPERATOR GUIDANCE>>>\n\n"
+        )
 
     prompt = (
         "You are consolidating memory records stored in Hopper, a task and knowledge "
@@ -93,6 +152,8 @@ def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[s
         "records genuinely overlap — do not cluster unrelated records.\n\n"
         "3. For each cluster, write a consolidated title and summary that captures all "
         "key information from the source records without losing specifics.\n\n"
+        f"{existing_instructions}"
+        f"{guidance_section}"
         "Return ONLY valid JSON with this exact structure (no other text):\n"
         "{\n"
         '  "classifications": [\n'
@@ -102,10 +163,12 @@ def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[s
         "    {\n"
         '      "source_ids": ["id1", "id2"],\n'
         '      "title": "Brief title for the consolidated record",\n'
-        '      "summary": "Consolidated content capturing all source records"\n'
+        '      "summary": "Consolidated content capturing all source records",\n'
+        '      "extends_id": null\n'
         "    }\n"
         "  ]\n"
         "}\n\n"
+        f"{existing_section}"
         "Records:\n\n"
         f"{records_text}"
     )
@@ -113,7 +176,7 @@ def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[s
     client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -130,6 +193,165 @@ def _call_llm(records: list[dict[str, Any]], model: str, api_key: str) -> dict[s
 
 
 _DEFAULT_BATCH_SIZE = 15
+# Cap on how many existing consolidated records are shown per batch, and how
+# much of each summary is included.
+_MAX_EXISTING_CONTEXT = 10
+_EXISTING_SUMMARY_CHARS = 4000
+
+
+# Lower tier = consolidated first. Unclassified records have never been looked
+# at; episodic ones are the raw material for merging; noise is low value but
+# may still be redundant with something; durable facts are already settled.
+_CLASS_TIER: dict[str | None, int] = {
+    None: 0,
+    "episodic": 1,
+    "noise": 2,
+    "durable_fact": 3,
+}
+_UNKNOWN_CLASS_TIER = 4
+
+
+def _timestamp(value: Any) -> float:
+    """Epoch seconds for a datetime or ISO string; 0.0 if missing/unparseable.
+
+    Naive values are treated as UTC (that is how the storage layers persist
+    them). Missing timestamps map to 0.0 so they sort as the oldest.
+    """
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return 0.0
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.timestamp()
+    return 0.0
+
+
+def _key_salience(r: dict[str, Any]) -> int:
+    # Agent-flagged (and unexpired) records are consolidated first.
+    return 0 if is_salient(r) else 1
+
+
+def _key_class_tier(r: dict[str, Any]) -> int:
+    return _CLASS_TIER.get(r.get("memory_class"), _UNKNOWN_CLASS_TIER)
+
+
+def _key_reinforcement(r: dict[str, Any]) -> int:
+    return len(r.get("notes") or [])
+
+
+def _key_last_touched(r: dict[str, Any]) -> float:
+    return _timestamp(r.get("updated_at") or r.get("created_at"))
+
+
+def _key_id(r: dict[str, Any]) -> str:
+    return str(r.get("id", ""))
+
+
+# Ordered sort-key components; each maps a record to an ascending sort value
+# (smaller = consolidate sooner). To add a new signal (e.g. a ``salience``
+# field, lower = weaker = sooner, absent = neutral), insert one function here
+# at the desired precedence — nothing else needs to change.
+_PRIORITY_KEYS = (
+    _key_salience,
+    _key_class_tier,
+    _key_reinforcement,
+    _key_last_touched,
+    _key_id,
+)
+
+
+def _priority_key(r: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(f(r) for f in _PRIORITY_KEYS)
+
+
+def rank_for_consolidation(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order records so the weakest / least-settled are consolidated first.
+
+    Deterministic and LLM-free; applied before ``max_records`` and batching so
+    the cap drops the strongest records, not an arbitrary tail. Ordering, by
+    precedence (each level breaks ties in the previous one):
+
+    0. Salience: records flagged salient and not yet expired come first.
+    1. memory_class tier: unclassified, then episodic, then noise, then
+       durable_fact, then anything else.
+    2. Reinforcement: fewer attributed notes first (notes are the only
+       per-record signal today that other agents revisited the record).
+    3. Least recently touched first: ``updated_at``, falling back to
+       ``created_at``; records with neither sort as oldest.
+    4. Record id, so the order is total and stable across runs.
+
+    No confidence/contradiction field exists on memory records yet; new
+    signals slot into ``_PRIORITY_KEYS``.
+
+    Returns a new list; the input is not modified.
+    """
+    return sorted(records, key=_priority_key)
+
+
+def _related_consolidated(
+    batch: list[dict[str, Any]], pool: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Existing consolidated records sharing a (subject, scope) with the batch.
+
+    Most recently consolidated first, capped at ``_MAX_EXISTING_CONTEXT``.
+    """
+    keys = {(r.get("subject"), r.get("scope")) for r in batch}
+    related = [c for c in pool if (c.get("subject"), c.get("scope")) in keys]
+    related.sort(key=lambda c: str(c.get("consolidated_at") or ""), reverse=True)
+    return related[:_MAX_EXISTING_CONTEXT]
+
+
+def _normalize_batch_result(
+    llm_result: dict[str, Any],
+    batch_ids: set[str],
+    context_ids: set[str],
+    claimed: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Validate one batch's LLM output against the ids actually supplied.
+
+    - Classifications for ids outside the batch are dropped (this is what keeps
+      read-only consolidated context from being reclassified).
+    - Cluster source_ids are restricted to batch ids not already claimed by an
+      earlier cluster; consolidated ids can therefore never become sources.
+    - ``extends_id`` is kept only if it names a supplied consolidated record.
+    - A new cluster needs >= 2 sources; an extension needs >= 1.
+
+    ``claimed`` is updated in place.
+    """
+    classifications = [
+        c
+        for c in llm_result.get("classifications") or []
+        if isinstance(c, dict) and c.get("id") in batch_ids and c.get("memory_class")
+    ]
+
+    clusters: list[dict[str, Any]] = []
+    for raw in llm_result.get("clusters") or []:
+        if not isinstance(raw, dict):
+            continue
+        src = [
+            i
+            for i in dict.fromkeys(raw.get("source_ids") or [])
+            if isinstance(i, str) and i in batch_ids and i not in claimed
+        ]
+        extends_id = raw.get("extends_id")
+        if extends_id is not None and extends_id not in context_ids:
+            logger.warning("Ignoring unknown extends_id %r from LLM", extends_id)
+            extends_id = None
+        if len(src) < (1 if extends_id else 2):
+            continue
+        claimed.update(src)
+        clusters.append(
+            {
+                "source_ids": src,
+                "title": raw.get("title"),
+                "summary": raw.get("summary") or "",
+                "extends_id": extends_id,
+            }
+        )
+    return classifications, clusters
 
 
 def run_consolidation(
@@ -143,8 +365,16 @@ def run_consolidation(
     min_batch: int = 1,
     max_records: int | None = None,
     batch_size: int | None = None,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Run a consolidation pass over memory records.
+
+    Existing consolidated records with the same subject/scope as a batch are
+    supplied to the LLM as read-only context. A cluster may name one of them in
+    ``extends_id``; that record is then updated in place (new summary, extended
+    source_record_ids, bumped consolidated_at / consolidation_run_id, and a note
+    recording the previous summary) instead of a parallel record being created.
+    Consolidated records are never themselves eligible for clustering.
 
     Args:
         client: LocalClient instance.
@@ -157,7 +387,14 @@ def run_consolidation(
         model: Anthropic model to use (default: claude-haiku-4-5-20251001).
         only_unclassified: Only process records with no memory_class set yet.
         min_batch: Skip the LLM call if fewer than this many records are eligible.
-        max_records: Cap the number of records sent to the LLM per call.
+        max_records: Cap the number of records processed in this run. Eligible
+            records are ordered by :func:`rank_for_consolidation` first, so the
+            weakest records are kept.
+        batch_size: Records per LLM call (default HOPPER_CONSOLIDATION_BATCH_SIZE
+            or 15).
+        instructions: Free-text operator guidance passed to every LLM call
+            (default: HOPPER_CONSOLIDATION_INSTRUCTIONS). Steers synthesis,
+            not line-level edits.
 
     Returns:
         Summary dict describing what was done (or would be done for --dry-run).
@@ -167,6 +404,9 @@ def run_consolidation(
         return {"error": "ANTHROPIC_API_KEY not set — cannot run consolidation"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
+    if instructions is None:
+        instructions = os.getenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
+    instructions = (instructions or "").strip() or None
 
     # 0. Re-kind memory-shaped tasks (learning/decision/preference) to kind=memory
     if not dry_run:
@@ -180,14 +420,22 @@ def run_consolidation(
         if not t.get("superseded_by")
         and t.get("memory_class") not in ("consolidated", "northbound")
     ]
+    # Live consolidated records: read-only context the LLM may extend.
+    consolidated_pool = [
+        t
+        for t in all_memories
+        if t.get("memory_class") == "consolidated" and not t.get("superseded_by")
+    ]
 
     if only_unclassified:
         eligible = [t for t in eligible if not t.get("memory_class")]
 
     if subject:
         eligible = [t for t in eligible if t.get("subject") == subject]
+        consolidated_pool = [t for t in consolidated_pool if t.get("subject") == subject]
     if scope:
         eligible = [t for t in eligible if t.get("scope") == scope]
+        consolidated_pool = [t for t in consolidated_pool if t.get("scope") == scope]
 
     if not eligible:
         return {"skipped": True, "reason": "No eligible memory records found", "eligible": 0}
@@ -195,6 +443,8 @@ def run_consolidation(
     if len(eligible) < min_batch:
         return {"skipped": True, "reason": "below min_batch", "eligible": len(eligible)}
 
+    # Weakest records first, so max_records drops the most settled ones.
+    eligible = rank_for_consolidation(eligible)
     if max_records is not None and len(eligible) > max_records:
         eligible = eligible[:max_records]
 
@@ -214,17 +464,48 @@ def run_consolidation(
     all_clusters: list[dict[str, Any]] = []
     batch_errors: list[str] = []
 
+    # Working copies of consolidated records: an extension proposed in one
+    # batch is visible to later batches, so two batches extending the same
+    # record compose instead of the second overwriting the first.
+    originals = {c["id"]: c for c in consolidated_pool}
+    working = {cid: dict(c) for cid, c in originals.items()}
+    claimed: set[str] = set()
+
     for batch_idx, batch in enumerate(batches):
         logger.info(
             "Consolidation batch %d/%d (%d records)", batch_idx + 1, len(batches), len(batch)
         )
+        context = _related_consolidated(batch, list(working.values()))
         try:
-            llm_result = _call_llm(batch, model, api_key)
-            all_classifications.extend(llm_result.get("classifications", []))
-            all_clusters.extend(llm_result.get("clusters", []))
+            llm_result = _call_llm(
+                batch, model, api_key, existing=context, instructions=instructions
+            )
         except Exception as exc:
             logger.exception("LLM call failed for batch %d", batch_idx + 1)
             batch_errors.append(f"Batch {batch_idx + 1} failed: {exc}")
+            continue
+
+        classifications, clusters = _normalize_batch_result(
+            llm_result,
+            batch_ids={r["id"] for r in batch},
+            context_ids={c["id"] for c in context},
+            claimed=claimed,
+        )
+        all_classifications.extend(classifications)
+        all_clusters.extend(clusters)
+
+        for cluster in clusters:
+            ext = cluster["extends_id"]
+            if not ext:
+                continue
+            w = working[ext]
+            if cluster["title"]:
+                w["title"] = cluster["title"]
+            if cluster["summary"]:
+                w["description"] = cluster["summary"]
+            w["source_record_ids"] = list(
+                dict.fromkeys([*(w.get("source_record_ids") or []), *cluster["source_ids"]])
+            )
 
     if dry_run:
         return {
@@ -240,30 +521,24 @@ def run_consolidation(
     run_id = f"consolidate-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
 
-    classifications: dict[str, str] = {
-        c["id"]: c["memory_class"]
-        for c in all_classifications
-        if c.get("id") and c.get("memory_class")
+    classifications_by_id: dict[str, str] = {
+        c["id"]: c["memory_class"] for c in all_classifications
     }
-    clusters = all_clusters
-
-    clustered_ids: set[str] = set()
-    for cluster in clusters:
-        clustered_ids.update(cluster.get("source_ids", []))
 
     created_consolidated: list[str] = []
+    updated_consolidated: list[str] = []
     updated_source: list[str] = []
     classified_only: list[str] = []
     errors: list[str] = list(batch_errors)
 
-    # 3a. Create consolidated records for each cluster
+    # 3a. Create consolidated records for new clusters
     cluster_id_map: dict[str, str] = {}
-    for cluster in clusters:
-        source_ids = cluster.get("source_ids", [])
-        if len(source_ids) < 2:
+    for cluster in all_clusters:
+        if cluster["extends_id"]:
             continue
-        title = cluster.get("title", "Consolidated memory")
-        summary = cluster.get("summary", "")
+        source_ids = cluster["source_ids"]
+        title = cluster["title"] or "Consolidated memory"
+        summary = cluster["summary"]
 
         source_tasks = [t for t in eligible if t["id"] in source_ids]
         inferred_subject = next(
@@ -295,10 +570,37 @@ def run_consolidation(
             errors.append(f"Failed to create consolidated record for cluster {source_ids}: {exc}")
             logger.exception("Failed to create consolidated record")
 
-    # 3b. Update source records: set memory_class and superseded_by
+    # 3b. Update extended consolidated records in place
+    extended_ids = list(dict.fromkeys(c["extends_id"] for c in all_clusters if c["extends_id"]))
+    for cid in extended_ids:
+        orig = originals[cid]
+        final = working[cid]
+        prior_sources = list(orig.get("source_record_ids") or [])
+        added = [s for s in final["source_record_ids"] if s not in prior_sources]
+        try:
+            client.update_task(
+                cid,
+                {
+                    "title": final.get("title"),
+                    "description": final.get("description"),
+                    "source_record_ids": final["source_record_ids"],
+                    "consolidation_run_id": run_id,
+                    "consolidated_at": now.isoformat(),
+                },
+            )
+        except Exception as exc:
+            errors.append(f"Failed to update consolidated record {cid}: {exc}")
+            logger.exception("Failed to update consolidated record %s", cid)
+            continue
+        for src_id in added:
+            cluster_id_map[src_id] = cid
+        updated_consolidated.append(cid)
+        _record_extension_note(client, cid, run_id, orig, added)
+
+    # 3c. Update source records: set memory_class and superseded_by
     for task in eligible:
         tid = task["id"]
-        mc = classifications.get(tid)
+        mc = classifications_by_id.get(tid)
         superseded_by = cluster_id_map.get(tid)
 
         update: dict[str, Any] = {}
@@ -325,11 +627,39 @@ def run_consolidation(
         "eligible": len(eligible),
         "batches": len(batches),
         "consolidated_records_created": len(created_consolidated),
+        "consolidated_records_updated": len(updated_consolidated),
         "source_records_superseded": len(updated_source),
         "records_classified_only": len(classified_only),
         "errors": errors,
-        "durable_facts_flagged": sum(1 for mc in classifications.values() if mc == "durable_fact"),
+        "durable_facts_flagged": sum(
+            1 for mc in classifications_by_id.values() if mc == "durable_fact"
+        ),
     }
+
+
+def _record_extension_note(
+    client: Any, cid: str, run_id: str, orig: dict[str, Any], added: list[str]
+) -> None:
+    """Leave an append-only note on an extended consolidated record.
+
+    Preserves provenance of what changed: which run touched it, which sources
+    were folded in, and the summary as it stood before the update. Clients
+    without note support (e.g. the audit agent's shadow client) skip this.
+    """
+    add_note = getattr(client, "add_task_note", None)
+    if add_note is None:
+        return
+    body = (
+        f"Consolidation {run_id} extended this summary with sources: "
+        f"{', '.join(added) or '(none)'}. "
+        f"Previous run: {orig.get('consolidation_run_id') or 'unknown'}. "
+        f"Previous title: {orig.get('title') or '(untitled)'}. "
+        f"Previous summary: {orig.get('description') or ''}"
+    )
+    try:
+        add_note(cid, body)
+    except Exception:
+        logger.exception("Failed to record extension note on %s", cid)
 
 
 def run_drift_check(

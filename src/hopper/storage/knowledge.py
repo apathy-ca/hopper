@@ -158,7 +158,7 @@ hopper mcp config --stdout    # Show MCP config for claude_desktop_config.json
 """
 
 
-AGENTS_MD_VERSION = 3
+AGENTS_MD_VERSION = 4
 
 AGENTS_MD_SECTION = f"""## Hopper - Persistent Memory
 <!-- hopper-agent-files: v{AGENTS_MD_VERSION} -->
@@ -197,6 +197,23 @@ Identify yourself with `platform:task-name` when claiming work:
   safe; they render in `hopper task get`.
 - Every record stamps an immutable `created_by`. Notes and creator both travel
   with the task through `hopper sync` to the shared board.
+
+### Recording memories
+
+When you store a memory, say how you know it and cite what backs it:
+
+```bash
+hopper memory add "Sync batches at 512KB" --subject project:hopper \\
+  --how-known "read in code at src/hopper/upstream/sync.py" \\
+  --evidence src/hopper/upstream/sync.py --evidence t1a2b3c4d
+```
+
+- `--how-known`: a few words — "observed in test run", "told by user",
+  "read in code at X". A guess is fine if you say it is one.
+- `--evidence` (repeatable): task ids, commit shas, or file paths relative to
+  the project root. `hopper doctor` flags memories whose evidence is gone.
+- `--salient [--salient-for 3d]`: flag a memory worth revisiting; the flag
+  lapses after the window (default 3d).
 
 ### Session lifecycle
 
@@ -262,6 +279,9 @@ hopper task add "Title" --priority high --non-interactive
 hopper task add "Learning: X works better than Y" --tag learning --non-interactive
 hopper task add "Decision: chose approach A because..." --tag decision --non-interactive
 
+# Store a memory: say how you know it and cite what backs it (doctor checks evidence)
+hopper memory add "Fact" --how-known "observed in test run" --evidence <task-id|sha|path> --non-interactive
+
 # Find stale tasks from dead agents
 hopper task stale
 
@@ -299,6 +319,7 @@ Hopper is the persistent memory system used across all agents. It is available a
 **During work:**
 - Heartbeat every 10-15 min: `hopper task heartbeat <id>`
 - Record learnings as you go: `hopper task add "Learning: ..." --tag learning`
+- When storing a memory, record how you know it and cite evidence: `hopper memory add "..." --how-known "told by user" --evidence <task-id|sha|path>`
 - Leave a finding on another agent's task with `hopper task note <id> "..."` — append-only, never overwrites its description
 - `hopper sync` periodically — task writes stay local until you sync
 

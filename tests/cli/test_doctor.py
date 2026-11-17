@@ -305,3 +305,71 @@ def test_install_behind_warns(storage, tmp_path, monkeypatch):
         },
     )
     assert _checks(storage, tmp_path)["environment.install"]["status"] == "warn"
+
+
+def test_memory_evidence_missing_warns(storage, tmp_path):
+    proj = storage.parent
+    (proj / "kept.py").write_text("x")
+    real = add_task(storage, title="real")
+    ok_mem = add_task(storage, kind="memory", evidence=["kept.py:3", real, "told by user"])
+    bad_mem = add_task(storage, kind="memory", evidence=["gone.py", "t0000dead"])
+    c = by_id(run(storage, tmp_path, "--json"))["memory.evidence"]
+    assert c["status"] == "warn"
+    assert bad_mem in c["message"] and "gone.py" in c["message"] and "t0000dead" in c["message"]
+    assert ok_mem not in c["message"]
+
+
+def test_memory_evidence_clean_and_text_group(storage, tmp_path):
+    add_task(storage, kind="memory", evidence=["https://example.com"])
+    r = run(storage, tmp_path)
+    assert "Memory" in r.stdout and "All memory evidence resolves" in r.stdout
+
+
+def test_memory_evidence_commit_checked_via_git(storage, tmp_path):
+    import subprocess
+
+    proj = storage.parent
+    subprocess.run(["git", "init", "-q"], cwd=proj, check=True)  # noqa: S607
+    (proj / "f").write_text("x")
+    subprocess.run(["git", "add", "f"], cwd=proj, check=True)  # noqa: S607
+    subprocess.run(
+        ["git", "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-qm", "x"],  # noqa: S607
+        cwd=proj,
+        check=True,
+    )
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],  # noqa: S607
+        cwd=proj,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    good = add_task(storage, kind="memory", evidence=[sha[:10]])
+    bad = add_task(storage, kind="memory", evidence=["commit:" + "0" * 40])
+    c = by_id(run(storage, tmp_path, "--json"))["memory.evidence"]
+    assert bad in c["message"] and good not in c["message"]
+
+
+def test_memory_evidence_skips_foreign_instance(storage, tmp_path):
+    foreign = add_task(storage, kind="memory", evidence=["gone.py"], instance="elsewhere")
+    c = by_id(run(storage, tmp_path, "--json"))["memory.evidence"]
+    assert c["status"] == "ok" and "1 from another instance" in c["message"]
+
+    run(storage, tmp_path, "--fix")
+    assert LocalClient(storage).task_store.get(foreign).notes == []
+
+
+def test_fix_notes_missing_evidence_once(storage, tmp_path):
+    mem = add_task(storage, kind="memory", evidence=["gone.py"])
+    r = run(storage, tmp_path, "--fix")
+    assert "FIX: noting missing evidence on " + mem in r.stdout
+    t = LocalClient(storage).task_store.get(mem)
+    assert t.evidence == ["gone.py"]  # never edited
+    assert len(t.notes) == 1 and t.notes[0]["author"] == "hopper:doctor"
+    assert "gone.py" in t.notes[0]["body"]
+
+    r = run(storage, tmp_path, "--fix")  # idempotent: no duplicate note
+    assert "FIX: noting" not in r.stdout
+    assert len(LocalClient(storage).task_store.get(mem).notes) == 1
+    # Still reported: the evidence is still gone.
+    assert by_id(run(storage, tmp_path, "--json"))["memory.evidence"]["status"] == "warn"

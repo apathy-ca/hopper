@@ -293,6 +293,19 @@ def print_task_detail(task: dict[str, Any]) -> None:
     if tags := task.get("tags"):
         console.print(f"[bold]Tags:[/bold] {', '.join(tags)}")
 
+    # Memory provenance fields (memory records only; absent on ordinary tasks)
+    if how_known := task.get("how_known"):
+        console.print(f"[bold]How known:[/bold] {how_known}")
+    if task.get("salience"):
+        from hopper.memory.salience import is_salient
+
+        until = task.get("salient_until")
+        state = "salient" if is_salient(task) else "salience lapsed"
+        suffix = f" (until {format_datetime(until)})" if until else ""
+        console.print(f"[bold]Salience:[/bold] {state}{suffix}")
+    if evidence := task.get("evidence"):
+        console.print(f"[bold]Evidence:[/bold] {', '.join(evidence)}")
+
     # Notes (append-only, attributed) — newest last
     if notes := task.get("notes"):
         console.print("\n[bold]Notes:[/bold]")

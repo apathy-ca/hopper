@@ -106,6 +106,15 @@ class TaskCreate(BaseModel):
     consolidated_at: str | None = Field(None, description="ISO timestamp of consolidation")
     drift_checked_at: str | None = Field(None, description="ISO timestamp of last drift check")
     drift_score: float | None = Field(None, description="Drift score from last reality check (0-1)")
+    evidence: list[str] = Field(
+        default_factory=list,
+        description="Memory evidence references: task ids, commit shas, or file paths",
+    )
+    how_known: str | None = Field(None, description="How the author knows the memory is true")
+    salience: bool = Field(False, description="Write-time salience flag (lapses)")
+    salient_until: str | None = Field(
+        None, description="ISO timestamp after which the salience flag lapses"
+    )
 
     model_config = ConfigDict(use_enum_values=True)
 
@@ -203,6 +212,10 @@ class TaskResponse(BaseModel):
     subject: str | None = None
     scope: str | None = None
     provenance: str | None = None
+    evidence: list[str] = []
+    how_known: str | None = None
+    salience: bool = False
+    salient_until: str | None = None
 
     model_config = ConfigDict(from_attributes=True, use_enum_values=True)
 

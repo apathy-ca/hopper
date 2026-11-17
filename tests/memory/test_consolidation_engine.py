@@ -10,7 +10,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from hopper.memory.consolidation import _call_llm, run_consolidation, run_drift_check
+from hopper.memory.consolidation import (
+    _call_llm,
+    rank_for_consolidation,
+    run_consolidation,
+    run_drift_check,
+)
 
 # ---------------------------------------------------------------------------
 # Fake client
@@ -371,3 +376,423 @@ def test_run_drift_check_record_id_filter(fake_client):
     assert "con-001" in (r["id"] for r in []) or result["checked"] == 1
     # con-002 should NOT have been updated
     assert fake_client._tasks.get("con-002", {}).get("drift_score") is None
+
+
+# ---------------------------------------------------------------------------
+# Interleaving with existing consolidated records
+# ---------------------------------------------------------------------------
+
+
+def _mock_anthropic(*responses):
+    """Anthropic client mock returning each response dict in turn."""
+    import json
+
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = [
+        MagicMock(content=[MagicMock(text=json.dumps(r))]) for r in responses
+    ]
+    return mock_client
+
+
+@pytest.fixture
+def client_with_consolidated(fake_client):
+    fake_client.create_task(
+        {
+            "id": "con-001",
+            "title": "Behaviour patterns",
+            "description": "Earlier summary of behaviour patterns.",
+            "kind": "memory",
+            "subject": "project:waypoint",
+            "memory_class": "consolidated",
+            "source_record_ids": ["old-001", "old-002"],
+            "consolidation_run_id": "consolidate-old",
+            "consolidated_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
+    # Different subject: must not be offered as context for waypoint records
+    fake_client.create_task(
+        {
+            "id": "con-other",
+            "title": "Unrelated",
+            "description": "Other project summary.",
+            "kind": "memory",
+            "subject": "project:other",
+            "memory_class": "consolidated",
+            "source_record_ids": ["x-1", "x-2"],
+        }
+    )
+    fake_client.notes = {}
+
+    def add_task_note(task_id, body, author=None):
+        fake_client.notes.setdefault(task_id, []).append(body)
+        return fake_client._tasks[task_id]
+
+    fake_client.add_task_note = add_task_note
+    return fake_client
+
+
+def test_consolidated_records_are_context_not_episodes(client_with_consolidated):
+    """Consolidated records appear in the prompt as read-only context, not as records."""
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            result = run_consolidation(
+                client_with_consolidated, subject="project:waypoint", dry_run=True
+            )
+
+    assert result["eligible"] == 3
+    prompt = mock_anth.messages.create.call_args.kwargs["messages"][0]["content"]
+    context, records = prompt.split("Records:\n\n", 1)
+    assert "read-only context" in context
+    assert "ID: con-001" in context
+    assert "Earlier summary of behaviour patterns." in context
+    assert "con-001" not in records
+    assert "con-other" not in prompt
+
+
+def test_extends_existing_consolidated_record(client_with_consolidated):
+    """A cluster with extends_id updates that record instead of creating a new one."""
+    response = {
+        "classifications": [
+            {"id": "ep-001", "memory_class": "episodic"},
+            {"id": "ep-002", "memory_class": "episodic"},
+            {"id": "ep-003", "memory_class": "episodic"},
+        ],
+        "clusters": [
+            {
+                "source_ids": ["ep-001"],
+                "title": "Behaviour patterns (extended)",
+                "summary": "Earlier summary plus pattern 1.",
+                "extends_id": "con-001",
+            },
+            {
+                "source_ids": ["ep-002", "ep-003"],
+                "title": "New cluster",
+                "summary": "Patterns 2 and 3.",
+                "extends_id": None,
+            },
+        ],
+    }
+    client = client_with_consolidated
+    before = len(client._tasks)
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=_mock_anthropic(response)):
+            result = run_consolidation(client, subject="project:waypoint")
+
+    assert result["errors"] == []
+    assert result["consolidated_records_updated"] == 1
+    assert result["consolidated_records_created"] == 1
+    assert result["source_records_superseded"] == 3
+    assert len(client._tasks) == before + 1  # only the new cluster was created
+
+    con = client._tasks["con-001"]
+    assert con["description"] == "Earlier summary plus pattern 1."
+    assert con["title"] == "Behaviour patterns (extended)"
+    assert con["source_record_ids"] == ["old-001", "old-002", "ep-001"]
+    assert con["consolidation_run_id"] == result["run_id"]
+    assert con["consolidated_at"] != "2026-01-01T00:00:00+00:00"
+    assert con["memory_class"] == "consolidated"
+    assert not con.get("superseded_by")
+
+    assert client._tasks["ep-001"]["superseded_by"] == "con-001"
+    new_id = client._tasks["ep-002"]["superseded_by"]
+    assert new_id not in ("con-001", None)
+    assert client._tasks["ep-003"]["superseded_by"] == new_id
+
+    # Provenance: the previous summary and the added sources are recorded
+    (note,) = client.notes["con-001"]
+    assert result["run_id"] in note
+    assert "ep-001" in note
+    assert "Earlier summary of behaviour patterns." in note
+    assert "consolidate-old" in note
+
+
+def test_unknown_ids_from_llm_are_ignored(client_with_consolidated):
+    """Unknown extends_id / source ids / classification ids are dropped."""
+    response = {
+        "classifications": [
+            {"id": "ep-001", "memory_class": "episodic"},
+            {"id": "con-001", "memory_class": "noise"},  # context record: ignored
+            {"id": "bogus", "memory_class": "noise"},
+        ],
+        "clusters": [
+            # Unknown extends_id -> treated as new cluster; needs 2 valid sources
+            {
+                "source_ids": ["ep-001", "ep-002", "bogus"],
+                "title": "T",
+                "summary": "S",
+                "extends_id": "con-other",  # exists but was not supplied as context
+            },
+            # Consolidated id smuggled into sources -> stripped, < 2 left -> dropped
+            {"source_ids": ["ep-003", "con-001"], "title": "X", "summary": "Y"},
+            # Extends a hallucinated id with one source -> dropped
+            {"source_ids": ["ep-003"], "title": "Z", "summary": "W", "extends_id": "nope"},
+        ],
+    }
+    client = client_with_consolidated
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=_mock_anthropic(response)):
+            result = run_consolidation(client, subject="project:waypoint", dry_run=True)
+
+    assert result["classifications"] == [{"id": "ep-001", "memory_class": "episodic"}]
+    assert result["clusters"] == [
+        {"source_ids": ["ep-001", "ep-002"], "title": "T", "summary": "S", "extends_id": None}
+    ]
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=_mock_anthropic(response)):
+            result = run_consolidation(client, subject="project:waypoint")
+
+    assert result["consolidated_records_updated"] == 0
+    assert result["consolidated_records_created"] == 1
+    assert client._tasks["con-001"]["description"] == "Earlier summary of behaviour patterns."
+    assert client._tasks["con-001"].get("memory_class") == "consolidated"
+    assert client._tasks["con-other"]["source_record_ids"] == ["x-1", "x-2"]
+    assert not client._tasks["ep-003"].get("superseded_by")
+
+
+def test_dry_run_extension_writes_nothing(client_with_consolidated):
+    """dry_run reports extends_id but leaves the consolidated record untouched."""
+    response = {
+        "classifications": [],
+        "clusters": [
+            {"source_ids": ["ep-001"], "title": "T", "summary": "S", "extends_id": "con-001"}
+        ],
+    }
+    client = client_with_consolidated
+    snapshot = {k: dict(v) for k, v in client._tasks.items()}
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=_mock_anthropic(response)):
+            result = run_consolidation(client, subject="project:waypoint", dry_run=True)
+
+    assert result["clusters"][0]["extends_id"] == "con-001"
+    assert client._tasks == snapshot
+    assert client.notes == {}
+
+
+def test_extensions_across_batches_compose(client_with_consolidated):
+    """A later batch sees the earlier batch's extended summary; both sources are kept."""
+    responses = [
+        {
+            "classifications": [],
+            "clusters": [
+                {
+                    "source_ids": ["ep-001"],
+                    "title": "T1",
+                    "summary": "Summary after batch 1.",
+                    "extends_id": "con-001",
+                }
+            ],
+        },
+        {
+            "classifications": [],
+            "clusters": [
+                {
+                    "source_ids": ["ep-002"],
+                    "title": "T2",
+                    "summary": "Summary after batch 2.",
+                    "extends_id": "con-001",
+                }
+            ],
+        },
+        {"classifications": [], "clusters": []},
+    ]
+    client = client_with_consolidated
+    mock_anth = _mock_anthropic(*responses)
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            result = run_consolidation(client, subject="project:waypoint", batch_size=1)
+
+    second_prompt = mock_anth.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
+    assert "Summary after batch 1." in second_prompt
+
+    assert result["consolidated_records_updated"] == 1
+    con = client._tasks["con-001"]
+    assert con["description"] == "Summary after batch 2."
+    assert con["source_record_ids"] == ["old-001", "old-002", "ep-001", "ep-002"]
+    assert len(client.notes["con-001"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# rank_for_consolidation
+# ---------------------------------------------------------------------------
+
+
+def _ids(records):
+    return [r["id"] for r in records]
+
+
+def test_rank_class_tier_first():
+    """Unclassified, then episodic, noise, durable_fact, then unknown classes."""
+    records = [
+        {"id": "a", "memory_class": "durable_fact"},
+        {"id": "b", "memory_class": "weird"},
+        {"id": "c", "memory_class": "noise"},
+        {"id": "d", "memory_class": "episodic"},
+        {"id": "e"},
+    ]
+    assert _ids(rank_for_consolidation(records)) == ["e", "d", "c", "a", "b"]
+
+
+def test_rank_salient_first_unless_expired():
+    records = [
+        {"id": "plain"},
+        {"id": "expired", "salience": True, "salient_until": "2000-01-01T00:00:00+00:00"},
+        {
+            "id": "salient-durable",
+            "salience": True,
+            "salient_until": "2999-01-01T00:00:00+00:00",
+            "memory_class": "durable_fact",
+        },
+    ]
+    assert _ids(rank_for_consolidation(records)) == ["salient-durable", "expired", "plain"]
+
+
+def test_rank_fewer_notes_then_least_recently_touched():
+    records = [
+        {"id": "many-notes", "notes": [{}, {}], "updated_at": "2020-01-01T00:00:00"},
+        {"id": "recent", "updated_at": "2026-06-01T00:00:00+00:00"},
+        {"id": "old", "updated_at": "2025-01-01T00:00:00Z"},
+        {"id": "created-only", "created_at": "2025-06-01T00:00:00"},
+        {"id": "no-ts"},
+    ]
+    assert _ids(rank_for_consolidation(records)) == [
+        "no-ts",
+        "old",
+        "created-only",
+        "recent",
+        "many-notes",
+    ]
+
+
+def test_rank_handles_datetimes_and_bad_values_deterministically():
+    from datetime import UTC, datetime
+
+    records = [
+        {"id": "z", "updated_at": datetime(2026, 1, 1, tzinfo=UTC)},
+        {"id": "y", "updated_at": datetime(2025, 1, 1)},  # naive = UTC
+        {"id": "x", "updated_at": "not-a-date"},
+        {"id": "w", "updated_at": "not-a-date"},
+    ]
+    ranked = rank_for_consolidation(records)
+    assert _ids(ranked) == ["w", "x", "y", "z"]
+    assert _ids(rank_for_consolidation(list(reversed(records)))) == _ids(ranked)
+    # Input not mutated
+    assert _ids(records) == ["z", "y", "x", "w"]
+
+
+def test_max_records_keeps_weakest(fake_client):
+    """max_records is applied after ranking, not to raw list order."""
+    fake_client._tasks["ep-001"]["memory_class"] = "durable_fact"
+    fake_client._tasks["ep-002"]["memory_class"] = "episodic"
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            result = run_consolidation(fake_client, dry_run=True, max_records=2)
+
+    assert result["eligible"] == 2
+    prompt = mock_anth.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "ID: ep-003" in prompt and "ID: ep-004" in prompt
+    assert "ID: ep-001" not in prompt and "ID: ep-002" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Operator instructions
+# ---------------------------------------------------------------------------
+
+
+def _prompt_of(mock_anth, call=0):
+    return mock_anth.messages.create.call_args_list[call].kwargs["messages"][0]["content"]
+
+
+def test_call_llm_includes_delimited_operator_guidance():
+    mock_anth = _mock_anthropic(_LLM_RESPONSE)
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        _call_llm(
+            [{"id": "x", "title": "t"}],
+            "m",
+            "k",
+            instructions="  Preserve exact quotes per contract.  ",
+        )
+    prompt = _prompt_of(mock_anth)
+    assert "Operator guidance" in prompt
+    assert "<<<OPERATOR GUIDANCE\nPreserve exact quotes per contract.\nOPERATOR GUIDANCE>>>" in (
+        prompt
+    )
+    # Guidance precedes the output spec and the records
+    assert prompt.index("OPERATOR GUIDANCE>>>") < prompt.index("Return ONLY valid JSON")
+
+
+@pytest.mark.parametrize("instructions", [None, "", "   "])
+def test_call_llm_omits_guidance_when_empty(instructions):
+    mock_anth = _mock_anthropic(_LLM_RESPONSE)
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        _call_llm([{"id": "x", "title": "t"}], "m", "k", instructions=instructions)
+    assert "OPERATOR GUIDANCE" not in _prompt_of(mock_anth)
+
+
+def test_run_consolidation_threads_instructions_to_every_batch(fake_client):
+    mock_anth = _mock_anthropic(*[{"classifications": [], "clusters": []}] * 2)
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_consolidation(fake_client, dry_run=True, batch_size=2, instructions="Focus X")
+    assert mock_anth.messages.create.call_count == 2
+    for i in range(2):
+        assert "Focus X" in _prompt_of(mock_anth, i)
+
+
+def test_run_consolidation_instructions_env_default(fake_client):
+    env = {"ANTHROPIC_API_KEY": "fake", "HOPPER_CONSOLIDATION_INSTRUCTIONS": "From env"}
+
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+    with patch.dict("os.environ", env):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_consolidation(fake_client, dry_run=True)
+    assert "From env" in _prompt_of(mock_anth)
+
+    # Explicit argument wins over the env var
+    mock_anth = _mock_anthropic({"classifications": [], "clusters": []})
+    with patch.dict("os.environ", env):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_consolidation(fake_client, dry_run=True, instructions="Explicit")
+    assert "Explicit" in _prompt_of(mock_anth)
+    assert "From env" not in _prompt_of(mock_anth)
+
+
+def test_cli_consolidate_passes_instructions(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from hopper.cli.main import cli
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".hopper" / "tasks").mkdir(parents=True)
+    monkeypatch.delenv("HOPPER_CONSOLIDATION_INSTRUCTIONS", raising=False)
+    fake_result = {"dry_run": True, "eligible": 0, "classifications": [], "clusters": []}
+    runner = CliRunner()
+
+    with patch(
+        "hopper.memory.consolidation.run_consolidation", return_value=fake_result
+    ) as mock_run:
+        result = runner.invoke(
+            cli, ["memory", "consolidate", "--dry-run", "--instructions", "Keep quotes"]
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Keep quotes"
+
+        result = runner.invoke(
+            cli,
+            ["memory", "consolidate", "--dry-run"],
+            env={"HOPPER_CONSOLIDATION_INSTRUCTIONS": "Env guidance"},
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Env guidance"
+
+    help_text = runner.invoke(cli, ["memory", "consolidate", "--help"]).output
+    assert "--instructions" in help_text
+    assert "line-level edits" in help_text
