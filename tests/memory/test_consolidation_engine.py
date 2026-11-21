@@ -973,3 +973,38 @@ def test_overseer_cli_passes_instructions(tmp_path, monkeypatch):
 
     help_text = runner.invoke(cli, ["overseer", "northbound", "--help"]).output
     assert "--instructions" in help_text
+
+
+# ---------------------------------------------------------------------------
+# --propose is unsupported and must fail loudly
+# ---------------------------------------------------------------------------
+
+
+def test_propose_fails_without_writing_or_calling_llm(fake_client):
+    fake_client.create_task({"id": "tk-1", "title": "L", "kind": "task", "tags": ["learning"]})
+    fake_client.rekind_record = MagicMock()
+    snapshot = {k: dict(v) for k, v in fake_client._tasks.items()}
+    mock_anth = _mock_anthropic()
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            result = run_consolidation(fake_client, propose=True)
+
+    assert "--propose is not supported" in result["error"]
+    assert "Nothing was written" in result["error"]
+    assert fake_client._tasks == snapshot
+    fake_client.rekind_record.assert_not_called()
+    mock_anth.messages.create.assert_not_called()
+
+
+def test_cli_propose_exits_nonzero(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from hopper.cli.main import cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    (tmp_path / ".hopper" / "tasks").mkdir(parents=True)
+    result = CliRunner().invoke(cli, ["memory", "consolidate", "--propose"])
+    assert result.exit_code == 1
+    assert "--propose is not supported" in result.output

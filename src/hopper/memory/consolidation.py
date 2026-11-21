@@ -2,7 +2,7 @@
 
 Reads memory records for a subject/scope, classifies them, merges episodic
 duplicates into consolidated summaries, and writes results back as normal
-record updates (direct apply by default; --propose for a review gate).
+record updates (applied directly; use --dry-run to review first).
 
 Results sync through the normal upstream path like any other record change.
 """
@@ -380,6 +380,19 @@ def _normalize_batch_result(
     return classifications, clusters
 
 
+# Why --propose fails instead of writing proposals: a run *creates* consolidated
+# records, and propose revisions can only target an existing record; and the
+# local client stores tasks as markdown with no Record/Revision rows, so even
+# updates cannot be proposed (and `hopper revision apply` would not touch the
+# markdown file). Shipping half-proposed / half-applied runs would be worse.
+PROPOSE_UNSUPPORTED = (
+    "--propose is not supported for memory consolidation: a run creates new "
+    "consolidated records, which cannot be proposed, and local task storage has "
+    "no revisions for `hopper revision apply` to act on. Nothing was written. "
+    "Review with --dry-run, then run without --propose to apply."
+)
+
+
 def run_consolidation(
     client: Any,
     subject: str | None = None,
@@ -409,9 +422,9 @@ def run_consolidation(
         subject: Filter to records with this subject value.
         scope: Filter to records with this scope value.
         dry_run: If True, return LLM output without writing anything.
-        propose: If True, write propose revisions instead of applying directly.
-            Only meaningful on the SQLite backend; markdown backend always
-            applies directly.
+        propose: Not supported: returns an error before doing anything (see
+            ``PROPOSE_UNSUPPORTED``). Kept so callers fail loudly instead of
+            silently applying. Use ``dry_run`` to review a run first.
         model: Anthropic model to use (default: claude-haiku-4-5-20251001).
         only_unclassified: Only process records with no memory_class set yet.
         min_batch: Skip the LLM call if fewer than this many records are eligible.
@@ -427,6 +440,9 @@ def run_consolidation(
     Returns:
         Summary dict describing what was done (or would be done for --dry-run).
     """
+    if propose:
+        return {"error": PROPOSE_UNSUPPORTED}
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set — cannot run consolidation"}

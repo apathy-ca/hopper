@@ -332,7 +332,7 @@ def _make_memory_group() -> click.Group:
     @click.option(
         "--propose",
         is_flag=True,
-        help="Write propose revisions instead of applying directly",
+        help="Not supported yet: exits with an error without writing. Use --dry-run to review.",
     )
     @click.option(
         "--instructions",
