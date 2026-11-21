@@ -78,6 +78,27 @@ def _format_existing(r: dict[str, Any]) -> str:
     )
 
 
+def _resolve_instructions(instructions: str | None) -> str | None:
+    """Operator guidance: explicit value, else HOPPER_CONSOLIDATION_INSTRUCTIONS; blank -> None."""
+    if instructions is None:
+        instructions = os.getenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
+    return (instructions or "").strip() or None
+
+
+def _guidance_section(instructions: str | None, task: str) -> str:
+    """Delimited "Operator guidance" prompt section, or "" when there is none."""
+    if not instructions or not instructions.strip():
+        return ""
+    return (
+        "Operator guidance — use it to decide what to emphasise, preserve, or "
+        f"group when {task}. It steers synthesis only: "
+        "it does not change the output format or the rules above.\n"
+        "<<<OPERATOR GUIDANCE\n"
+        f"{instructions.strip()}\n"
+        "OPERATOR GUIDANCE>>>\n\n"
+    )
+
+
 def _call_llm(
     records: list[dict[str, Any]],
     model: str,
@@ -125,16 +146,7 @@ def _call_llm(
             + "\n\n"
         )
 
-    guidance_section = ""
-    if instructions and instructions.strip():
-        guidance_section = (
-            "Operator guidance — use it to decide what to emphasise, preserve, or "
-            "group when classifying and writing summaries. It steers synthesis only: "
-            "it does not change the output format or the rules above.\n"
-            "<<<OPERATOR GUIDANCE\n"
-            f"{instructions.strip()}\n"
-            "OPERATOR GUIDANCE>>>\n\n"
-        )
+    guidance_section = _guidance_section(instructions, "classifying and writing summaries")
 
     prompt = (
         "You are consolidating memory records stored in Hopper, a task and knowledge "
@@ -420,9 +432,7 @@ def run_consolidation(
         return {"error": "ANTHROPIC_API_KEY not set — cannot run consolidation"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
-    if instructions is None:
-        instructions = os.getenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
-    instructions = (instructions or "").strip() or None
+    instructions = _resolve_instructions(instructions)
 
     # 0. Re-kind memory-shaped tasks (learning/decision/preference) to kind=memory
     if not dry_run:
@@ -851,8 +861,12 @@ def _call_northbound_llm(
     child_instance_ids: list[str],
     model: str,
     api_key: str,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """LLM call: synthesize cross-cutting summaries from sub-instance memories.
+
+    ``instructions`` is optional operator guidance, inserted as the same
+    delimited "Operator guidance" section the per-instance pass uses.
 
     Returns ``{"summaries": [{"title", "summary", "source_ids", "source_instances"}]}``.
     """
@@ -885,6 +899,7 @@ def _call_northbound_llm(
         "each summary.\n"
         "4. Only create summaries for genuine cross-instance insights — skip themes "
         "that live entirely within one sub-instance.\n\n"
+        f"{_guidance_section(instructions, 'choosing themes and writing summaries')}"
         "Return ONLY valid JSON with this exact structure (no other text):\n"
         "{\n"
         '  "summaries": [\n'
@@ -926,6 +941,7 @@ def run_northbound(
     dry_run: bool = False,
     min_batch: int = 2,
     max_records: int | None = None,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Run a northbound consolidation pass for an overseer instance.
 
@@ -935,12 +951,16 @@ def run_northbound(
 
     The client must be configured to read from child instances and write
     to the parent instance.
+
+    ``instructions`` is operator guidance for the LLM, defaulting to
+    HOPPER_CONSOLIDATION_INSTRUCTIONS exactly like :func:`run_consolidation`.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set — cannot run northbound"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
+    instructions = _resolve_instructions(instructions)
 
     all_memories = client.list_tasks(kind="memory")
     eligible = [
@@ -974,7 +994,9 @@ def run_northbound(
     )
 
     try:
-        llm_result = _call_northbound_llm(eligible, child_instance_ids, model, api_key)
+        llm_result = _call_northbound_llm(
+            eligible, child_instance_ids, model, api_key, instructions=instructions
+        )
     except Exception:
         logger.exception("Northbound LLM call failed")
         return {"error": "LLM call failed", "eligible": len(eligible)}

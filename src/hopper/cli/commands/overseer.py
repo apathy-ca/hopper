@@ -131,8 +131,19 @@ def status(ctx: Context) -> None:
 @click.option("--overseer-id", "only", help="Scope to this overseer and its subtree.")
 @click.option("--dry-run", is_flag=True, help="Show what would happen without writing.")
 @click.option("--model", help="Anthropic model override.")
+@click.option(
+    "--instructions",
+    envvar="HOPPER_CONSOLIDATION_INSTRUCTIONS",
+    metavar="TEXT",
+    help=(
+        "Free-text guidance for the LLM (what to emphasise or preserve). "
+        "Default: $HOPPER_CONSOLIDATION_INSTRUCTIONS."
+    ),
+)
 @click.pass_obj
-def consolidate(ctx: Context, only: str | None, dry_run: bool, model: str | None) -> None:
+def consolidate(
+    ctx: Context, only: str | None, dry_run: bool, model: str | None, instructions: str | None
+) -> None:
     """Run bottom-up consolidation across the instance DAG.
 
     Consolidates leaf instances first, then overseers, with a northbound
@@ -166,6 +177,7 @@ def consolidate(ctx: Context, only: str | None, dry_run: bool, model: str | None
         only=only,
         model=model,
         dry_run=dry_run,
+        instructions=instructions,
     )
 
     if ctx.json_output:
@@ -202,8 +214,19 @@ def consolidate(ctx: Context, only: str | None, dry_run: bool, model: str | None
 @click.option("--overseer-id", "overseer_id", required=True, help="Overseer instance ID.")
 @click.option("--dry-run", is_flag=True, help="Show summaries without writing.")
 @click.option("--model", help="Anthropic model override.")
+@click.option(
+    "--instructions",
+    envvar="HOPPER_CONSOLIDATION_INSTRUCTIONS",
+    metavar="TEXT",
+    help=(
+        "Free-text guidance for the LLM (what to emphasise or preserve). "
+        "Default: $HOPPER_CONSOLIDATION_INSTRUCTIONS."
+    ),
+)
 @click.pass_obj
-def northbound(ctx: Context, overseer_id: str, dry_run: bool, model: str | None) -> None:
+def northbound(
+    ctx: Context, overseer_id: str, dry_run: bool, model: str | None, instructions: str | None
+) -> None:
     """Run only the northbound pass for one overseer.
 
     Reads sub-instances' consolidated memories and generates cross-cutting
@@ -254,6 +277,7 @@ def northbound(ctx: Context, overseer_id: str, dry_run: bool, model: str | None)
             child_instance_ids=child_ids,
             model=model,
             dry_run=dry_run,
+            instructions=instructions,
         )
 
     if ctx.json_output:

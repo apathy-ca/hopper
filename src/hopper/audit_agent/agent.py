@@ -450,6 +450,7 @@ def run_bottom_up(
     min_batch: int | None = None,
     max_records: int | None = None,
     dry_run: bool = False,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Run consolidation bottom-up across the instance DAG.
 
@@ -466,6 +467,8 @@ def run_bottom_up(
         model: Anthropic model override.
         min_batch: Minimum records to trigger consolidation.
         max_records: Cap records per consolidation pass.
+        instructions: Operator guidance for every consolidation and northbound
+            LLM call (default: HOPPER_CONSOLIDATION_INSTRUCTIONS).
     """
     from hopper.instances.dag import build_adjacency, get_subtree_nodes, topo_order_leaves_first
     from hopper.memory.consolidation import run_consolidation, run_northbound
@@ -506,6 +509,7 @@ def run_bottom_up(
                     max_records=_max,
                     model=_model,
                     dry_run=dry_run,
+                    instructions=instructions,
                 )
             inst_result["consolidation"] = result
             logger.info("Consolidation [%s]: %s", instance_id, result)
@@ -540,6 +544,7 @@ def run_bottom_up(
                     model=_model,
                     max_records=_max,
                     dry_run=dry_run,
+                    instructions=instructions,
                 )
             inst_result["northbound"] = nb_result
             logger.info("Northbound [%s]: %s", instance_id, nb_result)

@@ -15,6 +15,7 @@ from hopper.memory.consolidation import (
     rank_for_consolidation,
     run_consolidation,
     run_drift_check,
+    run_northbound,
 )
 
 # ---------------------------------------------------------------------------
@@ -861,3 +862,114 @@ def test_cli_consolidate_passes_instructions(tmp_path, monkeypatch):
     help_text = runner.invoke(cli, ["memory", "consolidate", "--help"]).output
     assert "--instructions" in help_text
     assert "line-level edits" in help_text
+
+
+# ---------------------------------------------------------------------------
+# Operator instructions: northbound + overseer
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def northbound_client():
+    client = _FakeClient()
+    for i, inst in enumerate(["child-a", "child-b"], start=1):
+        client.create_task(
+            {
+                "id": f"c-{i}",
+                "title": f"Summary {i}",
+                "description": "Durable thing.",
+                "kind": "memory",
+                "memory_class": "consolidated",
+                "instance": inst,
+            }
+        )
+    return client
+
+
+def test_northbound_threads_instructions(northbound_client):
+    mock_anth = _mock_anthropic({"summaries": []})
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_northbound(
+                northbound_client,
+                "Overseer",
+                ["child-a", "child-b"],
+                dry_run=True,
+                instructions="  Focus on shared auth.  ",
+            )
+    prompt = _prompt_of(mock_anth)
+    assert "<<<OPERATOR GUIDANCE\nFocus on shared auth.\nOPERATOR GUIDANCE>>>" in prompt
+    assert prompt.index("OPERATOR GUIDANCE>>>") < prompt.index("Return ONLY valid JSON")
+
+
+def test_northbound_instructions_env_default_and_omitted(northbound_client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    monkeypatch.setenv("HOPPER_CONSOLIDATION_INSTRUCTIONS", "From env")
+    mock_anth = _mock_anthropic({"summaries": []})
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        run_northbound(northbound_client, "O", ["child-a", "child-b"], dry_run=True)
+    assert "From env" in _prompt_of(mock_anth)
+
+    monkeypatch.delenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
+    mock_anth = _mock_anthropic({"summaries": []})
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        run_northbound(northbound_client, "O", ["child-a", "child-b"], dry_run=True)
+    assert "OPERATOR GUIDANCE" not in _prompt_of(mock_anth)
+
+
+def test_run_bottom_up_threads_instructions(tmp_path):
+    from contextlib import nullcontext
+
+    from hopper.audit_agent import agent
+
+    ok = {"run_id": "r", "eligible": 1}
+    with (
+        patch.object(agent, "_get_instances_with_memory", return_value=["Overseer", "child"]),
+        patch.object(agent, "_get_instance_edges", return_value=[("Overseer", "child")]),
+        patch.object(agent, "_ShadowConsolidationClient", lambda *a, **k: nullcontext(None)),
+        patch.object(agent, "_update_instance_metadata"),
+        patch("hopper.memory.consolidation.run_consolidation", return_value=ok) as mock_cons,
+        patch("hopper.memory.consolidation.run_northbound", return_value=ok) as mock_nb,
+    ):
+        agent.run_bottom_up(
+            tmp_path / "shadow.db",
+            "did:key:x",
+            tmp_path,
+            run_northbound_pass=True,
+            instructions="Guide",
+        )
+    assert mock_cons.call_count == 2
+    assert all(c.kwargs["instructions"] == "Guide" for c in mock_cons.call_args_list)
+    assert mock_nb.call_count == 1
+    assert mock_nb.call_args.kwargs["instructions"] == "Guide"
+
+
+def test_overseer_cli_passes_instructions(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from hopper.cli.main import cli
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".hopper" / "tasks").mkdir(parents=True)
+    (tmp_path / ".hopper" / "shadow.db").write_text("")
+    monkeypatch.delenv("HOPPER_CONSOLIDATION_INSTRUCTIONS", raising=False)
+    runner = CliRunner()
+
+    with (
+        patch("hopper.audit_agent.agent._get_or_create_agent_did", return_value="did:key:x"),
+        patch("hopper.audit_agent.agent.run_bottom_up", return_value={"instances": {}}) as mock_run,
+    ):
+        result = runner.invoke(cli, ["overseer", "consolidate", "--instructions", "Keep quotes"])
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Keep quotes"
+
+        result = runner.invoke(
+            cli,
+            ["overseer", "consolidate"],
+            env={"HOPPER_CONSOLIDATION_INSTRUCTIONS": "Env guidance"},
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Env guidance"
+
+    help_text = runner.invoke(cli, ["overseer", "northbound", "--help"]).output
+    assert "--instructions" in help_text
