@@ -378,6 +378,56 @@ def test_memory_evidence_ambiguous_sha_warns_distinctly(storage, tmp_path, monke
     assert LocalClient(storage).task_store.get(amb).notes == []
 
 
+def _two_commits_sharing_prefix(repo: Path, length: int = 7) -> tuple[str, str]:
+    """Write two real commit objects whose shas share a ``length``-char prefix.
+
+    Hashes are brute-forced in Python (no git per attempt), then only the two
+    colliding commits are written with ``git hash-object``.
+    """
+    import hashlib
+    import subprocess
+
+    def git(*args: str, data: bytes | None = None) -> str:
+        return (
+            subprocess.run(["git", *args], cwd=repo, input=data, capture_output=True, check=True)
+            .stdout.decode()
+            .strip()
+        )
+
+    tree = git("hash-object", "-t", "tree", "-w", "--stdin", data=b"")
+    seen: dict[str, bytes] = {}
+    n = 0
+    while True:
+        body = (
+            f"tree {tree}\nauthor T <t@example.com> {1700000000 + n} +0000\n"
+            f"committer T <t@example.com> {1700000000 + n} +0000\n\nc{n}\n"
+        ).encode()
+        sha = hashlib.sha1(b"commit %d\x00" % len(body) + body).hexdigest()  # noqa: S324
+        if sha[:length] in seen and seen[sha[:length]] != body:
+            other = seen[sha[:length]]
+            a = git("hash-object", "-t", "commit", "-w", "--stdin", data=other)
+            b = git("hash-object", "-t", "commit", "-w", "--stdin", data=body)
+            return a, b
+        seen[sha[:length]] = body
+        n += 1
+
+
+def test_memory_evidence_ambiguous_sha_with_real_git(storage, tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    a, b = _two_commits_sharing_prefix(tmp_path)
+    assert a != b and a[:7] == b[:7]
+    amb = add_task(storage, kind="memory", evidence=[a[:7]])
+    exact = add_task(storage, kind="memory", evidence=[a])
+
+    checks = by_id(run(storage, tmp_path, "--json"))
+    ambiguous = checks["memory.evidence_ambiguous"]
+    assert ambiguous["status"] == "warn"
+    assert amb in ambiguous["message"] and exact not in ambiguous["message"]
+    assert checks["memory.evidence"]["status"] == "ok"  # full sha found; short one not "missing"
+
+
 def test_memory_evidence_no_ambiguous_check_when_clean(storage, tmp_path):
     add_task(storage, kind="memory", evidence=["https://example.com"])
     assert "memory.evidence_ambiguous" not in by_id(run(storage, tmp_path, "--json"))
