@@ -16,11 +16,14 @@ from click.testing import CliRunner
 
 from hopper.cli.main import cli
 from hopper.memory.evidence import (
+    AMBIGUOUS,
     COMMIT,
     FILE,
     TASK,
     UNKNOWN,
     URL,
+    check_evidence,
+    cited_task_ids,
     classify_evidence,
     find_missing_evidence,
 )
@@ -99,6 +102,22 @@ class TestFindMissing:
     def test_absolute_path_checked_without_project_root(self, tmp_path):
         gone = str(tmp_path / "nope.txt")
         assert find_missing_evidence([gone], known_ids=[], project_root=None) == [gone]
+
+    def test_ambiguous_sha_is_reported_separately_not_missing(self, tmp_path):
+        answers = {"abc1234": AMBIGUOUS, "def5678": False, "0123abc": True}
+        evidence = ["abc1234", "commit:def5678", "0123abc"]
+        kwargs = {"known_ids": [], "project_root": tmp_path, "commit_exists": answers.get}
+
+        result = check_evidence(evidence, **kwargs)
+        assert result.ambiguous == ["abc1234"]
+        assert result.missing == ["commit:def5678"]
+        assert find_missing_evidence(evidence, **kwargs) == ["commit:def5678"]
+
+    def test_cited_task_ids(self):
+        assert cited_task_ids(["t1a2b3c4d", "task:t1a2", "src/x.py", "t1a2b3c4d"]) == [
+            "t1a2b3c4d",
+            "t1a2",
+        ]
 
 
 class TestStorage:

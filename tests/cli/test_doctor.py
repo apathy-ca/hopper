@@ -350,6 +350,39 @@ def test_memory_evidence_commit_checked_via_git(storage, tmp_path):
     assert bad in c["message"] and good not in c["message"]
 
 
+def test_memory_evidence_ambiguous_sha_warns_distinctly(storage, tmp_path, monkeypatch):
+    def fake_git(args, cwd):
+        if args == ["rev-parse", "--is-inside-work-tree"]:
+            return "true"
+        if args[:1] == ["cat-file"] and args[1] == "-e":
+            return None  # git fails on an ambiguous (or absent) short sha
+        if args == ["rev-parse", "--disambiguate=abc1234"]:
+            return "abc1234" + "a" * 33 + "\nabc1234" + "b" * 33 + "\nabc1234" + "c" * 33
+        if args[:2] == ["cat-file", "-t"]:
+            return "tree" if args[2].endswith("c") else "commit"
+        return None
+
+    monkeypatch.setattr(doctor_mod, "_git", fake_git)
+    amb = add_task(storage, kind="memory", evidence=["abc1234"])
+    gone = add_task(storage, kind="memory", evidence=["commit:def5678"])
+
+    checks = by_id(run(storage, tmp_path, "--json"))
+    missing, ambiguous = checks["memory.evidence"], checks["memory.evidence_ambiguous"]
+    assert missing["status"] == "warn"
+    assert gone in missing["message"] and amb not in missing["message"]
+    assert ambiguous["status"] == "warn"
+    assert amb in ambiguous["message"] and "more than one commit" in ambiguous["message"]
+    assert "longer" in ambiguous["remedy"]
+
+    run(storage, tmp_path, "--fix")  # --fix notes missing evidence only
+    assert LocalClient(storage).task_store.get(amb).notes == []
+
+
+def test_memory_evidence_no_ambiguous_check_when_clean(storage, tmp_path):
+    add_task(storage, kind="memory", evidence=["https://example.com"])
+    assert "memory.evidence_ambiguous" not in by_id(run(storage, tmp_path, "--json"))
+
+
 def test_memory_evidence_skips_foreign_instance(storage, tmp_path):
     foreign = add_task(storage, kind="memory", evidence=["gone.py"], instance="elsewhere")
     c = by_id(run(storage, tmp_path, "--json"))["memory.evidence"]

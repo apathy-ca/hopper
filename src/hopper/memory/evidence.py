@@ -11,8 +11,9 @@ back it up. Each reference is a plain string, classified as:
   * a **URL** (``scheme://...``) or anything else -- recorded but never
     verified.
 
-``find_missing_evidence`` is what ``hopper doctor`` uses to flag memories whose
-evidence no longer exists. It is conservative: anything it cannot cheaply
+``check_evidence`` is what ``hopper doctor`` uses to flag memories whose
+evidence no longer exists (or, for a short sha matching several commits, is
+ambiguous). It is conservative: anything it cannot cheaply
 verify is skipped, never reported missing.
 """
 
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 TASK = "task"
@@ -34,6 +35,21 @@ _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 _EXTENSION_RE = re.compile(r"\.[A-Za-z0-9]+$")
 _PREFIXES = (TASK, COMMIT, FILE)
+
+
+# Returned by a commit checker when a short sha matches more than one commit.
+AMBIGUOUS = "ambiguous"
+
+# sha -> True (exists) / False (gone) / AMBIGUOUS / None (cannot tell).
+CommitChecker = Callable[[str], "bool | str | None"]
+
+
+@dataclass
+class EvidenceCheck:
+    """Result of :func:`check_evidence` for one record."""
+
+    missing: list[str] = field(default_factory=list)
+    ambiguous: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -83,9 +99,25 @@ def find_missing_evidence(
     *,
     known_ids: Iterable[str],
     project_root: Path | None,
-    commit_exists: Callable[[str], bool | None] | None = None,
+    commit_exists: CommitChecker | None = None,
 ) -> list[str]:
     """Return the raw evidence strings that demonstrably no longer exist.
+
+    Ambiguous short shas are *not* missing; see :func:`check_evidence`.
+    """
+    return check_evidence(
+        evidence, known_ids=known_ids, project_root=project_root, commit_exists=commit_exists
+    ).missing
+
+
+def check_evidence(
+    evidence: Iterable[str],
+    *,
+    known_ids: Iterable[str],
+    project_root: Path | None,
+    commit_exists: CommitChecker | None = None,
+) -> EvidenceCheck:
+    """Classify a record's evidence into missing and ambiguous references.
 
     Args:
         evidence: The record's evidence list.
@@ -94,16 +126,21 @@ def find_missing_evidence(
         project_root: Directory relative file paths resolve against. ``None``
             (e.g. the global store) skips relative paths; absolute paths are
             still checked.
-        commit_exists: Returns True/False for a sha, or None when it cannot
-            tell (no git repo). Omitted -> commits are not checked.
+        commit_exists: Returns True/False for a sha, ``AMBIGUOUS`` when a short
+            sha matches more than one commit, or None when it cannot tell (no
+            git repo). Omitted -> commits are not checked.
+
+    An ambiguous short sha is reported separately rather than as missing: the
+    commit it meant almost certainly still exists, the reference just needs
+    more characters to pin it down.
     """
     ids = set(known_ids)
-    missing: list[str] = []
+    result = EvidenceCheck()
     for raw in evidence or []:
         ref = classify_evidence(raw)
         if ref.kind == TASK:
             if ref.value not in ids and not any(i.startswith(ref.value) for i in ids):
-                missing.append(raw)
+                result.missing.append(raw)
         elif ref.kind == FILE:
             path = Path(ref.value).expanduser()
             if not path.is_absolute():
@@ -111,8 +148,11 @@ def find_missing_evidence(
                     continue
                 path = project_root / path
             if not path.exists():
-                missing.append(raw)
+                result.missing.append(raw)
         elif ref.kind == COMMIT and commit_exists is not None:
-            if commit_exists(ref.value) is False:
-                missing.append(raw)
-    return missing
+            found = commit_exists(ref.value)
+            if found == AMBIGUOUS:
+                result.ambiguous.append(raw)
+            elif found is False:
+                result.missing.append(raw)
+    return result
