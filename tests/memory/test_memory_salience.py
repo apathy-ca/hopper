@@ -18,6 +18,7 @@ from hopper.memory.salience import (
     DEFAULT_SALIENCE_WINDOW,
     is_salient,
     parse_salience_window,
+    reinforced_salient_until,
     salient_until_from,
 )
 from hopper.storage import MarkdownStorage, StorageConfig, TaskMarkdownStore
@@ -176,3 +177,183 @@ class TestCli:
             )
             assert result.exit_code != 0
             assert "salience window" in result.output
+
+
+class TestReinforcement:
+    def test_extends_to_now_plus_default_window(self):
+        rec = {"salience": True, "salient_until": (NOW + timedelta(hours=1)).isoformat()}
+        assert reinforced_salient_until(rec, NOW) == NOW + DEFAULT_SALIENCE_WINDOW
+
+    def test_never_shortens(self):
+        rec = {"salience": True, "salient_until": (NOW + timedelta(weeks=2)).isoformat()}
+        assert reinforced_salient_until(rec, NOW) is None
+
+    def test_unflagged_and_lapsed_are_not_reinforced(self):
+        assert reinforced_salient_until({"salience": False}, NOW) is None
+        lapsed = {"salience": True, "salient_until": (NOW - timedelta(hours=1)).isoformat()}
+        assert reinforced_salient_until(lapsed, NOW) is None
+
+    def test_custom_window(self):
+        rec = {"salience": True, "salient_until": (NOW + timedelta(hours=1)).isoformat()}
+        got = reinforced_salient_until(rec, NOW, window=timedelta(hours=6))
+        assert got == NOW + timedelta(hours=6)
+
+
+class TestReinforcementWiring:
+    @pytest.fixture
+    def client(self, tmp_path):
+        from hopper.cli.local_client import LocalClient
+
+        return LocalClient(tmp_path)
+
+    def _salient(self, client, hours=1, **extra):
+        until = datetime.now(UTC) + timedelta(hours=hours)
+        return client.create_task(
+            {
+                "title": "m",
+                "kind": "memory",
+                "salience": True,
+                "salient_until": until.isoformat(),
+                **extra,
+            }
+        )
+
+    def _until(self, client, tid):
+        return client.task_store.get(tid).salient_until
+
+    def test_note_reinforces_salient_record(self, client):
+        rec = self._salient(client)
+        before = datetime.now(UTC)
+        client.add_task_note(rec["id"], "still relevant", author="claude:x")
+        assert self._until(client, rec["id"]) >= before + DEFAULT_SALIENCE_WINDOW
+
+    def test_note_does_not_shorten_or_flag(self, client):
+        long = self._salient(client, hours=24 * 14)
+        original = self._until(client, long["id"])
+        client.add_task_note(long["id"], "n")
+        assert self._until(client, long["id"]) == original
+
+        plain = client.create_task({"title": "m", "kind": "memory"})
+        client.add_task_note(plain["id"], "n")
+        loaded = client.task_store.get(plain["id"])
+        assert loaded.salience is False and loaded.salient_until is None
+
+    def test_citing_memory_reinforces_on_create(self, client):
+        rec = self._salient(client)
+        before = datetime.now(UTC)
+        client.create_task(
+            {"title": "cites", "kind": "memory", "evidence": [f"task:{rec['id'][:6]}"]}
+        )
+        assert self._until(client, rec["id"]) >= before + DEFAULT_SALIENCE_WINDOW
+
+    def test_non_memory_citation_does_not_reinforce(self, client):
+        rec = self._salient(client)
+        original = self._until(client, rec["id"])
+        client.create_task({"title": "task", "evidence": [rec["id"]]})
+        assert self._until(client, rec["id"]) == original
+
+    def test_update_adding_citation_reinforces(self, client):
+        rec = self._salient(client)
+        other = client.create_task({"title": "other", "kind": "memory"})
+        original = self._until(client, rec["id"])
+        client.update_task(other["id"], {"how_known": "x"})  # no evidence change
+        assert self._until(client, rec["id"]) == original
+
+        before = datetime.now(UTC)
+        client.update_task(other["id"], {"evidence": [rec["id"]]})
+        assert self._until(client, rec["id"]) >= before + DEFAULT_SALIENCE_WINDOW
+
+    def test_unknown_citation_is_ignored(self, client):
+        client.create_task({"title": "cites", "kind": "memory", "evidence": ["t00000000"]})
+
+
+class TestUpdateAndBriefPaths:
+    @pytest.fixture
+    def client(self, tmp_path):
+        from hopper.cli.local_client import LocalClient
+
+        return LocalClient(tmp_path)
+
+    def test_update_flag_without_expiry_uses_default_window(self, client):
+        rec = client.create_task({"title": "m", "kind": "memory"})
+        before = datetime.now(UTC)
+        client.update_task(rec["id"], {"salience": True})
+        loaded = client.task_store.get(rec["id"])
+        assert loaded.salience is True
+        assert loaded.salient_until >= before + DEFAULT_SALIENCE_WINDOW
+
+        explicit = datetime(2030, 1, 1, tzinfo=UTC)
+        client.update_task(rec["id"], {"salience": True, "salient_until": explicit.isoformat()})
+        assert client.task_store.get(rec["id"]).salient_until == explicit
+
+        # Re-flagging a live flag keeps its expiry; clearing works.
+        client.update_task(rec["id"], {"salience": True})
+        assert client.task_store.get(rec["id"]).salient_until == explicit
+        client.update_task(rec["id"], {"salience": False, "salient_until": None})
+        loaded = client.task_store.get(rec["id"])
+        assert loaded.salience is False and loaded.salient_until is None
+
+    def test_brief_path_preserves_memory_fields(self, client):
+        parent = client.create_task({"title": "parent"})
+        until = (NOW + timedelta(days=30)).isoformat()
+        rec = client.create_task_with_brief(
+            {
+                "title": "m",
+                "kind": "memory",
+                "subject": "project:hopper",
+                "scope": "repo",
+                "provenance": "observation",
+                "evidence": ["src/x.py", "abc1234"],
+                "how_known": "read in code",
+                "salience": True,
+                "salient_until": until,
+                "parent_id": parent["id"][:6],
+            },
+            "# Full brief\n\nBody.",
+        )
+        loaded = client.task_store.get(rec["id"])
+        assert loaded.description == "# Full brief\n\nBody."
+        assert loaded.status == "open"
+        assert loaded.kind == "memory"
+        assert (loaded.subject, loaded.scope, loaded.provenance) == (
+            "project:hopper",
+            "repo",
+            "observation",
+        )
+        assert loaded.evidence == ["src/x.py", "abc1234"]
+        assert loaded.how_known == "read in code"
+        assert loaded.salience is True and loaded.salient_until.isoformat() == until
+        assert loaded.parent_id == parent["id"]
+
+    def test_cli_brief_file_keeps_memory_fields(self):
+        runner = CliRunner()
+        with runner.isolated_filesystem() as tmpdir:
+            (Path(tmpdir) / ".hopper" / "tasks").mkdir(parents=True)
+            (Path(tmpdir) / "brief.md").write_text("# Brief\n")
+            result = runner.invoke(
+                cli,
+                [
+                    "--json",
+                    "task",
+                    "add",
+                    "M",
+                    "--brief-file",
+                    "brief.md",
+                    "--kind",
+                    "memory",
+                    "--evidence",
+                    "src/x.py",
+                    "--how-known",
+                    "told by user",
+                    "--provenance",
+                    "conversation",
+                    "--non-interactive",
+                ],
+            )
+            assert result.exit_code == 0, result.output
+            rec = json.loads(result.output.strip())
+            assert rec["kind"] == "memory"
+            assert rec["evidence"] == ["src/x.py"]
+            assert rec["how_known"] == "told by user"
+            assert rec["provenance"] == "conversation"
+            assert rec["description"] == "# Brief\n"

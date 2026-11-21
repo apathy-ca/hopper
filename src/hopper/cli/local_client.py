@@ -234,7 +234,39 @@ class LocalClient:
             author_location=location,
         )
         self.task_store.create(task, author=author)
+        if task.kind == "memory" and task.evidence:
+            self._reinforce_cited(task.evidence, citing_id=task.id)
         return self._task_to_dict(task)
+
+    def _reinforce(self, task: LocalTask) -> bool:
+        """Extend a salient task's ``salient_until`` (see memory.salience). Saves it."""
+        from hopper.memory.salience import reinforced_salient_until
+
+        until = reinforced_salient_until(task)
+        if until is None:
+            return False
+        task.salient_until = until
+        self.task_store.save(task, author=self._author_context())
+        return True
+
+    def _reinforce_cited(self, evidence: list[str], citing_id: str) -> None:
+        """Reinforce salient records that a memory cites by task id in ``evidence``.
+
+        Best-effort: unresolvable or ambiguous references are skipped and a
+        failure never breaks the write that triggered it.
+        """
+        from hopper.memory.evidence import cited_task_ids
+
+        for ref in cited_task_ids(evidence):
+            try:
+                resolved = self.task_store.resolve_id(ref)
+                if resolved is None or resolved == citing_id:
+                    continue
+                cited = self.task_store.get(resolved)
+                if cited is not None:
+                    self._reinforce(cited)
+            except Exception:
+                continue
 
     # Sort ranks: lower number = higher in the list
     _STATUS_RANK = {
@@ -385,28 +417,10 @@ class LocalClient:
         Returns:
             Created task as dict
         """
-        from hopper.location import resolve_location
-
-        location = data.get("source") or resolve_location(transport="cli")
-        task = LocalTask.create(
-            title=data.get("title", "Untitled"),
-            description=brief,
-            priority=data.get("priority", "medium"),
-            tags=data.get("tags", []),
-            project=data.get("project_id"),
-            status=data.get("status", "open"),
-            assigned_to=data.get("assigned_to"),
-            created_by=data.get("created_by") or data.get("assigned_to"),
-            created_by_did=self._resolve_creator_did(data.get("author_did")),
-            source=location,
-        )
-        task.instance = self.config.instance_id
-        author = self._author_context(
-            author_did=data.get("author_did"),
-            author_location=location,
-        )
-        self.task_store.create(task, author=author)
-        return self._task_to_dict(task)
+        # Delegate so every field create_task understands (kind, parent, memory
+        # fields: subject/scope/provenance/evidence/how_known/salience...) is
+        # preserved; only the body and the "open" default status differ.
+        return self.create_task({"status": "open", **data, "description": brief})
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Get task by ID."""
@@ -504,14 +518,24 @@ class LocalClient:
             task.drift_checked_at = data["drift_checked_at"]
         if "drift_score" in data:
             task.drift_score = data["drift_score"]
+        newly_cited: list[str] = []
         if "evidence" in data:
+            previous = set(task.evidence or [])
             task.evidence = list(data["evidence"] or [])
+            newly_cited = [e for e in task.evidence if e not in previous]
         if "how_known" in data:
             task.how_known = data["how_known"]
         if "salience" in data:
+            from hopper.memory.salience import is_salient, salient_until_from
+
+            was_salient = is_salient(task)
             task.salience = bool(data["salience"])
-        if "salient_until" in data:
+            if task.salience and not was_salient and not data.get("salient_until"):
+                task.salient_until = salient_until_from()  # flag without expiry -> default
+        if data.get("salient_until") is not None:
             task.salient_until = _parse_datetime(data["salient_until"])
+        elif "salient_until" in data and not data.get("salience"):
+            task.salient_until = None  # explicit clear (not when just defaulted above)
 
         # Handle tags
         if "add_tags" in data:
@@ -549,6 +573,8 @@ class LocalClient:
             author_location=data.get("author_location"),
         )
         self.task_store.save(task, author=author)
+        if newly_cited and task.kind == "memory":
+            self._reinforce_cited(newly_cited, citing_id=task.id)
         return self._task_to_dict(task)
 
     def add_task_note(self, task_id: str, body: str, author: str | None = None) -> dict[str, Any]:
@@ -560,6 +586,8 @@ class LocalClient:
         task = self.task_store.add_note(task_id, body, author=author)
         if task is None:
             raise LocalClientError(f"Task not found: {task_id}")
+        # A note on a salient record reinforces it (extends salient_until).
+        self._reinforce(task)
         return self._task_to_dict(task)
 
     def delete_task(self, task_id: str, author_did: str | None = None) -> None:

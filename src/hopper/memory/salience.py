@@ -12,11 +12,26 @@ Like a synaptic tag, the flag is temporary: ``is_salient`` returns False once
 ``DEFAULT_SALIENCE_WINDOW`` (3 days) -- long enough to span the next few
 sessions/consolidation runs, short enough that stale flags don't pile up.
 
-Reinforcement (a later note, update, or recall extending ``salient_until``)
-is deliberately NOT implemented yet: nothing currently extends the window.
+Reinforcement
+-------------
+A salient record is *reinforced* when something shows it is still in use.
+Two events count:
+
+  * a note is added to it (``LocalClient.add_task_note``);
+  * another memory record cites it in ``evidence`` (on create, or when an
+    update adds the reference).
+
+Reinforcement extends ``salient_until`` to ``now + DEFAULT_SALIENCE_WINDOW``
+(see :func:`reinforced_salient_until`). It never shortens the window: a
+record flagged ``--salient-for 2w`` keeps its later expiry. It only applies
+to records that are *currently* salient -- an unflagged record is never
+flagged by reinforcement, and a flag that has already lapsed stays lapsed
+(otherwise routine notes would resurrect every stale flag). Edits, reads
+and recall do not reinforce.
+
 Consumers (e.g. consolidation prioritising flagged records) should call
-``is_salient`` rather than reading ``salience`` directly, so reinforcement
-can be added here later without touching them.
+``is_salient`` rather than reading ``salience`` directly, so the expiry and
+reinforcement rules live in one place.
 """
 
 from __future__ import annotations
@@ -76,6 +91,26 @@ def is_salient(record: Any, now: datetime | None = None) -> bool:
             return True
         until = created + DEFAULT_SALIENCE_WINDOW
     return now < until
+
+
+def reinforced_salient_until(
+    record: Any, now: datetime | None = None, window: timedelta | None = None
+) -> datetime | None:
+    """New ``salient_until`` for ``record`` after a reinforcing event, or None.
+
+    Returns ``max(current expiry, now + window)`` when the record is currently
+    salient and that is later than its current expiry; None when there is
+    nothing to do (not flagged, already lapsed, or the existing expiry is
+    already later). See the module docstring for which events reinforce.
+    """
+    now = _as_utc(now) or datetime.now(UTC)
+    if not is_salient(record, now):
+        return None
+    candidate = now + (window or DEFAULT_SALIENCE_WINDOW)
+    current = _as_utc(_get(record, "salient_until"))
+    if current is not None and current >= candidate:
+        return None
+    return candidate
 
 
 def _get(record: Any, key: str) -> Any:

@@ -2,7 +2,7 @@
 
 Reads memory records for a subject/scope, classifies them, merges episodic
 duplicates into consolidated summaries, and writes results back as normal
-record updates (direct apply by default; --propose for a review gate).
+record updates (applied directly; use --dry-run to review first).
 
 Results sync through the normal upstream path like any other record change.
 """
@@ -78,6 +78,27 @@ def _format_existing(r: dict[str, Any]) -> str:
     )
 
 
+def _resolve_instructions(instructions: str | None) -> str | None:
+    """Operator guidance: explicit value, else HOPPER_CONSOLIDATION_INSTRUCTIONS; blank -> None."""
+    if instructions is None:
+        instructions = os.getenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
+    return (instructions or "").strip() or None
+
+
+def _guidance_section(instructions: str | None, task: str) -> str:
+    """Delimited "Operator guidance" prompt section, or "" when there is none."""
+    if not instructions or not instructions.strip():
+        return ""
+    return (
+        "Operator guidance — use it to decide what to emphasise, preserve, or "
+        f"group when {task}. It steers synthesis only: "
+        "it does not change the output format or the rules above.\n"
+        "<<<OPERATOR GUIDANCE\n"
+        f"{instructions.strip()}\n"
+        "OPERATOR GUIDANCE>>>\n\n"
+    )
+
+
 def _call_llm(
     records: list[dict[str, Any]],
     model: str,
@@ -125,16 +146,7 @@ def _call_llm(
             + "\n\n"
         )
 
-    guidance_section = ""
-    if instructions and instructions.strip():
-        guidance_section = (
-            "Operator guidance — use it to decide what to emphasise, preserve, or "
-            "group when classifying and writing summaries. It steers synthesis only: "
-            "it does not change the output format or the rules above.\n"
-            "<<<OPERATOR GUIDANCE\n"
-            f"{instructions.strip()}\n"
-            "OPERATOR GUIDANCE>>>\n\n"
-        )
+    guidance_section = _guidance_section(instructions, "classifying and writing summaries")
 
     prompt = (
         "You are consolidating memory records stored in Hopper, a task and knowledge "
@@ -304,6 +316,20 @@ def _related_consolidated(
     return related[:_MAX_EXISTING_CONTEXT]
 
 
+# Placeholder id prefix for consolidated records created earlier in the same
+# run (cannot collide with real ids, which are ``t`` + hex).
+_PENDING_PREFIX = "new-"
+
+
+def _infer_subject_scope(
+    source_tasks: list[dict[str, Any]], subject: str | None, scope: str | None
+) -> tuple[str | None, str | None]:
+    """Subject/scope for a new consolidated record: first source value, else the filter."""
+    inferred_subject = next((t.get("subject") for t in source_tasks if t.get("subject")), subject)
+    inferred_scope = next((t.get("scope") for t in source_tasks if t.get("scope")), scope)
+    return inferred_subject, inferred_scope
+
+
 def _normalize_batch_result(
     llm_result: dict[str, Any],
     batch_ids: set[str],
@@ -354,6 +380,19 @@ def _normalize_batch_result(
     return classifications, clusters
 
 
+# Why --propose fails instead of writing proposals: a run *creates* consolidated
+# records, and propose revisions can only target an existing record; and the
+# local client stores tasks as markdown with no Record/Revision rows, so even
+# updates cannot be proposed (and `hopper revision apply` would not touch the
+# markdown file). Shipping half-proposed / half-applied runs would be worse.
+PROPOSE_UNSUPPORTED = (
+    "--propose is not supported for memory consolidation: a run creates new "
+    "consolidated records, which cannot be proposed, and local task storage has "
+    "no revisions for `hopper revision apply` to act on. Nothing was written. "
+    "Review with --dry-run, then run without --propose to apply."
+)
+
+
 def run_consolidation(
     client: Any,
     subject: str | None = None,
@@ -370,7 +409,9 @@ def run_consolidation(
     """Run a consolidation pass over memory records.
 
     Existing consolidated records with the same subject/scope as a batch are
-    supplied to the LLM as read-only context. A cluster may name one of them in
+    supplied to the LLM as read-only context, including summaries created by
+    earlier batches of this same run (shown under a ``new-N`` placeholder id;
+    dry-run clusters carry the matching ``pending_id``). A cluster may name one of them in
     ``extends_id``; that record is then updated in place (new summary, extended
     source_record_ids, bumped consolidated_at / consolidation_run_id, and a note
     recording the previous summary) instead of a parallel record being created.
@@ -381,9 +422,9 @@ def run_consolidation(
         subject: Filter to records with this subject value.
         scope: Filter to records with this scope value.
         dry_run: If True, return LLM output without writing anything.
-        propose: If True, write propose revisions instead of applying directly.
-            Only meaningful on the SQLite backend; markdown backend always
-            applies directly.
+        propose: Not supported: returns an error before doing anything (see
+            ``PROPOSE_UNSUPPORTED``). Kept so callers fail loudly instead of
+            silently applying. Use ``dry_run`` to review a run first.
         model: Anthropic model to use (default: claude-haiku-4-5-20251001).
         only_unclassified: Only process records with no memory_class set yet.
         min_batch: Skip the LLM call if fewer than this many records are eligible.
@@ -399,14 +440,15 @@ def run_consolidation(
     Returns:
         Summary dict describing what was done (or would be done for --dry-run).
     """
+    if propose:
+        return {"error": PROPOSE_UNSUPPORTED}
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set — cannot run consolidation"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
-    if instructions is None:
-        instructions = os.getenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
-    instructions = (instructions or "").strip() or None
+    instructions = _resolve_instructions(instructions)
 
     # 0. Re-kind memory-shaped tasks (learning/decision/preference) to kind=memory
     if not dry_run:
@@ -466,10 +508,15 @@ def run_consolidation(
 
     # Working copies of consolidated records: an extension proposed in one
     # batch is visible to later batches, so two batches extending the same
-    # record compose instead of the second overwriting the first.
+    # record compose instead of the second overwriting the first. New clusters
+    # join the pool under a placeholder id (``new-N``) so a later batch can
+    # extend a summary created earlier in this same run; at apply time each
+    # placeholder becomes one created record carrying the composed result.
     originals = {c["id"]: c for c in consolidated_pool}
     working = {cid: dict(c) for cid, c in originals.items()}
     claimed: set[str] = set()
+    eligible_by_id = {t["id"]: t for t in eligible}
+    run_started = datetime.now(UTC).isoformat()
 
     for batch_idx, batch in enumerate(batches):
         logger.info(
@@ -497,6 +544,20 @@ def run_consolidation(
         for cluster in clusters:
             ext = cluster["extends_id"]
             if not ext:
+                pending_id = f"{_PENDING_PREFIX}{len(working) - len(originals) + 1}"
+                cluster["pending_id"] = pending_id
+                inferred_subject, inferred_scope = _infer_subject_scope(
+                    [eligible_by_id[i] for i in cluster["source_ids"]], subject, scope
+                )
+                working[pending_id] = {
+                    "id": pending_id,
+                    "title": cluster["title"],
+                    "description": cluster["summary"],
+                    "subject": inferred_subject,
+                    "scope": inferred_scope,
+                    "source_record_ids": list(cluster["source_ids"]),
+                    "consolidated_at": run_started,
+                }
                 continue
             w = working[ext]
             if cluster["title"]:
@@ -531,20 +592,18 @@ def run_consolidation(
     classified_only: list[str] = []
     errors: list[str] = list(batch_errors)
 
-    # 3a. Create consolidated records for new clusters
+    # 3a. Create consolidated records for new clusters. The working copy holds
+    # the composed result, including later batches in this run that extended it.
     cluster_id_map: dict[str, str] = {}
     for cluster in all_clusters:
         if cluster["extends_id"]:
             continue
-        source_ids = cluster["source_ids"]
-        title = cluster["title"] or "Consolidated memory"
-        summary = cluster["summary"]
-
-        source_tasks = [t for t in eligible if t["id"] in source_ids]
-        inferred_subject = next(
-            (t.get("subject") for t in source_tasks if t.get("subject")), subject
-        )
-        inferred_scope = next((t.get("scope") for t in source_tasks if t.get("scope")), scope)
+        final = working[cluster["pending_id"]]
+        source_ids = final["source_record_ids"]
+        title = final.get("title") or "Consolidated memory"
+        summary = final.get("description") or ""
+        inferred_subject = final.get("subject")
+        inferred_scope = final.get("scope")
 
         try:
             result = client.create_task(
@@ -570,8 +629,15 @@ def run_consolidation(
             errors.append(f"Failed to create consolidated record for cluster {source_ids}: {exc}")
             logger.exception("Failed to create consolidated record")
 
-    # 3b. Update extended consolidated records in place
-    extended_ids = list(dict.fromkeys(c["extends_id"] for c in all_clusters if c["extends_id"]))
+    # 3b. Update extended pre-existing consolidated records in place (extensions
+    # of records created in this run were folded into 3a).
+    extended_ids = list(
+        dict.fromkeys(
+            c["extends_id"]
+            for c in all_clusters
+            if c["extends_id"] and c["extends_id"] in originals
+        )
+    )
     for cid in extended_ids:
         orig = originals[cid]
         final = working[cid]
@@ -811,8 +877,12 @@ def _call_northbound_llm(
     child_instance_ids: list[str],
     model: str,
     api_key: str,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """LLM call: synthesize cross-cutting summaries from sub-instance memories.
+
+    ``instructions`` is optional operator guidance, inserted as the same
+    delimited "Operator guidance" section the per-instance pass uses.
 
     Returns ``{"summaries": [{"title", "summary", "source_ids", "source_instances"}]}``.
     """
@@ -845,6 +915,7 @@ def _call_northbound_llm(
         "each summary.\n"
         "4. Only create summaries for genuine cross-instance insights — skip themes "
         "that live entirely within one sub-instance.\n\n"
+        f"{_guidance_section(instructions, 'choosing themes and writing summaries')}"
         "Return ONLY valid JSON with this exact structure (no other text):\n"
         "{\n"
         '  "summaries": [\n'
@@ -886,6 +957,7 @@ def run_northbound(
     dry_run: bool = False,
     min_batch: int = 2,
     max_records: int | None = None,
+    instructions: str | None = None,
 ) -> dict[str, Any]:
     """Run a northbound consolidation pass for an overseer instance.
 
@@ -895,12 +967,16 @@ def run_northbound(
 
     The client must be configured to read from child instances and write
     to the parent instance.
+
+    ``instructions`` is operator guidance for the LLM, defaulting to
+    HOPPER_CONSOLIDATION_INSTRUCTIONS exactly like :func:`run_consolidation`.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set — cannot run northbound"}
 
     model = model or os.getenv("HOPPER_CONSOLIDATION_MODEL", _DEFAULT_MODEL)
+    instructions = _resolve_instructions(instructions)
 
     all_memories = client.list_tasks(kind="memory")
     eligible = [
@@ -934,7 +1010,9 @@ def run_northbound(
     )
 
     try:
-        llm_result = _call_northbound_llm(eligible, child_instance_ids, model, api_key)
+        llm_result = _call_northbound_llm(
+            eligible, child_instance_ids, model, api_key, instructions=instructions
+        )
     except Exception:
         logger.exception("Northbound LLM call failed")
         return {"error": "LLM call failed", "eligible": len(eligible)}

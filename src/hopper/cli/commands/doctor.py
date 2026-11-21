@@ -521,19 +521,62 @@ def check_tasks(env: Env, all_records: list[Any]) -> list[Check]:
 # --------------------------------------------------------------------------
 
 
-def _commit_checker(env: Env) -> Callable[[str], bool | None] | None:
-    """Return a sha -> True/False checker for the project's git repo, or None."""
+def _commit_checker(env: Env) -> Callable[[str], bool | str | None] | None:
+    """Return a sha checker for the project's git repo, or None.
+
+    The checker returns True (present), False (absent), or
+    ``hopper.memory.evidence.AMBIGUOUS`` when a short sha matches several commits.
+    """
+    from hopper.memory.evidence import AMBIGUOUS
+
     pdir = env.project_dir
     if pdir is None or env.is_global_store or not pdir.exists():
         return None
     if _git(["rev-parse", "--is-inside-work-tree"], pdir) != "true":
         return None
 
-    def exists(sha: str) -> bool | None:
+    def exists(sha: str) -> bool | str | None:
         # cat-file -e prints nothing: "" = present, None = absent (or git failed).
-        return _git(["cat-file", "-e", f"{sha}^{{commit}}"], pdir) is not None
+        if _git(["cat-file", "-e", f"{sha}^{{commit}}"], pdir) is not None:
+            return True
+        # It also fails when a short sha is ambiguous; count matching commits.
+        if len(sha) < 40:
+            candidates = (_git(["rev-parse", f"--disambiguate={sha}"], pdir) or "").split()
+            commits = [c for c in candidates if _git(["cat-file", "-t", c], pdir) == "commit"]
+            if len(commits) > 1:
+                return AMBIGUOUS
+        return False
 
     return exists
+
+
+def _evidence_findings(
+    records: list[Any], env: Env, own_instance: str | None
+) -> tuple[list[tuple[Any, list[str]]], list[tuple[Any, list[str]]], int]:
+    """``(stale, ambiguous, skipped_foreign)`` for this instance's memory records."""
+    from hopper.cli.commands.maintenance import is_foreign_record
+    from hopper.memory.evidence import check_evidence
+
+    ids = {r.id for r in records}
+    root = None if env.is_global_store else env.project_dir
+    commit_exists = _commit_checker(env)
+    stale: list[tuple[Any, list[str]]] = []
+    ambiguous: list[tuple[Any, list[str]]] = []
+    skipped = 0
+    for r in records:
+        if getattr(r, "kind", "task") != "memory" or not getattr(r, "evidence", None):
+            continue
+        if is_foreign_record(getattr(r, "instance", None), own_instance):
+            skipped += 1
+            continue
+        result = check_evidence(
+            r.evidence, known_ids=ids, project_root=root, commit_exists=commit_exists
+        )
+        if result.missing:
+            stale.append((r, result.missing))
+        if result.ambiguous:
+            ambiguous.append((r, result.ambiguous))
+    return stale, ambiguous, skipped
 
 
 def stale_evidence(
@@ -544,38 +587,22 @@ def stale_evidence(
     Returns ``(found, skipped_foreign)``. Records from another instance's
     shard are skipped: their relative paths and task ids belong to a
     different project, and rewriting them would clobber newer remote state.
+    Ambiguous short shas are not "gone" and are not included.
     """
-    from hopper.cli.commands.maintenance import is_foreign_record
-    from hopper.memory.evidence import find_missing_evidence
-
-    ids = {r.id for r in records}
-    root = None if env.is_global_store else env.project_dir
-    commit_exists = _commit_checker(env)
-    found: list[tuple[Any, list[str]]] = []
-    skipped = 0
-    for r in records:
-        if getattr(r, "kind", "task") != "memory" or not getattr(r, "evidence", None):
-            continue
-        if is_foreign_record(getattr(r, "instance", None), own_instance):
-            skipped += 1
-            continue
-        missing = find_missing_evidence(
-            r.evidence, known_ids=ids, project_root=root, commit_exists=commit_exists
-        )
-        if missing:
-            found.append((r, missing))
-    return found, skipped
+    stale, _, skipped = _evidence_findings(records, env, own_instance)
+    return stale, skipped
 
 
 def check_memory(env: Env, all_records: list[Any]) -> list[Check]:
     from hopper.storage.base import StorageConfig
 
     own = StorageConfig.local(env.storage).instance_id if env.storage else None
-    stale, skipped = stale_evidence(all_records, env, own)
+    stale, ambiguous, skipped = _evidence_findings(all_records, env, own)
     foreign = f" ({skipped} from another instance not checked)" if skipped else ""
+    out: list[Check] = []
     if stale:
         detail = "; ".join(f"{r.id} ({', '.join(m[:3])})" for r, m in stale[:3])
-        return [
+        out.append(
             Check(
                 "memory.evidence",
                 WARN,
@@ -584,8 +611,21 @@ def check_memory(env: Env, all_records: list[Any]) -> list[Check]:
                 "re-verify each memory, then update or retire it "
                 "(hopper doctor --fix leaves a note on each)",
             )
-        ]
-    return [Check("memory.evidence", OK, f"All memory evidence resolves{foreign}")]
+        )
+    else:
+        out.append(Check("memory.evidence", OK, f"All memory evidence resolves{foreign}"))
+    if ambiguous:
+        detail = "; ".join(f"{r.id} ({', '.join(m[:3])})" for r, m in ambiguous[:3])
+        out.append(
+            Check(
+                "memory.evidence_ambiguous",
+                WARN,
+                f"{_plural(len(ambiguous), 'memory record')} cite a short commit sha "
+                f"that matches more than one commit: {detail}",
+                "replace each with a longer (or full) sha",
+            )
+        )
+    return out
 
 
 # --------------------------------------------------------------------------

@@ -15,6 +15,7 @@ from hopper.memory.consolidation import (
     rank_for_consolidation,
     run_consolidation,
     run_drift_check,
+    run_northbound,
 )
 
 # ---------------------------------------------------------------------------
@@ -539,7 +540,13 @@ def test_unknown_ids_from_llm_are_ignored(client_with_consolidated):
 
     assert result["classifications"] == [{"id": "ep-001", "memory_class": "episodic"}]
     assert result["clusters"] == [
-        {"source_ids": ["ep-001", "ep-002"], "title": "T", "summary": "S", "extends_id": None}
+        {
+            "source_ids": ["ep-001", "ep-002"],
+            "title": "T",
+            "summary": "S",
+            "extends_id": None,
+            "pending_id": "new-1",
+        }
     ]
 
     with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
@@ -616,6 +623,65 @@ def test_extensions_across_batches_compose(client_with_consolidated):
     assert con["description"] == "Summary after batch 2."
     assert con["source_record_ids"] == ["old-001", "old-002", "ep-001", "ep-002"]
     assert len(client.notes["con-001"]) == 1
+
+
+def test_later_batch_extends_record_created_earlier_in_same_run(fake_client):
+    """A summary created by batch 1 is context for batch 2 and can be extended there."""
+    responses = [
+        {
+            "classifications": [],
+            "clusters": [
+                {
+                    "source_ids": ["ep-001", "ep-002"],
+                    "title": "Patterns",
+                    "summary": "Patterns 1 and 2.",
+                    "extends_id": None,
+                }
+            ],
+        },
+        {
+            "classifications": [],
+            "clusters": [
+                {
+                    "source_ids": ["ep-003"],
+                    "title": "Patterns (all)",
+                    "summary": "Patterns 1, 2 and 3.",
+                    "extends_id": "new-1",
+                }
+            ],
+        },
+    ]
+    mock_anth = _mock_anthropic(*responses)
+    before = len(fake_client._tasks)
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            dry = run_consolidation(
+                fake_client, subject="project:waypoint", batch_size=2, dry_run=True
+            )
+    second_prompt = mock_anth.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
+    context = second_prompt.split("Records:\n\n", 1)[0]
+    assert "ID: new-1" in context and "Patterns 1 and 2." in context
+    assert dry["clusters"][0]["pending_id"] == "new-1"
+    assert dry["clusters"][1]["extends_id"] == "new-1"
+    assert len(fake_client._tasks) == before
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=_mock_anthropic(*responses)):
+            result = run_consolidation(fake_client, subject="project:waypoint", batch_size=2)
+
+    assert result["errors"] == []
+    assert result["consolidated_records_created"] == 1
+    assert result["consolidated_records_updated"] == 0
+    assert result["source_records_superseded"] == 3
+    assert len(fake_client._tasks) == before + 1
+    new_id = fake_client._tasks["ep-001"]["superseded_by"]
+    assert {fake_client._tasks[f"ep-00{i}"]["superseded_by"] for i in (1, 2, 3)} == {new_id}
+    created = fake_client._tasks[new_id]
+    assert created["title"] == "Patterns (all)"
+    assert created["description"] == "Patterns 1, 2 and 3."
+    assert created["source_record_ids"] == ["ep-001", "ep-002", "ep-003"]
+    assert created["subject"] == "project:waypoint"
 
 
 # ---------------------------------------------------------------------------
@@ -796,3 +862,149 @@ def test_cli_consolidate_passes_instructions(tmp_path, monkeypatch):
     help_text = runner.invoke(cli, ["memory", "consolidate", "--help"]).output
     assert "--instructions" in help_text
     assert "line-level edits" in help_text
+
+
+# ---------------------------------------------------------------------------
+# Operator instructions: northbound + overseer
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def northbound_client():
+    client = _FakeClient()
+    for i, inst in enumerate(["child-a", "child-b"], start=1):
+        client.create_task(
+            {
+                "id": f"c-{i}",
+                "title": f"Summary {i}",
+                "description": "Durable thing.",
+                "kind": "memory",
+                "memory_class": "consolidated",
+                "instance": inst,
+            }
+        )
+    return client
+
+
+def test_northbound_threads_instructions(northbound_client):
+    mock_anth = _mock_anthropic({"summaries": []})
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            run_northbound(
+                northbound_client,
+                "Overseer",
+                ["child-a", "child-b"],
+                dry_run=True,
+                instructions="  Focus on shared auth.  ",
+            )
+    prompt = _prompt_of(mock_anth)
+    assert "<<<OPERATOR GUIDANCE\nFocus on shared auth.\nOPERATOR GUIDANCE>>>" in prompt
+    assert prompt.index("OPERATOR GUIDANCE>>>") < prompt.index("Return ONLY valid JSON")
+
+
+def test_northbound_instructions_env_default_and_omitted(northbound_client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    monkeypatch.setenv("HOPPER_CONSOLIDATION_INSTRUCTIONS", "From env")
+    mock_anth = _mock_anthropic({"summaries": []})
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        run_northbound(northbound_client, "O", ["child-a", "child-b"], dry_run=True)
+    assert "From env" in _prompt_of(mock_anth)
+
+    monkeypatch.delenv("HOPPER_CONSOLIDATION_INSTRUCTIONS")
+    mock_anth = _mock_anthropic({"summaries": []})
+    with patch("anthropic.Anthropic", return_value=mock_anth):
+        run_northbound(northbound_client, "O", ["child-a", "child-b"], dry_run=True)
+    assert "OPERATOR GUIDANCE" not in _prompt_of(mock_anth)
+
+
+def test_run_bottom_up_threads_instructions(tmp_path):
+    from contextlib import nullcontext
+
+    from hopper.audit_agent import agent
+
+    ok = {"run_id": "r", "eligible": 1}
+    with (
+        patch.object(agent, "_get_instances_with_memory", return_value=["Overseer", "child"]),
+        patch.object(agent, "_get_instance_edges", return_value=[("Overseer", "child")]),
+        patch.object(agent, "_ShadowConsolidationClient", lambda *a, **k: nullcontext(None)),
+        patch.object(agent, "_update_instance_metadata"),
+        patch("hopper.memory.consolidation.run_consolidation", return_value=ok) as mock_cons,
+        patch("hopper.memory.consolidation.run_northbound", return_value=ok) as mock_nb,
+    ):
+        agent.run_bottom_up(
+            tmp_path / "shadow.db",
+            "did:key:x",
+            tmp_path,
+            run_northbound_pass=True,
+            instructions="Guide",
+        )
+    assert mock_cons.call_count == 2
+    assert all(c.kwargs["instructions"] == "Guide" for c in mock_cons.call_args_list)
+    assert mock_nb.call_count == 1
+    assert mock_nb.call_args.kwargs["instructions"] == "Guide"
+
+
+def test_overseer_cli_passes_instructions(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from hopper.cli.main import cli
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".hopper" / "tasks").mkdir(parents=True)
+    (tmp_path / ".hopper" / "shadow.db").write_text("")
+    monkeypatch.delenv("HOPPER_CONSOLIDATION_INSTRUCTIONS", raising=False)
+    runner = CliRunner()
+
+    with (
+        patch("hopper.audit_agent.agent._get_or_create_agent_did", return_value="did:key:x"),
+        patch("hopper.audit_agent.agent.run_bottom_up", return_value={"instances": {}}) as mock_run,
+    ):
+        result = runner.invoke(cli, ["overseer", "consolidate", "--instructions", "Keep quotes"])
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Keep quotes"
+
+        result = runner.invoke(
+            cli,
+            ["overseer", "consolidate"],
+            env={"HOPPER_CONSOLIDATION_INSTRUCTIONS": "Env guidance"},
+        )
+        assert result.exit_code == 0, result.output
+        assert mock_run.call_args.kwargs["instructions"] == "Env guidance"
+
+    help_text = runner.invoke(cli, ["overseer", "northbound", "--help"]).output
+    assert "--instructions" in help_text
+
+
+# ---------------------------------------------------------------------------
+# --propose is unsupported and must fail loudly
+# ---------------------------------------------------------------------------
+
+
+def test_propose_fails_without_writing_or_calling_llm(fake_client):
+    fake_client.create_task({"id": "tk-1", "title": "L", "kind": "task", "tags": ["learning"]})
+    fake_client.rekind_record = MagicMock()
+    snapshot = {k: dict(v) for k, v in fake_client._tasks.items()}
+    mock_anth = _mock_anthropic()
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            result = run_consolidation(fake_client, propose=True)
+
+    assert "--propose is not supported" in result["error"]
+    assert "Nothing was written" in result["error"]
+    assert fake_client._tasks == snapshot
+    fake_client.rekind_record.assert_not_called()
+    mock_anth.messages.create.assert_not_called()
+
+
+def test_cli_propose_exits_nonzero(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from hopper.cli.main import cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake")
+    (tmp_path / ".hopper" / "tasks").mkdir(parents=True)
+    result = CliRunner().invoke(cli, ["memory", "consolidate", "--propose"])
+    assert result.exit_code == 1
+    assert "--propose is not supported" in result.output
