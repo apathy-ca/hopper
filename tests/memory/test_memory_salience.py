@@ -18,6 +18,7 @@ from hopper.memory.salience import (
     DEFAULT_SALIENCE_WINDOW,
     is_salient,
     parse_salience_window,
+    reinforced_salient_until,
     salient_until_from,
 )
 from hopper.storage import MarkdownStorage, StorageConfig, TaskMarkdownStore
@@ -176,3 +177,91 @@ class TestCli:
             )
             assert result.exit_code != 0
             assert "salience window" in result.output
+
+
+class TestReinforcement:
+    def test_extends_to_now_plus_default_window(self):
+        rec = {"salience": True, "salient_until": (NOW + timedelta(hours=1)).isoformat()}
+        assert reinforced_salient_until(rec, NOW) == NOW + DEFAULT_SALIENCE_WINDOW
+
+    def test_never_shortens(self):
+        rec = {"salience": True, "salient_until": (NOW + timedelta(weeks=2)).isoformat()}
+        assert reinforced_salient_until(rec, NOW) is None
+
+    def test_unflagged_and_lapsed_are_not_reinforced(self):
+        assert reinforced_salient_until({"salience": False}, NOW) is None
+        lapsed = {"salience": True, "salient_until": (NOW - timedelta(hours=1)).isoformat()}
+        assert reinforced_salient_until(lapsed, NOW) is None
+
+    def test_custom_window(self):
+        rec = {"salience": True, "salient_until": (NOW + timedelta(hours=1)).isoformat()}
+        got = reinforced_salient_until(rec, NOW, window=timedelta(hours=6))
+        assert got == NOW + timedelta(hours=6)
+
+
+class TestReinforcementWiring:
+    @pytest.fixture
+    def client(self, tmp_path):
+        from hopper.cli.local_client import LocalClient
+
+        return LocalClient(tmp_path)
+
+    def _salient(self, client, hours=1, **extra):
+        until = datetime.now(UTC) + timedelta(hours=hours)
+        return client.create_task(
+            {
+                "title": "m",
+                "kind": "memory",
+                "salience": True,
+                "salient_until": until.isoformat(),
+                **extra,
+            }
+        )
+
+    def _until(self, client, tid):
+        return client.task_store.get(tid).salient_until
+
+    def test_note_reinforces_salient_record(self, client):
+        rec = self._salient(client)
+        before = datetime.now(UTC)
+        client.add_task_note(rec["id"], "still relevant", author="claude:x")
+        assert self._until(client, rec["id"]) >= before + DEFAULT_SALIENCE_WINDOW
+
+    def test_note_does_not_shorten_or_flag(self, client):
+        long = self._salient(client, hours=24 * 14)
+        original = self._until(client, long["id"])
+        client.add_task_note(long["id"], "n")
+        assert self._until(client, long["id"]) == original
+
+        plain = client.create_task({"title": "m", "kind": "memory"})
+        client.add_task_note(plain["id"], "n")
+        loaded = client.task_store.get(plain["id"])
+        assert loaded.salience is False and loaded.salient_until is None
+
+    def test_citing_memory_reinforces_on_create(self, client):
+        rec = self._salient(client)
+        before = datetime.now(UTC)
+        client.create_task(
+            {"title": "cites", "kind": "memory", "evidence": [f"task:{rec['id'][:6]}"]}
+        )
+        assert self._until(client, rec["id"]) >= before + DEFAULT_SALIENCE_WINDOW
+
+    def test_non_memory_citation_does_not_reinforce(self, client):
+        rec = self._salient(client)
+        original = self._until(client, rec["id"])
+        client.create_task({"title": "task", "evidence": [rec["id"]]})
+        assert self._until(client, rec["id"]) == original
+
+    def test_update_adding_citation_reinforces(self, client):
+        rec = self._salient(client)
+        other = client.create_task({"title": "other", "kind": "memory"})
+        original = self._until(client, rec["id"])
+        client.update_task(other["id"], {"how_known": "x"})  # no evidence change
+        assert self._until(client, rec["id"]) == original
+
+        before = datetime.now(UTC)
+        client.update_task(other["id"], {"evidence": [rec["id"]]})
+        assert self._until(client, rec["id"]) >= before + DEFAULT_SALIENCE_WINDOW
+
+    def test_unknown_citation_is_ignored(self, client):
+        client.create_task({"title": "cites", "kind": "memory", "evidence": ["t00000000"]})

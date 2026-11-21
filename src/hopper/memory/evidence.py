@@ -72,6 +72,12 @@ def classify_evidence(ref: str) -> EvidenceRef:
     return EvidenceRef(UNKNOWN, ref, raw)
 
 
+def cited_task_ids(evidence: Iterable[str]) -> list[str]:
+    """Task-id references (possibly prefixes) in ``evidence``, in order, deduplicated."""
+    refs = (classify_evidence(raw) for raw in evidence or [])
+    return list(dict.fromkeys(r.value for r in refs if r.kind == TASK))
+
+
 def find_missing_evidence(
     evidence: Iterable[str],
     *,
