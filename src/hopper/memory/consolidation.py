@@ -304,6 +304,20 @@ def _related_consolidated(
     return related[:_MAX_EXISTING_CONTEXT]
 
 
+# Placeholder id prefix for consolidated records created earlier in the same
+# run (cannot collide with real ids, which are ``t`` + hex).
+_PENDING_PREFIX = "new-"
+
+
+def _infer_subject_scope(
+    source_tasks: list[dict[str, Any]], subject: str | None, scope: str | None
+) -> tuple[str | None, str | None]:
+    """Subject/scope for a new consolidated record: first source value, else the filter."""
+    inferred_subject = next((t.get("subject") for t in source_tasks if t.get("subject")), subject)
+    inferred_scope = next((t.get("scope") for t in source_tasks if t.get("scope")), scope)
+    return inferred_subject, inferred_scope
+
+
 def _normalize_batch_result(
     llm_result: dict[str, Any],
     batch_ids: set[str],
@@ -370,7 +384,9 @@ def run_consolidation(
     """Run a consolidation pass over memory records.
 
     Existing consolidated records with the same subject/scope as a batch are
-    supplied to the LLM as read-only context. A cluster may name one of them in
+    supplied to the LLM as read-only context, including summaries created by
+    earlier batches of this same run (shown under a ``new-N`` placeholder id;
+    dry-run clusters carry the matching ``pending_id``). A cluster may name one of them in
     ``extends_id``; that record is then updated in place (new summary, extended
     source_record_ids, bumped consolidated_at / consolidation_run_id, and a note
     recording the previous summary) instead of a parallel record being created.
@@ -466,10 +482,15 @@ def run_consolidation(
 
     # Working copies of consolidated records: an extension proposed in one
     # batch is visible to later batches, so two batches extending the same
-    # record compose instead of the second overwriting the first.
+    # record compose instead of the second overwriting the first. New clusters
+    # join the pool under a placeholder id (``new-N``) so a later batch can
+    # extend a summary created earlier in this same run; at apply time each
+    # placeholder becomes one created record carrying the composed result.
     originals = {c["id"]: c for c in consolidated_pool}
     working = {cid: dict(c) for cid, c in originals.items()}
     claimed: set[str] = set()
+    eligible_by_id = {t["id"]: t for t in eligible}
+    run_started = datetime.now(UTC).isoformat()
 
     for batch_idx, batch in enumerate(batches):
         logger.info(
@@ -497,6 +518,20 @@ def run_consolidation(
         for cluster in clusters:
             ext = cluster["extends_id"]
             if not ext:
+                pending_id = f"{_PENDING_PREFIX}{len(working) - len(originals) + 1}"
+                cluster["pending_id"] = pending_id
+                inferred_subject, inferred_scope = _infer_subject_scope(
+                    [eligible_by_id[i] for i in cluster["source_ids"]], subject, scope
+                )
+                working[pending_id] = {
+                    "id": pending_id,
+                    "title": cluster["title"],
+                    "description": cluster["summary"],
+                    "subject": inferred_subject,
+                    "scope": inferred_scope,
+                    "source_record_ids": list(cluster["source_ids"]),
+                    "consolidated_at": run_started,
+                }
                 continue
             w = working[ext]
             if cluster["title"]:
@@ -531,20 +566,18 @@ def run_consolidation(
     classified_only: list[str] = []
     errors: list[str] = list(batch_errors)
 
-    # 3a. Create consolidated records for new clusters
+    # 3a. Create consolidated records for new clusters. The working copy holds
+    # the composed result, including later batches in this run that extended it.
     cluster_id_map: dict[str, str] = {}
     for cluster in all_clusters:
         if cluster["extends_id"]:
             continue
-        source_ids = cluster["source_ids"]
-        title = cluster["title"] or "Consolidated memory"
-        summary = cluster["summary"]
-
-        source_tasks = [t for t in eligible if t["id"] in source_ids]
-        inferred_subject = next(
-            (t.get("subject") for t in source_tasks if t.get("subject")), subject
-        )
-        inferred_scope = next((t.get("scope") for t in source_tasks if t.get("scope")), scope)
+        final = working[cluster["pending_id"]]
+        source_ids = final["source_record_ids"]
+        title = final.get("title") or "Consolidated memory"
+        summary = final.get("description") or ""
+        inferred_subject = final.get("subject")
+        inferred_scope = final.get("scope")
 
         try:
             result = client.create_task(
@@ -570,8 +603,15 @@ def run_consolidation(
             errors.append(f"Failed to create consolidated record for cluster {source_ids}: {exc}")
             logger.exception("Failed to create consolidated record")
 
-    # 3b. Update extended consolidated records in place
-    extended_ids = list(dict.fromkeys(c["extends_id"] for c in all_clusters if c["extends_id"]))
+    # 3b. Update extended pre-existing consolidated records in place (extensions
+    # of records created in this run were folded into 3a).
+    extended_ids = list(
+        dict.fromkeys(
+            c["extends_id"]
+            for c in all_clusters
+            if c["extends_id"] and c["extends_id"] in originals
+        )
+    )
     for cid in extended_ids:
         orig = originals[cid]
         final = working[cid]

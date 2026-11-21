@@ -539,7 +539,13 @@ def test_unknown_ids_from_llm_are_ignored(client_with_consolidated):
 
     assert result["classifications"] == [{"id": "ep-001", "memory_class": "episodic"}]
     assert result["clusters"] == [
-        {"source_ids": ["ep-001", "ep-002"], "title": "T", "summary": "S", "extends_id": None}
+        {
+            "source_ids": ["ep-001", "ep-002"],
+            "title": "T",
+            "summary": "S",
+            "extends_id": None,
+            "pending_id": "new-1",
+        }
     ]
 
     with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
@@ -616,6 +622,65 @@ def test_extensions_across_batches_compose(client_with_consolidated):
     assert con["description"] == "Summary after batch 2."
     assert con["source_record_ids"] == ["old-001", "old-002", "ep-001", "ep-002"]
     assert len(client.notes["con-001"]) == 1
+
+
+def test_later_batch_extends_record_created_earlier_in_same_run(fake_client):
+    """A summary created by batch 1 is context for batch 2 and can be extended there."""
+    responses = [
+        {
+            "classifications": [],
+            "clusters": [
+                {
+                    "source_ids": ["ep-001", "ep-002"],
+                    "title": "Patterns",
+                    "summary": "Patterns 1 and 2.",
+                    "extends_id": None,
+                }
+            ],
+        },
+        {
+            "classifications": [],
+            "clusters": [
+                {
+                    "source_ids": ["ep-003"],
+                    "title": "Patterns (all)",
+                    "summary": "Patterns 1, 2 and 3.",
+                    "extends_id": "new-1",
+                }
+            ],
+        },
+    ]
+    mock_anth = _mock_anthropic(*responses)
+    before = len(fake_client._tasks)
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=mock_anth):
+            dry = run_consolidation(
+                fake_client, subject="project:waypoint", batch_size=2, dry_run=True
+            )
+    second_prompt = mock_anth.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
+    context = second_prompt.split("Records:\n\n", 1)[0]
+    assert "ID: new-1" in context and "Patterns 1 and 2." in context
+    assert dry["clusters"][0]["pending_id"] == "new-1"
+    assert dry["clusters"][1]["extends_id"] == "new-1"
+    assert len(fake_client._tasks) == before
+
+    with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "fake"}):
+        with patch("anthropic.Anthropic", return_value=_mock_anthropic(*responses)):
+            result = run_consolidation(fake_client, subject="project:waypoint", batch_size=2)
+
+    assert result["errors"] == []
+    assert result["consolidated_records_created"] == 1
+    assert result["consolidated_records_updated"] == 0
+    assert result["source_records_superseded"] == 3
+    assert len(fake_client._tasks) == before + 1
+    new_id = fake_client._tasks["ep-001"]["superseded_by"]
+    assert {fake_client._tasks[f"ep-00{i}"]["superseded_by"] for i in (1, 2, 3)} == {new_id}
+    created = fake_client._tasks[new_id]
+    assert created["title"] == "Patterns (all)"
+    assert created["description"] == "Patterns 1, 2 and 3."
+    assert created["source_record_ids"] == ["ep-001", "ep-002", "ep-003"]
+    assert created["subject"] == "project:waypoint"
 
 
 # ---------------------------------------------------------------------------
