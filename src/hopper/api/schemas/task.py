@@ -152,7 +152,20 @@ class TaskUpdate(BaseModel):
     depends_on: list[str] | None = None
     blocks: list[str] | None = None
 
+    # Memory fields (records backend). Setting salience=true without
+    # salient_until uses the default window, as on create.
+    evidence: list[str] | None = Field(None, description="Replace the memory's evidence references")
+    how_known: str | None = Field(None, description="How the author knows the memory is true")
+    salience: bool | None = Field(None, description="Write-time salience flag (lapses)")
+    salient_until: str | None = Field(
+        None, description="ISO timestamp after which the salience flag lapses"
+    )
+
     model_config = ConfigDict(use_enum_values=True)
+
+
+# TaskUpdate fields stored only in the records payload (no legacy ORM column).
+MEMORY_UPDATE_FIELDS = ("evidence", "how_known", "salience", "salient_until")
 
 
 class TaskStatusUpdate(BaseModel):

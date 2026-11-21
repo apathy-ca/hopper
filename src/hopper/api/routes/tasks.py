@@ -18,6 +18,7 @@ from hopper.api.exceptions import (
 )
 from hopper.api.repositories.record_tasks import RecordTaskRepository
 from hopper.api.schemas.task import (
+    MEMORY_UPDATE_FIELDS,
     Priority,
     TaskCreate,
     TaskFeedbackCreate,
@@ -443,6 +444,13 @@ async def update_task(
         # Response uses "owner"; the records payload stores it as assigned_to.
         if "owner" in changes:
             changes["assigned_to"] = changes.pop("owner")
+        if changes.get("salience") and not changes.get("salient_until"):
+            from hopper.memory.salience import is_salient, salient_until_from
+
+            # Flagging without an expiry uses the default window (as on create);
+            # an already-live flag keeps its expiry.
+            if not is_salient(rec):
+                changes["salient_until"] = salient_until_from().isoformat()
 
         def _update(sync_session) -> dict[str, Any] | None:
             return _repo(sync_session).update(
@@ -472,6 +480,8 @@ async def update_task(
 
     # Update fields
     update_data = task_data.model_dump(exclude_unset=True)
+    for field in MEMORY_UPDATE_FIELDS:  # records-backend only; no legacy column
+        update_data.pop(field, None)
     for field, value in update_data.items():
         setattr(task, field, value)
 

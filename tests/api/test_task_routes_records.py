@@ -172,6 +172,32 @@ def test_update_merges_and_persists(records_client):
     assert body["description"] == "keep me"
 
 
+def test_update_memory_fields(records_client):
+    from datetime import UTC, datetime, timedelta
+
+    created = _create_task(records_client, kind="memory", evidence=["src/a.py"])
+    before = datetime.now(UTC)
+    resp = records_client.put(
+        f"/api/v1/tasks/{created['id']}",
+        json={"evidence": ["src/b.py", "t1a2b3c4d"], "how_known": "read in code", "salience": True},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["evidence"] == ["src/b.py", "t1a2b3c4d"]
+    assert body["how_known"] == "read in code"
+    assert body["salience"] is True
+    # Flag without expiry -> default window.
+    until = datetime.fromisoformat(body["salient_until"])
+    assert until >= before + timedelta(days=3) - timedelta(seconds=5)
+
+    explicit = "2030-01-01T00:00:00+00:00"
+    resp = records_client.put(f"/api/v1/tasks/{created['id']}", json={"salient_until": explicit})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["salient_until"] == explicit
+    got = records_client.get(f"/api/v1/tasks/{created['id']}").json()
+    assert got["evidence"] == ["src/b.py", "t1a2b3c4d"] and got["salient_until"] == explicit
+
+
 def test_update_invalid_transition_rejected(records_client):
     created = _create_task(records_client)  # pending
     # pending -> done is not a valid transition.

@@ -417,28 +417,10 @@ class LocalClient:
         Returns:
             Created task as dict
         """
-        from hopper.location import resolve_location
-
-        location = data.get("source") or resolve_location(transport="cli")
-        task = LocalTask.create(
-            title=data.get("title", "Untitled"),
-            description=brief,
-            priority=data.get("priority", "medium"),
-            tags=data.get("tags", []),
-            project=data.get("project_id"),
-            status=data.get("status", "open"),
-            assigned_to=data.get("assigned_to"),
-            created_by=data.get("created_by") or data.get("assigned_to"),
-            created_by_did=self._resolve_creator_did(data.get("author_did")),
-            source=location,
-        )
-        task.instance = self.config.instance_id
-        author = self._author_context(
-            author_did=data.get("author_did"),
-            author_location=location,
-        )
-        self.task_store.create(task, author=author)
-        return self._task_to_dict(task)
+        # Delegate so every field create_task understands (kind, parent, memory
+        # fields: subject/scope/provenance/evidence/how_known/salience...) is
+        # preserved; only the body and the "open" default status differ.
+        return self.create_task({"status": "open", **data, "description": brief})
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         """Get task by ID."""
@@ -544,9 +526,16 @@ class LocalClient:
         if "how_known" in data:
             task.how_known = data["how_known"]
         if "salience" in data:
+            from hopper.memory.salience import is_salient, salient_until_from
+
+            was_salient = is_salient(task)
             task.salience = bool(data["salience"])
-        if "salient_until" in data:
+            if task.salience and not was_salient and not data.get("salient_until"):
+                task.salient_until = salient_until_from()  # flag without expiry -> default
+        if data.get("salient_until") is not None:
             task.salient_until = _parse_datetime(data["salient_until"])
+        elif "salient_until" in data and not data.get("salience"):
+            task.salient_until = None  # explicit clear (not when just defaulted above)
 
         # Handle tags
         if "add_tags" in data:
