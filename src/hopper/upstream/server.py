@@ -114,9 +114,15 @@ async def verify_did_auth(
     # (list_dids/list_pending/invite_list's ?namespace=..., and Phase B's
     # /admin/instances?owner=...). Pre-existing bug, not introduced here —
     # found because it broke a new endpoint built on this same path.
-    path = request.url.path
-    if request.url.query:
-        path = f"{path}?{request.url.query}"
+    # Take the decoded path from the ASGI scope, not request.url.path: newer
+    # Starlette re-percent-encodes reserved characters (e.g. "?" -> "%3F") in
+    # url.path, which no longer matches the decoded path the client signed.
+    # The query likewise comes from the scope's raw query_string; older
+    # Starlette mis-parsed a "?" inside the path into url.query.
+    path = request.scope.get("root_path", "") + request.scope["path"]
+    query = request.scope.get("query_string", b"").decode("latin-1")
+    if query:
+        path = f"{path}?{query}"
 
     # Verify signature
     valid, did = verify_signature(
