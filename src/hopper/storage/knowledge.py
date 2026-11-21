@@ -158,7 +158,7 @@ hopper mcp config --stdout    # Show MCP config for claude_desktop_config.json
 """
 
 
-AGENTS_MD_VERSION = 4
+AGENTS_MD_VERSION = 5
 
 AGENTS_MD_SECTION = f"""## Hopper - Persistent Memory
 <!-- hopper-agent-files: v{AGENTS_MD_VERSION} -->
@@ -214,6 +214,9 @@ hopper memory add "Sync batches at 512KB" --subject project:hopper \\
   the project root. `hopper doctor` flags memories whose evidence is gone.
 - `--salient [--salient-for 3d]`: flag a memory worth revisiting; the flag
   lapses after the window (default 3d).
+  Reinforcement keeps it alive: a note added to a flagged memory, or another
+  memory citing it in `--evidence`, extends the window. A flag that has already
+  lapsed is not revived.
 
 ### Session lifecycle
 

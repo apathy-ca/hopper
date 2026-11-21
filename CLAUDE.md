@@ -47,7 +47,7 @@ hopper mcp revoke <prefix> --server <url>  # Revoke a token
 ---
 
 ## Hopper - Persistent Memory
-<!-- hopper-agent-files: v4 -->
+<!-- hopper-agent-files: v5 -->
 
 This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent memory across AI agent sessions.
 
@@ -100,6 +100,9 @@ hopper memory add "Sync batches at 512KB" --subject project:hopper \
   the project root. `hopper doctor` flags memories whose evidence is gone.
 - `--salient [--salient-for 3d]`: flag a memory worth revisiting; the flag
   lapses after the window (default 3d).
+  Reinforcement keeps it alive: a note added to a flagged memory, or another
+  memory citing it in `--evidence`, extends the window. A flag that has already
+  lapsed is not revived.
 
 ### Session lifecycle
 

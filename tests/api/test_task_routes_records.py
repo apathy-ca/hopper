@@ -198,6 +198,37 @@ def test_update_memory_fields(records_client):
     assert got["evidence"] == ["src/b.py", "t1a2b3c4d"] and got["salient_until"] == explicit
 
 
+def test_update_classification_fields(records_client):
+    created = _create_task(records_client, kind="memory")
+    resp = records_client.put(
+        f"/api/v1/tasks/{created['id']}",
+        json={"subject": "project:hopper", "scope": "repo", "provenance": "agent:test"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = records_client.get(f"/api/v1/tasks/{created['id']}").json()
+    assert (body["subject"], body["scope"], body["provenance"]) == (
+        "project:hopper",
+        "repo",
+        "agent:test",
+    )
+
+
+def test_create_salience_without_expiry_uses_default_window(records_client):
+    from datetime import UTC, datetime, timedelta
+
+    before = datetime.now(UTC)
+    created = _create_task(records_client, kind="memory", salience=True)
+    until = datetime.fromisoformat(created["salient_until"])
+    assert until >= before + timedelta(days=3) - timedelta(seconds=5)
+
+    explicit = "2030-01-01T00:00:00+00:00"
+    kept = _create_task(records_client, kind="memory", salience=True, salient_until=explicit)
+    assert kept["salient_until"] == explicit
+
+    plain = _create_task(records_client, kind="memory")
+    assert not plain.get("salient_until")
+
+
 def test_update_invalid_transition_rejected(records_client):
     created = _create_task(records_client)  # pending
     # pending -> done is not a valid transition.

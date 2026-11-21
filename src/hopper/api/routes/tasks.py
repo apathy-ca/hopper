@@ -146,6 +146,11 @@ async def create_task(
         payload = task_data.model_dump(exclude_none=True)
         # The payload "owner" concept lives under assigned_to in records.
         payload.setdefault("kind", "task")
+        if payload.get("salience") and not payload.get("salient_until"):
+            from hopper.memory.salience import salient_until_from
+
+            # Flagging without an expiry uses the default window (as in the local client).
+            payload["salient_until"] = salient_until_from().isoformat()
 
         def _create(sync_session) -> dict[str, Any]:
             return _repo(sync_session).create(
